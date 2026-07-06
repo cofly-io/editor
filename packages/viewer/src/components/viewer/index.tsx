@@ -280,6 +280,14 @@ interface ViewerProps {
    */
   sceneReadyKey?: string | number | null
   onSceneReadyChange?: (ready: boolean) => void
+  /**
+   * Skip the TSL post-processing pipeline (SSGI/denoise/ink/outline) and render
+   * the scene directly. For headless/capture surfaces (the bake page) where
+   * frame quality is irrelevant: on a software-rasterised worker the pipeline
+   * consumes the whole CPU budget and bakes time out. Equivalent to the
+   * `?disable=postFx` diagnostic URL flag, but host-controlled.
+   */
+  disablePostFx?: boolean
 }
 
 /** Imperative handle exposed via `ref` on `<Viewer>`. */
@@ -307,6 +315,7 @@ const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(
     isolate,
     sceneReadyKey,
     onSceneReadyChange,
+    disablePostFx = false,
   },
   ref,
 ) {
@@ -470,7 +479,7 @@ const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(
             kind's `def.system` is loaded via lazy() and rendered here,
             ordered by `system.priority`. */}
         <RegisteredSystems />
-        <PostProcessing hoverStyles={hoverStyles} />
+        <PostProcessing disablePostFx={disablePostFx} hoverStyles={hoverStyles} />
         {selectionManager === 'default' && <SelectionManager />}
         {(perf || PERF_OVERLAY_ENABLED) && <PerfMonitor />}
         {children}

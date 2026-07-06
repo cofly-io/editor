@@ -214,8 +214,11 @@ function nextPostFxDegrade(
 
 const PostProcessingPasses = ({
   hoverStyles = DEFAULT_HOVER_STYLES,
+  disablePostFx = false,
 }: {
   hoverStyles?: HoverStyles
+  /** Host-controlled equivalent of `?disable=postFx` -see the Viewer prop. */
+  disablePostFx?: boolean
 }) => {
   const { gl: renderer, invalidate, scene, camera, size } = useThree()
   const renderPipelineRef = useRef<RenderPipeline | null>(null)
@@ -379,6 +382,16 @@ const PostProcessingPasses = ({
     }
 
     const perfDisable = readPerfDisableFlags()
+    if (disablePostFx || perfDisable.postFx) {
+      activePostFxFeaturesRef.current = { ssgi: false, denoise: false, outline: false }
+      hasPipelineErrorRef.current = false
+      if (renderPipelineRef.current) {
+        renderPipelineRef.current.dispose()
+      }
+      renderPipelineRef.current = null
+      return
+    }
+
     const ssgiEnabled =
       shading === 'rendered' &&
       SSGI_PARAMS.enabled &&
@@ -654,6 +667,7 @@ const PostProcessingPasses = ({
     }
   }, [
     camera,
+    disablePostFx,
     hoverHiddenColor,
     hoverPulseMix,
     hoverStrength,
@@ -690,7 +704,12 @@ const PostProcessingPasses = ({
     syncOutlineObjects(selectedOutlineObjectsRef.current, outliner.selectedObjects, scene)
     syncOutlineObjects(hoveredOutlineObjectsRef.current, outliner.hoveredObjects, scene)
 
-    if (PERF_POST_FX_DISABLED || hasPipelineErrorRef.current || !renderPipelineRef.current) {
+    if (
+      disablePostFx ||
+      PERF_POST_FX_DISABLED ||
+      hasPipelineErrorRef.current ||
+      !renderPipelineRef.current
+    ) {
       try {
         resetRendererForDirectRender(renderer, bgCurrent.current, transparentBackground ? 0 : 1)
         const submittedAt = PERF_OVERLAY_ENABLED ? performance.now() : 0

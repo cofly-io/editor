@@ -12,7 +12,7 @@ import * as THREE from 'three'
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { ADDITION, Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg'
 import { computeBoundsTree } from 'three-mesh-bvh'
-import { createSafeEmptyGeometry, ensureWebGPUCompatibleGeometry } from '../../lib/safe-geometry'
+import { ensureWebGPUCompatibleGeometry } from '../../lib/safe-geometry'
 
 function csgGeometry(brush: Brush): THREE.BufferGeometry {
   return brush.geometry as unknown as THREE.BufferGeometry
@@ -25,7 +25,7 @@ function csgMaterials(brush: Brush): THREE.Material[] {
 
 const csgEvaluator = new Evaluator()
 csgEvaluator.useGroups = true
-;(csgEvaluator as any).consolidateGroups = false // shared dummyMats across brushes causes consolidation to misalign groupIndices vs groupOrder indices → crash
+;(csgEvaluator as any).consolidateGroups = false // shared dummyMats across brushes causes consolidation to misalign groupIndices vs groupOrder indices 鈫?crash
 csgEvaluator.attributes = ['position', 'normal', 'uv']
 
 function computeGeometryBoundsTree(geometry: THREE.BufferGeometry) {
@@ -48,6 +48,28 @@ const _uvFaceNormal = new THREE.Vector3()
 const _uvWorldDown = new THREE.Vector3(0, -1, 0)
 const _uvDownSlope = new THREE.Vector3()
 const _uvAcrossSlope = new THREE.Vector3()
+
+/**
+ * Degenerate placeholder for a roof mesh with nothing to draw (initial
+ * BoxGeometry swap-out, or a roof whose segments were all deleted/painted).
+ * Three zero-vertices (one invisible triangle), not an empty attribute: an
+ * empty position (count 0) leaves WebGPU vertex buffer slot 0 unbound if the
+ * mesh is ever drawn, and computeBoundsTree needs a real position buffer to
+ * index. Deliberately NO groups: count-0 groups crash MeshBVH's packed-tree
+ * build (it partitions roots by group), and a BoxGeometry's 6 groups against
+ * the 4 roof materials crash raycasts and GLTFExporter. Group-less + a
+ * zero-area triangle is safe everywhere -it draws nothing under an array
+ * material and can never be ray-hit.
+ */
+function createDegenerateRoofPlaceholder(): THREE.BufferGeometry {
+  const placeholder = new THREE.BufferGeometry()
+  placeholder.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(9), 3))
+  placeholder.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(9), 3))
+  placeholder.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(6), 2))
+  placeholder.setAttribute('uv2', new THREE.Float32BufferAttribute(new Float32Array(6), 2))
+  computeGeometryBoundsTree(placeholder)
+  return placeholder
+}
 
 // Pending merged-roof updates carried across frames (for throttling)
 const pendingRoofUpdates = new Set<AnyNodeId>()
@@ -90,17 +112,15 @@ export const RoofSystem = () => {
             updateRoofSegmentGeometry(node as RoofSegmentNode, mesh)
             segmentsProcessed++
           } else if (isVisible) {
-            return // Over budget — keep dirty, process next frame
+            return // Over budget -keep dirty, process next frame
           } else {
-            // Just sync transform, skip CSG — the merged roof handles visuals.
+            // Just sync transform, skip CSG -the merged roof handles visuals.
             // But replace the initial BoxGeometry once: it has 6 groups (materialIndex 0-5)
             // while roofMaterials only has 4 entries. Three.js raycasts into invisible groups,
-            // so MeshBVH hits groups[4].materialIndex → undefined.side → crash.
+            // so MeshBVH hits groups[4].materialIndex 鈫?undefined.side 鈫?crash.
             if (mesh.geometry.type === 'BoxGeometry') {
               mesh.geometry.dispose()
-              const placeholder = createSafeEmptyGeometry()
-              computeGeometryBoundsTree(placeholder)
-              mesh.geometry = placeholder
+              mesh.geometry = createDegenerateRoofPlaceholder()
             }
             mesh.position.set(node.position[0], node.position[1], node.position[2])
             mesh.rotation.y = node.rotation
@@ -137,7 +157,7 @@ export const RoofSystem = () => {
       if (!mergedMesh) continue
 
       if (mergedMesh.visible !== false) {
-        // Only rebuild when visible — RoofEditSystem re-triggers via markDirty on edit mode exit
+        // Only rebuild when visible -RoofEditSystem re-triggers via markDirty on edit mode exit
         updateMergedRoofGeometry(node as RoofNode, group, nodes)
         roofsProcessed++
       }
@@ -178,8 +198,9 @@ function updateMergedRoofGeometry(
 
   if (children.length === 0) {
     mergedMesh.geometry.dispose()
-    // Keep a valid position attribute so Drei's BVH can index safely.
-    mergedMesh.geometry = new THREE.BoxGeometry(0, 0, 0)
+    // Not BoxGeometry: its 6 groups against the merged mesh's 4-material array
+    // crash GLTFExporter (materials[4] 鈫?undefined) when the roof bakes.
+    mergedMesh.geometry = createDegenerateRoofPlaceholder()
     return
   }
 
@@ -541,7 +562,7 @@ export function getRoofSegmentBrushes(
   const toBrush = (geo: THREE.BufferGeometry): Brush | null => {
     if (!geo?.attributes.position || geo.attributes.position.count === 0) return null
     if (!geo.index) return null
-    // Strip zero-count groups — three-bvh-csg crashes with groupIndices[i] undefined
+    // Strip zero-count groups -three-bvh-csg crashes with groupIndices[i] undefined
     // when a group exists but covers no triangles (can happen after mergeVertices)
     geo.groups = geo.groups.filter((g) => g.count > 0)
     if (geo.groups.length === 0) return null
