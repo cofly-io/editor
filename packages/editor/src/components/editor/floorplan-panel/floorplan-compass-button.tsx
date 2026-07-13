@@ -1,15 +1,57 @@
 'use client'
 
 import { Navigation } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../ui/primitives/tooltip'
+import { nearestEquivalentDegrees } from './navigation'
+
+const COMPASS_ANIMATION_TIME_CONSTANT_MS = 90
 
 export function FloorplanCompassButton({
   northRotationDeg,
   onAlignNorth,
+  navigationSource,
 }: {
   northRotationDeg: number
   onAlignNorth: () => void
+  navigationSource?: '2d' | '3d'
 }) {
+  const [displayedRotationDeg, setDisplayedRotationDeg] = useState(northRotationDeg)
+  const displayedRotationRef = useRef(northRotationDeg)
+  const animationFrameRef = useRef<number | null>(null)
+
+  const cancelAnimation = useCallback(() => {
+    if (animationFrameRef.current !== null) {
+      cancelAnimationFrame(animationFrameRef.current)
+      animationFrameRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    if (navigationSource === '3d') cancelAnimation()
+    if (animationFrameRef.current !== null) return
+    displayedRotationRef.current = northRotationDeg
+    setDisplayedRotationDeg(northRotationDeg)
+  }, [cancelAnimation, navigationSource, northRotationDeg])
+
+  useEffect(() => cancelAnimation, [cancelAnimation])
+
+  const animateToNorth = () => {
+    cancelAnimation()
+    const targetDeg = nearestEquivalentDegrees(0, displayedRotationRef.current)
+    let last = performance.now()
+    const tick = (now: number) => {
+      const decay = Math.exp(-(now - last) / COMPASS_ANIMATION_TIME_CONSTANT_MS)
+      last = now
+      let nextDeg = targetDeg - (targetDeg - displayedRotationRef.current) * decay
+      if (Math.abs(targetDeg - nextDeg) < 0.05) nextDeg = targetDeg
+      displayedRotationRef.current = nextDeg
+      setDisplayedRotationDeg(nextDeg)
+      animationFrameRef.current = nextDeg === targetDeg ? null : requestAnimationFrame(tick)
+    }
+    animationFrameRef.current = requestAnimationFrame(tick)
+  }
+
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -20,6 +62,7 @@ export function FloorplanCompassButton({
             event.preventDefault()
             event.stopPropagation()
             onAlignNorth()
+            animateToNorth()
           }}
           onPointerDown={(event) => {
             event.stopPropagation()
@@ -29,8 +72,8 @@ export function FloorplanCompassButton({
           <Navigation className="h-4 w-4 opacity-30" strokeWidth={1.8} />
           <svg
             aria-hidden="true"
-            className="absolute h-6 w-6 overflow-visible transition-transform duration-200"
-            style={{ transform: `rotate(${northRotationDeg}deg)` }}
+            className="absolute h-6 w-6 overflow-visible"
+            style={{ transform: `rotate(${displayedRotationDeg}deg)` }}
             viewBox="-12 -12 24 24"
           >
             <path className="fill-red-500 drop-shadow-sm" d="M 0 -10 L 3 1 L 0 3 L -3 1 Z" />

@@ -57,6 +57,9 @@ type ViewerState = {
    * persisted). */
   isExporting: boolean
   setExporting: (value: boolean) => void
+  itemLoadFailures: Record<string, string>
+  reportItemLoadFailure: (nodeId: string, url: string) => void
+  clearItemLoadFailure: (nodeId: string) => void
 
   shading: RenderShading
   shadingByContext: Partial<Record<RenderContext, RenderShading>>
@@ -286,6 +289,20 @@ const useViewer = create<ViewerState>()(
 
       isExporting: false,
       setExporting: (value) => set({ isExporting: value }),
+      itemLoadFailures: {},
+      reportItemLoadFailure: (nodeId, url) =>
+        set((state) =>
+          state.itemLoadFailures[nodeId] === url
+            ? state
+            : { itemLoadFailures: { ...state.itemLoadFailures, [nodeId]: url } },
+        ),
+      clearItemLoadFailure: (nodeId) =>
+        set((state) => {
+          if (!(nodeId in state.itemLoadFailures)) return state
+          const itemLoadFailures = { ...state.itemLoadFailures }
+          delete itemLoadFailures[nodeId]
+          return { itemLoadFailures }
+        }),
 
       shading: 'rendered',
       shadingByContext: {},

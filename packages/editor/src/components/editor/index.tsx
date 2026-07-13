@@ -551,6 +551,7 @@ function ViewerCompassOverlay() {
   const northRotationDeg = floorplanRotationFromCameraAzimuth(navigationSyncPose.azimuth, 0)
   return (
     <FloorplanCompassButton
+      navigationSource={navigationSyncPose.source}
       northRotationDeg={northRotationDeg}
       onAlignNorth={() => {
         useEditor.getState().publishNavigationSyncPose({

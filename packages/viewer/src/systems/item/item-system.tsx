@@ -45,6 +45,8 @@ export const ItemSystem = () => {
         }
       }
 
+      if (!(mesh.userData as { itemModelSettled?: boolean }).itemModelSettled) return
+
       clearDirty(id as AnyNodeId)
     })
   }, 2)

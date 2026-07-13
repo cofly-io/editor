@@ -26,10 +26,10 @@ import {
   useNodeEvents,
   useViewer,
 } from '@pascal-app/viewer'
-import { useAnimations } from '@react-three/drei'
+import { useAnimations, useGLTF } from '@react-three/drei'
 import { Clone } from '@react-three/drei/core/Clone'
 import { useFrame } from '@react-three/fiber'
-import { Suspense, useEffect, useMemo, useRef } from 'react'
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AnimationAction, AnimationClip, Group, Material, Mesh, Object3D } from 'three'
 import { MathUtils } from 'three'
 import { positionLocal, smoothstep, time } from 'three/tsl'
@@ -62,6 +62,7 @@ const getMaterialForOriginal = (
 const BrokenItemFallback = ({ node }: { node: ItemNode }) => {
   const handlers = useNodeEvents(node, 'item')
   const shading = useViewer((state) => state.shading)
+  const isExporting = useViewer((state) => state.isExporting)
   const [w, h, d] = node.asset.dimensions
   const material = useMemo(() => {
     const next = createDefaultMaterial('#ef4444', 1, shading) as MutableMaterial
@@ -72,11 +73,68 @@ const BrokenItemFallback = ({ node }: { node: ItemNode }) => {
     return next
   }, [shading])
 
+  if (isExporting) return null
+
   return (
     <mesh position-y={h / 2} {...handlers}>
       <boxGeometry args={[w, h, d]} />
       <primitive attach="material" object={material} />
     </mesh>
+  )
+}
+
+const MODEL_RETRY_DELAYS_MS = [1_000, 3_000]
+
+function resolveItemModelUrl(node: ItemNode) {
+  const src = resolveCdnUrl(node.asset.src) || ''
+  if (!(src && isImportedGlbAsset(node))) return src
+  return `${src}${src.includes('?') ? '&' : '?'}pascalImportedGlb=1`
+}
+
+function ModelWithRetry({
+  node,
+  setSettled,
+}: {
+  node: ItemNode
+  setSettled: (value: boolean) => void
+}) {
+  const [failures, setFailures] = useState(0)
+  const [epoch, setEpoch] = useState(0)
+  const modelUrl = resolveItemModelUrl(node)
+  const gaveUp = !modelUrl || failures > MODEL_RETRY_DELAYS_MS.length
+
+  const handleError = useCallback(() => setFailures((current) => current + 1), [])
+  const markSettled = useCallback(() => setSettled(true), [setSettled])
+
+  useLayoutEffect(() => {
+    setSettled(false)
+  }, [setSettled])
+
+  useEffect(() => {
+    if (failures === 0 || gaveUp) return
+    const delay = MODEL_RETRY_DELAYS_MS[failures - 1]
+    const timer = window.setTimeout(() => {
+      useGLTF.clear(modelUrl)
+      setEpoch((current) => current + 1)
+    }, delay)
+    return () => window.clearTimeout(timer)
+  }, [failures, gaveUp, modelUrl])
+
+  useEffect(() => {
+    if (!gaveUp) return
+    markSettled()
+    useViewer.getState().reportItemLoadFailure(node.id, modelUrl)
+    return () => useViewer.getState().clearItemLoadFailure(node.id)
+  }, [gaveUp, markSettled, modelUrl, node.id])
+
+  if (gaveUp) return <BrokenItemFallback node={node} />
+
+  return (
+    <ErrorBoundary fallback={<PreviewModel node={node} />} onError={handleError} resetKey={epoch}>
+      <Suspense fallback={<PreviewModel node={node} />}>
+        <ModelRenderer markSettled={markSettled} node={node} />
+      </Suspense>
+    </ErrorBoundary>
   )
 }
 
@@ -101,16 +159,20 @@ export const ItemRenderer = ({ node }: { node: ItemNode }) => {
 
   useRegistry(node.id, node.type, ref)
 
+  const setSettled = useCallback((value: boolean) => {
+    ref.current.userData.itemModelSettled = value
+  }, [])
+
+  useLayoutEffect(() => {
+    if (useProxy) setSettled(true)
+  }, [setSettled, useProxy])
+
   return (
     <group position={node.position} ref={ref} rotation={node.rotation} visible={node.visible}>
       {useProxy ? (
-        <PreviewModel node={node} />
+        <PreviewModel hideDuringExport={false} node={node} />
       ) : (
-        <ErrorBoundary fallback={<BrokenItemFallback node={node} />}>
-          <Suspense fallback={<PreviewModel node={node} />}>
-            <ModelRenderer node={node} />
-          </Suspense>
-        </ErrorBoundary>
+        <ModelWithRetry key={node.asset.src ?? 'no-src'} node={node} setSettled={setSettled} />
       )}
       {node.children?.map((childId) => (
         <NodeRenderer key={childId} nodeId={childId} />
@@ -135,9 +197,17 @@ function getPreviewMaterial(shading: RenderShading) {
   return material
 }
 
-const PreviewModel = ({ node }: { node: ItemNode }) => {
+const PreviewModel = ({
+  node,
+  hideDuringExport = true,
+}: {
+  node: ItemNode
+  hideDuringExport?: boolean
+}) => {
   const shading = useViewer((state) => state.shading)
+  const isExporting = useViewer((state) => state.isExporting)
   const handlers = useNodeEvents(node, 'item')
+  if (hideDuringExport && isExporting) return null
   return (
     <mesh
       material={getPreviewMaterial(shading)}
@@ -156,13 +226,9 @@ const multiplyScales = (
   b: [number, number, number],
 ): [number, number, number] => [a[0] * b[0], a[1] * b[1], a[2] * b[2]]
 
-const ModelRenderer = ({ node }: { node: ItemNode }) => {
+const ModelRenderer = ({ node, markSettled }: { node: ItemNode; markSettled: () => void }) => {
   const importedGlb = isImportedGlbAsset(node)
-  const modelUrl = useMemo(() => {
-    const src = resolveCdnUrl(node.asset.src) || ''
-    if (!(src && importedGlb)) return src
-    return `${src}${src.includes('?') ? '&' : '?'}pascalImportedGlb=1`
-  }, [node.asset.src, importedGlb])
+  const modelUrl = resolveItemModelUrl(node)
   const { scene, nodes, animations } = useGLTFKTX2(modelUrl) as {
     scene: Group
     nodes: Record<string, Object3D>
@@ -177,6 +243,10 @@ const ModelRenderer = ({ node }: { node: ItemNode }) => {
   const colorPreset = useViewer((state) => state.colorPreset)
   // Freeze the interactive definition at mount — asset schemas don't change at runtime
   const interactiveRef = useRef(node.asset.interactive)
+
+  useEffect(() => {
+    markSettled()
+  }, [markSettled])
 
   if (!importedGlb && nodes.cutout) {
     nodes.cutout.visible = false
