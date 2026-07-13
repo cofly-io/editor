@@ -21,15 +21,46 @@ type PasteResult = {
 
 const COPYABLE_ROOT_TYPES = new Set<AnyNode['type']>([
   'assembly',
-  'wall',
-  'fence',
-  'column',
-  'item',
-  'slab',
+  'box',
+  'cable-tray',
+  'capsule',
   'ceiling',
+  'column',
+  'cone',
+  'conformal-strip',
+  'conveyor-belt',
+  'cylinder',
+  'data-chart',
+  'data-table',
+  'data-widget',
+  'extrude',
+  'fence',
+  'frustum',
+  'half-cylinder',
+  'hemisphere',
+  'item',
+  'ladder',
+  'lathe',
+  'pipe',
+  'pipe-fitting',
+  'road',
   'roof',
-  'stair',
+  'roof-segment',
+  'rounded-panel',
+  'shelf',
+  'slab',
   'spawn',
+  'sphere',
+  'stair',
+  'stair-segment',
+  'steel-beam',
+  'steel-frame',
+  'sweep',
+  'tank',
+  'torus',
+  'trapezoid-prism',
+  'wall',
+  'wedge',
   'zone',
 ])
 
@@ -100,14 +131,34 @@ function isLevelChildRoot(nodes: Record<AnyNodeId, AnyNode>, node: AnyNode) {
   return nodes[parentId]?.type === 'level'
 }
 
+function getNodeLevelAncestor(nodes: Record<AnyNodeId, AnyNode>, nodeId: AnyNodeId) {
+  let current = nodes[nodeId]
+
+  while (current) {
+    if (current.type === 'level') return current
+    const parentId = current.parentId as AnyNodeId | null
+    if (!parentId) return null
+    current = nodes[parentId]
+  }
+
+  return null
+}
+
 function getPasteTargetLevel(targetLevelId?: AnyNodeId) {
   const scene = useScene.getState()
   const resolvedLevelId =
     targetLevelId ?? (useViewer.getState().selection.levelId as AnyNodeId | null)
-  if (!resolvedLevelId) return null
+  if (resolvedLevelId) {
+    const level = scene.nodes[resolvedLevelId]
+    if (level?.type === 'level') return level
+  }
 
-  const level = scene.nodes[resolvedLevelId]
-  return level?.type === 'level' ? level : null
+  for (const selectedId of useViewer.getState().selection.selectedIds as AnyNodeId[]) {
+    const level = getNodeLevelAncestor(scene.nodes, selectedId)
+    if (level) return level
+  }
+
+  return null
 }
 
 function getNextLevelId(level: LevelNode, nodes: Record<AnyNodeId, AnyNode>) {

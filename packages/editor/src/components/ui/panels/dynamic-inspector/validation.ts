@@ -107,7 +107,7 @@ export function validateDynamicBinding({
 
   if (!binding.path) {
     issues.push({ severity: 'error', message: '必须选择一个数据路径。' })
-  } else if (!pathExists) {
+  } else if (!pathExists && binding.source !== 'uns') {
     issues.push({ severity: 'error', message: `数据路径不存在：${binding.path}` })
   }
 

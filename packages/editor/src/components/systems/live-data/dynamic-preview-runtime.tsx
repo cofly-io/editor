@@ -359,6 +359,12 @@ function createFlowArrow(color: string) {
   return group
 }
 
+function flowArrowScale(binding: DynamicBinding) {
+  const scale = binding.arrowScale
+  if (typeof scale !== 'number' || !Number.isFinite(scale)) return 0.72
+  return Math.max(0.2, Math.min(2, scale))
+}
+
 function flowVisualParent(entry: RuntimeEntry) {
   return entry.node.type === 'pipe' ? entry.object : entry.object.parent
 }
@@ -833,6 +839,7 @@ function applyFlowAlongPipeRoute(
   const distance = Math.max(1.2, pipeRouteLength(routePoints))
   const speed = Math.max(0, binding.speedRange?.[1] ?? 1.2)
   const active = value > 0
+  const arrowScale = flowArrowScale(binding)
 
   for (let index = 0; index < entry.flowArrows.length; index += 1) {
     const arrow = entry.flowArrows[index]!
@@ -844,7 +851,7 @@ function applyFlowAlongPipeRoute(
       directionSign < 0 ? sample.direction.clone().multiplyScalar(-1) : sample.direction
     copyFlowPoint(entry, arrow, sample.point)
     arrow.position.y += 0.06
-    arrow.scale.setScalar(0.72)
+    arrow.scale.setScalar(arrowScale)
     setObjectAlongVector(arrow, direction)
     arrow.visible = active
   }
@@ -890,6 +897,7 @@ function applyFlow(
   const distance = pipeVector?.distance ?? Math.max(1.2, binding.distance ?? 2.4)
   const speed = Math.max(0, binding.speedRange?.[1] ?? 1.2)
   const active = value > 0
+  const arrowScale = flowArrowScale(binding)
   for (let index = 0; index < entry.flowArrows.length; index += 1) {
     const arrow = entry.flowArrows[index]!
     const offset =
@@ -898,7 +906,6 @@ function applyFlow(
     if (flowDirection && flowCenter) {
       arrow.position.copy(flowCenter).addScaledVector(flowDirection, offset)
       arrow.position.y += 0.06
-      arrow.scale.setScalar(0.72)
       setObjectAlongVector(arrow, flowDirection)
     } else {
       arrow.position.copy(entry.snapshot.position)
@@ -911,6 +918,7 @@ function applyFlow(
       if (axis === 1) arrow.rotation.z += Math.PI / 2
       if (axis === 2) arrow.rotation.y -= Math.PI / 2
     }
+    arrow.scale.setScalar(arrowScale)
     arrow.visible = active
   }
 

@@ -2,7 +2,12 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import { z } from 'zod'
 import type { AnyNode, AnyNodeId } from '../schema/types'
 import { nodeRegistry, registerNode } from './registry'
-import { cascadeDirty, collectDescendants, type SpatialQuery } from './relations-resolver'
+import {
+  cascadeDirty,
+  collectDescendants,
+  getLinkedNodeIds,
+  type SpatialQuery,
+} from './relations-resolver'
 import type { AnyNodeDefinition, Relations, SceneApi } from './types'
 
 const id = (s: string) => s as AnyNodeId
@@ -203,5 +208,53 @@ describe('collectDescendants', () => {
     })
     const result = collectDescendants(id('a'), { scene, maxDepth: 2 })
     expect(Array.from(result).sort()).toEqual([id('a'), id('b'), id('c')]) // d truncated
+  })
+})
+
+describe('getLinkedNodeIds', () => {
+  beforeEach(() => {
+    nodeRegistry._reset()
+  })
+
+  test('resolves same-kind endpoint matches within the same parent', () => {
+    registerNode(makeDef('fence', { linkedBy: 'endpoint-match' }))
+    const nodes = {
+      a: makeNode('fence', 'a', {
+        parentId: id('level-1'),
+        start: [0, 0],
+        end: [2, 0],
+      } as Partial<AnyNode>),
+      b: makeNode('fence', 'b', {
+        parentId: id('level-1'),
+        start: [2, 0],
+        end: [2, 2],
+      } as Partial<AnyNode>),
+      otherParent: makeNode('fence', 'other-parent', {
+        parentId: id('level-2'),
+        start: [2, 0],
+        end: [4, 0],
+      } as Partial<AnyNode>),
+      otherKind: makeNode('wall', 'other-kind', {
+        parentId: id('level-1'),
+        start: [2, 0],
+        end: [4, 0],
+      } as Partial<AnyNode>),
+    }
+
+    expect(getLinkedNodeIds(nodes.a, nodes)).toEqual([id('b')])
+  })
+
+  test('delegates custom relations and filters missing or self ids', () => {
+    registerNode(
+      makeDef('route', {
+        linkedBy: { custom: () => [id('route-a'), id('route-b'), id('missing')] },
+      }),
+    )
+    const nodes = {
+      'route-a': makeNode('route', 'route-a'),
+      'route-b': makeNode('route', 'route-b'),
+    }
+
+    expect(getLinkedNodeIds(nodes['route-a'], nodes)).toEqual([id('route-b')])
   })
 })

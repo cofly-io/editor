@@ -6,7 +6,7 @@ import {
   RGBAFormat,
   UnsignedByteType,
 } from 'three'
-import { KTX2Loader } from 'three/examples/jsm/Addons.js'
+import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js'
 
 /** The private KTX2Loader surface this module relies on (stable across three
  *  releases but not part of the public types). */

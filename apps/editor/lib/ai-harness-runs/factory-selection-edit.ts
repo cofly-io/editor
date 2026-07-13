@@ -748,6 +748,202 @@ function generatedSubpartSearchText(node: FactorySelectionNodeSnapshot) {
     .toLowerCase()
 }
 
+type SemanticPartGroupSnapshot = {
+  id: string
+  label?: string
+  roles: readonly string[]
+  sourcePartKinds: readonly string[]
+  sourcePartIds: readonly string[]
+  editable: readonly string[]
+  deleteParamPatch?: Record<string, unknown>
+}
+
+type SemanticPartGroupTarget = {
+  root: FactorySelectionNodeSnapshot
+  group: SemanticPartGroupSnapshot
+  nodes: FactorySelectionNodeSnapshot[]
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
+    : []
+}
+
+function semanticPartGroups(node: FactorySelectionNodeSnapshot): SemanticPartGroupSnapshot[] {
+  const metadata = recordValue(node.metadata)
+  const equipmentAssembly = recordValue(metadata?.equipmentAssembly)
+  const groups = Array.isArray(equipmentAssembly?.partGroups) ? equipmentAssembly.partGroups : []
+  return groups.flatMap((entry) => {
+    const group = recordValue(entry)
+    if (!group || typeof group.id !== 'string' || !group.id.trim()) return []
+    return [
+      {
+        id: group.id,
+        label: typeof group.label === 'string' ? group.label : undefined,
+        roles: stringArray(group.roles),
+        sourcePartKinds: stringArray(group.sourcePartKinds),
+        sourcePartIds: stringArray(group.sourcePartIds),
+        editable: stringArray(group.editable),
+        deleteParamPatch: recordValue(group.deleteParamPatch),
+      },
+    ]
+  })
+}
+
+function semanticGroupMatchesPrompt(group: SemanticPartGroupSnapshot, prompt: string) {
+  const text = prompt.toLowerCase()
+  switch (group.id) {
+    case 'access_stair':
+      return /(stair|ladder|access|platform|\u697c\u68af|\u722c\u68af|\u68af\u5b50|\u5916\u56f4|\u73af\u7ed5)/i.test(text)
+    case 'shell':
+      return /(shell|body|vessel|\u7f50\u4f53|\u5916\u58f3|\u58f3\u4f53|\u7b52\u4f53)/i.test(text)
+    case 'liquid':
+      return /(liquid|level|fluid|\u6db2\u4f4d|\u6db2\u4f53|\u6c34\u4f4d)/i.test(text)
+    case 'ports':
+      return /(port|inlet|outlet|nozzle|\u7ba1\u53e3|\u8fdb\u53e3|\u51fa\u53e3|\u6cd5\u5170)/i.test(text)
+    case 'supports':
+      return /(support|leg|saddle|\u652f\u6491|\u652f\u817f|\u5e95\u5ea7)/i.test(text)
+    default:
+      return group.roles.some((role) => text.includes(role.toLowerCase())) ||
+        group.sourcePartKinds.some((kind) => text.includes(kind.toLowerCase())) ||
+        group.sourcePartIds.some((id) => text.includes(id.toLowerCase()))
+  }
+}
+
+function equipmentRootCandidates(snapshot: FactorySelectionSnapshot) {
+  const byId = new Map(snapshot.nodes.map((node) => [node.id, node]))
+  const roots = new Map<string, FactorySelectionNodeSnapshot>()
+  for (const selectedId of snapshot.selectedIds) {
+    const selected = byId.get(selectedId)
+    if (!selected) continue
+    if (selected.type === 'assembly' && semanticPartGroups(selected).length) {
+      roots.set(selected.id, selected)
+      continue
+    }
+    const equipmentRootId = selected.metadata?.equipmentRootId
+    if (typeof equipmentRootId === 'string') {
+      const root = byId.get(equipmentRootId)
+      if (root && semanticPartGroups(root).length) roots.set(root.id, root)
+    }
+  }
+  return [...roots.values()]
+}
+
+function nodesForPartGroup(
+  snapshot: FactorySelectionSnapshot,
+  root: FactorySelectionNodeSnapshot,
+  group: SemanticPartGroupSnapshot,
+) {
+  const childIds = new Set(root.children ?? [])
+  return snapshot.nodes.filter((node) => {
+    if (node.id === root.id) return false
+    const metadata = recordValue(node.metadata)
+    if (metadata?.equipmentRootId === root.id && metadata?.partGroupId === group.id) return true
+    if (!childIds.has(node.id) && node.parentId !== root.id) return false
+    const role = typeof metadata?.semanticRole === 'string' ? metadata.semanticRole : undefined
+    const sourcePartKind =
+      typeof metadata?.sourcePartKind === 'string' ? metadata.sourcePartKind : undefined
+    const sourcePartId =
+      typeof metadata?.sourcePartId === 'string' ? metadata.sourcePartId : undefined
+    return Boolean(
+      (role && group.roles.includes(role)) ||
+        (sourcePartKind && group.sourcePartKinds.includes(sourcePartKind)) ||
+        (sourcePartId && group.sourcePartIds.includes(sourcePartId)),
+    )
+  })
+}
+
+function semanticPartGroupTargets(
+  snapshot: FactorySelectionSnapshot,
+  prompt: string,
+): SemanticPartGroupTarget[] {
+  return equipmentRootCandidates(snapshot).flatMap((root) =>
+    semanticPartGroups(root)
+      .filter((group) => semanticGroupMatchesPrompt(group, prompt))
+      .flatMap((group) => {
+        const nodes = nodesForPartGroup(snapshot, root, group)
+        return nodes.length ? [{ root, group, nodes }] : []
+      }),
+  )
+}
+
+function metadataWithEquipmentParamPatch(
+  node: FactorySelectionNodeSnapshot,
+  patch: Record<string, unknown>,
+  extraEquipmentAssembly?: Record<string, unknown>,
+) {
+  const metadata = recordValue(node.metadata) ?? {}
+  const sourceArgs = recordValue(metadata.sourceArgs) ?? {}
+  const sourceParams = recordValue(sourceArgs.recipeParams) ?? {}
+  const equipmentAssembly = recordValue(metadata.equipmentAssembly) ?? {}
+  const equipmentParams = recordValue(equipmentAssembly.params) ?? {}
+  return {
+    ...metadata,
+    sourceArgs: {
+      ...sourceArgs,
+      recipeParams: { ...sourceParams, ...patch },
+    },
+    equipmentAssembly: {
+      ...equipmentAssembly,
+      ...extraEquipmentAssembly,
+      params: { ...equipmentParams, ...patch },
+    },
+  }
+}
+
+function looksLikeLiquidLevelEdit(prompt: string) {
+  return /(\u6db2\u4f4d|\u6c34\u4f4d|liquid\s*level|level)/i.test(prompt)
+}
+
+function resolveLiquidLevelValue(prompt: string): number | undefined {
+  const pctMatch = prompt.match(/(\d+(?:\.\d+)?)\s*%/)
+  if (pctMatch) return Math.max(0, Math.min(1, Number(pctMatch[1]) / 100))
+  const decimalMatch = prompt.match(/\b0\.\d+\b|\b1(?:\.0+)?\b/)
+  if (decimalMatch) return Math.max(0, Math.min(1, Number(decimalMatch[0])))
+  const numericMatch = prompt.match(/(\d+(?:\.\d+)?)/)
+  if (!numericMatch) return undefined
+  const value = Number(numericMatch[1])
+  if (!Number.isFinite(value)) return undefined
+  return value > 1 ? Math.max(0, Math.min(1, value / 100)) : Math.max(0, Math.min(1, value))
+}
+
+function dynamicLevelGeometryFor(root: FactorySelectionNodeSnapshot): Record<string, unknown> | undefined {
+  return recordValue(recordValue(root.metadata)?.dynamicLevelGeometry)
+}
+
+function equipmentEnvelopeHeight(root: FactorySelectionNodeSnapshot) {
+  const assembly = recordValue(recordValue(root.metadata)?.equipmentAssembly)
+  const envelope = recordValue(assembly?.envelope)
+  return finiteNumber(envelope?.height)
+}
+
+function buildLiquidLevelNodePatch(
+  root: FactorySelectionNodeSnapshot,
+  node: FactorySelectionNodeSnapshot,
+  level: number,
+) {
+  if (node.type !== 'cylinder') return null
+  const geometry = dynamicLevelGeometryFor(root)
+  const kindValue = geometry?.kind
+  const kind = typeof kindValue === 'string' ? kindValue : undefined
+  const span =
+    kind === 'horizontal'
+      ? finiteNumber(geometry?.['length'])
+      : finiteNumber(geometry?.['height']) ?? equipmentEnvelopeHeight(root) ?? finiteNumber(node.height)
+  if (!span || span <= 0) return null
+  const height = Math.max(0.02, span * level)
+  const basePosition = finiteVec3(geometry?.['position'])
+  const currentPosition = node.position ?? [0, 0, 0]
+  const position: [number, number, number] = [...currentPosition]
+  if (kind === 'horizontal') {
+    position[0] = (basePosition?.[0] ?? currentPosition[0]) - (span - height) / 2
+  } else {
+    position[1] = (basePosition?.[1] ?? currentPosition[1] - (node.height ?? 0) / 2) + height / 2
+  }
+  return { height, position }
+}
+
 function filterGeometryCandidatesByPrompt(
   prompt: string,
   candidates: FactorySelectionNodeSnapshot[],
@@ -766,6 +962,8 @@ function filterGeometryCandidatesByPrompt(
 }
 
 function rootOrNamedSubpartTargets(snapshot: FactorySelectionSnapshot, prompt: string) {
+  const semanticTargets = semanticPartGroupTargets(snapshot, prompt).flatMap((target) => target.nodes)
+  if (semanticTargets.length > 0) return semanticTargets
   const expanded = expandedEditableNodes(snapshot).filter(isGeneratedSubpartNode)
   const narrowed = filterGeometryCandidatesByPrompt(prompt, expanded)
   if (expanded.length > 0 && narrowed.length > 0 && narrowed.length < expanded.length) {
@@ -1186,6 +1384,47 @@ export function composeSelectionDeleteEdit(input: {
     }
   }
 
+  const semanticTargets = semanticPartGroupTargets(snapshot, input.prompt).filter((target) =>
+    target.group.editable.includes('delete'),
+  )
+  if (semanticTargets.length) {
+    const deleteIds = new Set<string>()
+    const rootUpdates: FactorySceneEditPatch[] = []
+    for (const target of semanticTargets) {
+      for (const node of target.nodes) deleteIds.add(node.id)
+      const deletedPartGroups = stringArray(
+        recordValue(target.root.metadata)?.equipmentAssembly &&
+          recordValue(recordValue(target.root.metadata)?.equipmentAssembly)?.deletedPartGroups,
+      )
+      rootUpdates.push({
+        op: 'update',
+        id: target.root.id,
+        data: {
+          metadata: metadataWithEquipmentParamPatch(
+            target.root,
+            target.group.deleteParamPatch ?? {},
+            {
+              deletedPartGroups: [...new Set([...deletedPartGroups, target.group.id])],
+            },
+          ),
+        },
+      })
+    }
+    const patches: FactorySceneEditPatch[] = [
+      ...[...deleteIds].map((id) => ({ op: 'delete' as const, id })),
+      ...rootUpdates,
+    ]
+    return {
+      patches,
+      nodeIds: patches.flatMap((patch) => (patch.op === 'create' ? [patch.node.id] : [patch.id])),
+      changed: semanticTargets.map((target) => target.group.label ?? target.group.id),
+      summary: semanticTargets.map((target) => {
+        const label = target.group.label ?? target.group.id
+        return `${nodeLabel(target.root, target.root.id)}: deleted ${label}`
+      }),
+    }
+  }
+
   const candidates = rootOrNamedSubpartTargets(snapshot, input.prompt)
   const patches = candidates.map((node) => ({ op: 'delete' as const, id: node.id }))
 
@@ -1286,7 +1525,12 @@ export function composeSelectionColorEdit(input: {
     }
   }
 
-  const candidates = expandedEditableNodes(snapshot)
+  const semanticTargets = semanticPartGroupTargets(snapshot, input.prompt).filter((target) =>
+    target.group.editable.includes('color'),
+  )
+  const candidates = semanticTargets.length
+    ? semanticTargets.flatMap((target) => target.nodes)
+    : expandedEditableNodes(snapshot)
   const color = resolveSelectionEditColor(input.prompt, candidates)
   const patches = candidates.flatMap((node) => {
     const data = updateDataForNode(node, color)
@@ -1421,6 +1665,68 @@ export function composeSelectionTankKindEdit(input: {
 }
 
 // Opacity edit — direct-field nodes (pipe, cable-tray, etc.) and material nodes.
+export function composeSelectionLiquidLevelEdit(input: {
+  prompt: string
+  context?: unknown
+}): FactorySelectionEditResult | null {
+  if (!looksLikeLiquidLevelEdit(input.prompt)) return null
+  const snapshot = selectionSnapshotFromContext(input.context)
+  if (!snapshot?.selectedIds.length) {
+    return {
+      patches: [],
+      nodeIds: [],
+      changed: [],
+      missingReason: 'No canvas tank is selected. Select a semantic tank before changing liquid level.',
+    }
+  }
+  const level = resolveLiquidLevelValue(input.prompt)
+  if (level === undefined) {
+    return {
+      patches: [],
+      nodeIds: [],
+      changed: [],
+      missingReason: 'Could not determine the target liquid level. Try "液位70%" or "level 0.7".',
+    }
+  }
+
+  const targets = semanticPartGroupTargets(snapshot, input.prompt).filter(
+    (target) => target.group.id === 'liquid' || target.group.editable.includes('level'),
+  )
+  const patches: FactorySceneEditPatch[] = []
+  for (const target of targets) {
+    for (const node of target.nodes) {
+      const data = buildLiquidLevelNodePatch(target.root, node, level)
+      if (data) patches.push({ op: 'update', id: node.id, data })
+    }
+    patches.push({
+      op: 'update',
+      id: target.root.id,
+      data: {
+        metadata: metadataWithEquipmentParamPatch(target.root, { liquidLevel: level }),
+      },
+    })
+  }
+
+  if (!patches.length) {
+    return {
+      patches: [],
+      nodeIds: [],
+      changed: [],
+      missingReason: 'The selected equipment does not expose an editable liquid level.',
+    }
+  }
+
+  return {
+    patches,
+    nodeIds: patches.flatMap((patch) => (patch.op === 'create' ? [patch.node.id] : [patch.id])),
+    changed: targets.map((target) => target.group.label ?? target.group.id),
+    summary: targets.map((target) => {
+      const label = target.group.label ?? target.group.id
+      return `${nodeLabel(target.root, target.root.id)}: ${label} level -> ${Math.round(level * 100)}%`
+    }),
+  }
+}
+
 const OPACITY_DIRECT_FIELD_TYPES = new Set(['pipe', 'cable-tray', 'pipe-fitting', 'steel-beam', 'tank', 'zone'])
 
 export function looksLikeSelectionOpacityEdit(prompt: string) {
@@ -1480,7 +1786,12 @@ export function composeSelectionOpacityEdit(input: {
     }
   }
 
-  const candidates = expandedEditableNodes(snapshot)
+  const semanticTargets = semanticPartGroupTargets(snapshot, input.prompt).filter((target) =>
+    target.group.editable.includes('opacity'),
+  )
+  const candidates = semanticTargets.length
+    ? semanticTargets.flatMap((target) => target.nodes)
+    : expandedEditableNodes(snapshot)
   const patches: FactorySceneEditPatch[] = []
 
   for (const node of candidates) {
@@ -1558,6 +1869,7 @@ export function composeSelectionEdit(input: {
     composeSelectionMoveEdit(input) ??
     composeSelectionRotateEdit(input) ??
     composeSelectionGradientEdit(input) ??
+    composeSelectionLiquidLevelEdit(input) ??
     composeSelectionOpacityEdit(input) ??
     composeSelectionColorEdit(input) ??
     composeSelectionTankKindEdit(input) ??

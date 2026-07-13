@@ -151,6 +151,17 @@ export type StairPlacementType = 'straight' | 'curved' | 'spiral'
 
 export type FloorplanSelectionTool = 'click' | 'marquee'
 export type GridSnapStep = 0.5 | 0.25 | 0.1 | 0.05 | 0.01
+export type NavigationSyncSource = '2d' | '3d'
+
+export type NavigationSyncPose = {
+  source: NavigationSyncSource
+  revision: number
+  target: [number, number, number]
+  azimuth: number
+  viewWidth: number
+}
+
+export type NavigationSyncPoseInput = Omit<NavigationSyncPose, 'revision'>
 
 // Combined tool type. Known literals keep autocomplete; the `(string & {})`
 // arm lets plugin-contributed tool ids (e.g. `'trees:tree'`) typecheck without
@@ -354,6 +365,8 @@ type EditorState = {
   toggleFloorplanOpen: () => void
   isFloorplanHovered: boolean
   setFloorplanHovered: (hovered: boolean) => void
+  navigationSyncPose: NavigationSyncPose | null
+  publishNavigationSyncPose: (pose: NavigationSyncPoseInput) => void
   floorplanSelectionTool: FloorplanSelectionTool
   setFloorplanSelectionTool: (tool: FloorplanSelectionTool) => void
   gridSnapStep: GridSnapStep
@@ -990,6 +1003,14 @@ const useEditor = create<EditorState>()(
         }),
       isFloorplanHovered: false,
       setFloorplanHovered: (hovered) => set({ isFloorplanHovered: hovered }),
+      navigationSyncPose: null,
+      publishNavigationSyncPose: (pose) =>
+        set((state) => ({
+          navigationSyncPose: {
+            ...pose,
+            revision: (state.navigationSyncPose?.revision ?? 0) + 1,
+          },
+        })),
       floorplanSelectionTool: 'click' as FloorplanSelectionTool,
       setFloorplanSelectionTool: (tool) => set({ floorplanSelectionTool: tool }),
       gridSnapStep: DEFAULT_PERSISTED_EDITOR_LAYOUT_STATE.gridSnapStep,

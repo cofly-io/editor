@@ -24,10 +24,10 @@ import { type ThreeEvent, useFrame } from '@react-three/fiber'
 import { useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import {
-  primitiveBatchDisabled,
-  primitiveContractFromMetadata,
-  primitivePatternInstances,
-} from '../shared/primitive-contract-rendering'
+  createIndustrialMaterial,
+  industrialRenderContractFromMetadata,
+} from '../shared/industrial-render-contract-rendering'
+import { canBatchBoxBase, primitiveMaterialBatchKey } from '../shared/primitive-batching'
 
 type BoxBatch = {
   key: string
@@ -37,42 +37,12 @@ type BoxBatch = {
   nodes: BoxNode[]
 }
 
-const MIN_BATCH_SIZE = 3
-
 const tempMatrix = new THREE.Matrix4()
 const tempInverse = new THREE.Matrix4()
 const tempLocalPoint = new THREE.Vector3()
 
-function stableStringify(value: unknown): string {
-  if (value == null || typeof value !== 'object') return JSON.stringify(value)
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`
-  const record = value as Record<string, unknown>
-  return `{${Object.keys(record)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
-    .join(',')}}`
-}
-
 function dimensionKey(value: number | undefined, fallback = 1): string {
   return String(Number.isFinite(value) ? value : fallback)
-}
-
-function materialKey(node: BoxNode): string {
-  return `preset:${node.materialPreset ?? ''}|material:${stableStringify(node.material ?? null)}`
-}
-
-function hasCutouts(node: BoxNode): boolean {
-  return (primitiveContractFromMetadata(node.metadata)?.cutouts?.length ?? 0) > 0
-}
-
-function canBatchBox(node: BoxNode, excludedIds: ReadonlySet<string>): boolean {
-  if (node.visible === false) return false
-  if (excludedIds.has(node.id)) return false
-  if (primitiveBatchDisabled(node.metadata)) return false
-  if ((node.cornerRadius ?? 0) > 0) return false
-  if (primitivePatternInstances(node.metadata).length > 0) return false
-  if (hasCutouts(node)) return false
-  return true
 }
 
 function buildBoxBatches(
@@ -84,7 +54,7 @@ function buildBoxBatches(
   for (const node of Object.values(nodes)) {
     if (!node || typeof node !== 'object' || (node as { type?: unknown }).type !== 'box') continue
     const box = node as BoxNode
-    if (!canBatchBox(box, excludedIds)) continue
+    if (excludedIds.has(box.id) || !canBatchBoxBase(box)) continue
 
     const length = box.length ?? 1
     const height = box.height ?? 1
@@ -93,7 +63,7 @@ function buildBoxBatches(
       dimensionKey(box.length),
       dimensionKey(box.height),
       dimensionKey(box.width),
-      materialKey(box),
+      primitiveMaterialBatchKey(box),
     ].join('|')
 
     const existing = groups.get(key)
@@ -104,7 +74,7 @@ function buildBoxBatches(
     }
   }
 
-  return Array.from(groups.values()).filter((batch) => batch.nodes.length >= MIN_BATCH_SIZE)
+  return Array.from(groups.values())
 }
 
 function emitNodeEvent(
@@ -134,36 +104,6 @@ function emitNodeEvent(
   emitter.emit(`box:${suffix}`, payload as never)
 }
 
-function useBatchedOriginalVisibility(batchedIds: ReadonlySet<string>) {
-  const previouslyBatched = useRef<Set<string>>(new Set())
-
-  useLayoutEffect(() => {
-    const previous = previouslyBatched.current
-    for (const id of previous) {
-      if (batchedIds.has(id)) continue
-      const obj = sceneRegistry.nodes.get(id)
-      const node = useScene.getState().nodes[id as AnyNodeId] as BoxNode | undefined
-      if (obj) obj.visible = node?.visible !== false
-    }
-    previouslyBatched.current = new Set(batchedIds)
-
-    return () => {
-      for (const id of batchedIds) {
-        const obj = sceneRegistry.nodes.get(id)
-        const node = useScene.getState().nodes[id as AnyNodeId] as BoxNode | undefined
-        if (obj) obj.visible = node?.visible !== false
-      }
-    }
-  }, [batchedIds])
-
-  useFrame(() => {
-    for (const id of batchedIds) {
-      const obj = sceneRegistry.nodes.get(id)
-      if (obj?.visible) obj.visible = false
-    }
-  }, 20)
-}
-
 function BoxBatchMesh({ batch }: { batch: BoxBatch }) {
   const meshRef = useRef<THREE.InstancedMesh>(null)
   const lastClickRef = useRef<{ time: number; x: number; y: number; instanceId: number } | null>(
@@ -181,10 +121,13 @@ function BoxBatchMesh({ batch }: { batch: BoxBatch }) {
 
   const material = useMemo(() => {
     const exemplar = batch.nodes[0]
+    const contract = industrialRenderContractFromMetadata(exemplar?.metadata)
     const presetMaterial = createMaterialFromPresetRef(exemplar?.materialPreset, shading)
-    if (presetMaterial) return presetMaterial
-    if (exemplar?.material) return createMaterial(exemplar.material, shading)
-    return createDefaultMaterial('#cccccc', 1, shading)
+    if (presetMaterial) return createIndustrialMaterial(contract, presetMaterial)
+    const base = exemplar?.material
+      ? createMaterial(exemplar.material, shading)
+      : createDefaultMaterial('#cccccc', 1, shading)
+    return createIndustrialMaterial(contract, base)
   }, [batch.nodes, shading])
 
   const applyMatrices = useCallback(() => {
@@ -321,7 +264,6 @@ export default function BoxBatchSystem() {
   const selection = useViewer((state) => state.selection)
   const previewSelectedIds = useViewer((state) => state.previewSelectedIds)
   const hoveredId = useViewer((state) => state.hoveredId)
-  const inputDragging = useViewer((state) => state.inputDragging)
 
   const excludedIds = useMemo(() => {
     const ids = new Set<string>()
@@ -331,20 +273,10 @@ export default function BoxBatchSystem() {
     return ids
   }, [selection.selectedIds, previewSelectedIds, hoveredId])
 
-  const batches = useMemo(() => {
-    if (inputDragging) return []
-    return buildBoxBatches(nodes as Record<AnyNodeId, unknown>, excludedIds)
-  }, [nodes, excludedIds, inputDragging])
-
-  const batchedIds = useMemo(() => {
-    const ids = new Set<string>()
-    for (const batch of batches) {
-      for (const node of batch.nodes) ids.add(node.id)
-    }
-    return ids
-  }, [batches])
-
-  useBatchedOriginalVisibility(batchedIds)
+  const batches = useMemo(
+    () => buildBoxBatches(nodes as Record<AnyNodeId, unknown>, excludedIds),
+    [nodes, excludedIds],
+  )
 
   return (
     <>

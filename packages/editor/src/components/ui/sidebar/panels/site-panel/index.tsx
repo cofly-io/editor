@@ -2,6 +2,7 @@ import {
   type AnyNode,
   type AnyNodeId,
   type BuildingNode,
+  type CollectionId,
   emitter,
   type GuideNode,
   LevelNode,
@@ -13,8 +14,11 @@ import {
 import useViewer from '@pascal-app/viewer/store'
 import {
   Camera,
+  Check,
   ChevronDown,
   Copy,
+  Folder,
+  FolderPlus,
   Loader2,
   MoreHorizontal,
   Pencil,
@@ -38,6 +42,14 @@ import {
 } from './../../../../../lib/level-duplication'
 import { deleteLevelWithFallbackSelection } from './../../../../../lib/level-selection'
 import { createLocalGuideImage } from './../../../../../lib/local-guide-image'
+import {
+  formatAreaLabel,
+  getAreaUnitLabel,
+  getLinearUnitLabel,
+  linearUnitToMeters,
+  metersToLinearUnit,
+  squareMetersToAreaUnit,
+} from './../../../../../lib/measurements'
 import { cn } from './../../../../../lib/utils'
 import useEditor from './../../../../../store/use-editor'
 import { t } from '../../../../../i18n'
@@ -100,6 +112,7 @@ const PropertyLineSection = memo(function PropertyLineSection() {
   const updateNode = useScene((state) => state.updateNode)
   const mode = useEditor((state) => state.mode)
   const setMode = useEditor((state) => state.setMode)
+  const viewerUnit = useViewer((state) => state.unit)
 
   if (!siteNode) return null
 
@@ -107,6 +120,11 @@ const PropertyLineSection = memo(function PropertyLineSection() {
   const area = calculatePolygonArea(points)
   const perimeter = calculatePerimeter(points)
   const isEditing = mode === 'edit'
+  const linearLabel = getLinearUnitLabel(viewerUnit)
+  const toDisplayLinear = (meters: number) => metersToLinearUnit(meters, viewerUnit)
+  const toStoredLinear = (display: number) => linearUnitToMeters(display, viewerUnit)
+  const displayArea = squareMetersToAreaUnit(area, viewerUnit)
+  const displayPerimeter = toDisplayLinear(perimeter)
 
   const handleToggleEdit = () => {
     setMode(isEditing ? 'select' : 'edit')
@@ -174,11 +192,15 @@ const PropertyLineSection = memo(function PropertyLineSection() {
       <div className="relative flex gap-3 pr-3 pb-2 pl-10">
         <div className="text-muted-foreground text-xs">
           {t('sidebar.area', 'Area:')}{' '}
-          <span className="text-foreground">{area.toFixed(1)} m²</span>
+          <span className="text-foreground">
+            {displayArea.toFixed(1)} {getAreaUnitLabel(viewerUnit)}
+          </span>
         </div>
         <div className="text-muted-foreground text-xs">
           {t('sidebar.perimeter', 'Perimeter:')}{' '}
-          <span className="text-foreground">{perimeter.toFixed(1)} m</span>
+          <span className="text-foreground">
+            {displayPerimeter.toFixed(1)} {linearLabel}
+          </span>
         </div>
       </div>
 
@@ -193,21 +215,21 @@ const PropertyLineSection = memo(function PropertyLineSection() {
                 <input
                   className="w-16 rounded border border-border/50 bg-accent/50 px-1.5 py-0.5 text-foreground text-xs focus:border-primary focus:outline-none"
                   onChange={(e) =>
-                    handlePointChange(index, 0, Number.parseFloat(e.target.value) || 0)
+                    handlePointChange(index, 0, toStoredLinear(Number.parseFloat(e.target.value) || 0))
                   }
                   step={0.5}
                   type="number"
-                  value={point[0]}
+                  value={Number(toDisplayLinear(point[0]).toFixed(2))}
                 />
                 <label className="shrink-0 text-muted-foreground">Z</label>
                 <input
                   className="w-16 rounded border border-border/50 bg-accent/50 px-1.5 py-0.5 text-foreground text-xs focus:border-primary focus:outline-none"
                   onChange={(e) =>
-                    handlePointChange(index, 1, Number.parseFloat(e.target.value) || 0)
+                    handlePointChange(index, 1, toStoredLinear(Number.parseFloat(e.target.value) || 0))
                   }
                   step={0.5}
                   type="number"
-                  value={point[1]}
+                  value={Number(toDisplayLinear(point[1]).toFixed(2))}
                 />
                 <button
                   className={cn(
@@ -1006,7 +1028,15 @@ const LayerToggle = memo(function LayerToggle() {
   const structureLayer = useEditor((state) => state.structureLayer)
   const phase = useEditor((state) => state.phase)
   const enterFurnishBuildMode = useEditor((state) => state.enterFurnishBuildMode)
-  const enterStructureBuildMode = useEditor((state) => state.enterStructureBuildMode)
+  const setMode = useEditor((state) => state.setMode)
+  const setPhase = useEditor((state) => state.setPhase)
+  const setStructureLayer = useEditor((state) => state.setStructureLayer)
+
+  const viewStructureLayer = (layer: 'elements' | 'zones') => {
+    setMode('select')
+    setPhase('structure')
+    setStructureLayer(layer)
+  }
 
   const activeTab =
     phase === 'structure' && structureLayer === 'elements'
@@ -1027,7 +1057,7 @@ const LayerToggle = memo(function LayerToggle() {
             : 'text-muted-foreground hover:bg-white/5 hover:text-foreground',
         )}
         onClick={() => {
-          enterStructureBuildMode({ layer: 'elements' })
+          viewStructureLayer('elements')
         }}
       >
         {activeTab === 'structure' && (
@@ -1063,7 +1093,7 @@ const LayerToggle = memo(function LayerToggle() {
             : 'text-muted-foreground hover:bg-white/5 hover:text-foreground',
         )}
         onClick={() => {
-          enterFurnishBuildMode()
+          enterFurnishBuildMode({ openItemsPanel: false })
         }}
       >
         {activeTab === 'furnish' && (
@@ -1075,14 +1105,14 @@ const LayerToggle = memo(function LayerToggle() {
         )}
         <div className="relative z-10 flex flex-col items-center">
           <img
-            alt={t('sidebar.furnish', 'Furnish')}
+            alt={t('sidebar.items', 'Items')}
             className={cn(
               'mb-1 h-6 w-6 transition-all',
               activeTab !== 'furnish' && 'opacity-50 grayscale',
             )}
             src="/icons/couch.webp"
           />
-          {t('sidebar.furnish', 'Furnish')}
+          {t('sidebar.items', 'Items')}
         </div>
         <div className="absolute right-1.5 bottom-1 z-10 rounded border border-border/40 bg-background/40 px-1 py-[2px] backdrop-blur-md">
           <span className="block font-medium font-mono text-[9px] text-muted-foreground/70 leading-none">
@@ -1099,7 +1129,7 @@ const LayerToggle = memo(function LayerToggle() {
             : 'text-muted-foreground hover:bg-white/5 hover:text-foreground',
         )}
         onClick={() => {
-          enterStructureBuildMode({ layer: 'zones' })
+          viewStructureLayer('zones')
         }}
       >
         {activeTab === 'zones' && (
@@ -1141,6 +1171,7 @@ const ZoneItem = memo(function ZoneItem({ zone, isLast }: { zone: ZoneNode; isLa
   const setHoveredId = useViewer((state) => state.setHoveredId)
   const setPhase = useEditor((state) => state.setPhase)
   const setMode = useEditor((state) => state.setMode)
+  const unit = useViewer((state) => state.unit)
 
   const isSelected = selectedZoneId === zone.id
   const isHovered = hoveredId === zone.id
@@ -1153,10 +1184,9 @@ const ZoneItem = memo(function ZoneItem({ zone, isLast }: { zone: ZoneNode; isLa
     }
   }, [isSelected])
 
-  const area = calculatePolygonArea(zone.polygon).toFixed(1)
   const defaultName = t('sidebar.zoneFallback', {
-    fallback: 'Zone ({area}m²)',
-    params: { area },
+    fallback: 'Zone ({area})',
+    params: { area: formatAreaLabel(calculatePolygonArea(zone.polygon), unit) },
   })
 
   const handleClick = () => {
@@ -1325,11 +1355,22 @@ const MultiSelectionBadge = memo(function MultiSelectionBadge() {
 
 const ContentSection = memo(function ContentSection() {
   const selectedLevelId = useViewer((state) => state.selection.levelId)
+  const selectedIds = useViewer((state) => state.selection.selectedIds)
   const structureLayer = useEditor((state) => state.structureLayer)
   const phase = useEditor((state) => state.phase)
   const setPhase = useEditor((state) => state.setPhase)
   const setMode = useEditor((state) => state.setMode)
   const setTool = useEditor((state) => state.setTool)
+  const collections = useScene((state) => state.collections)
+  const createCollection = useScene((state) => state.createCollection)
+  const deleteCollection = useScene((state) => state.deleteCollection)
+  const updateCollection = useScene((state) => state.updateCollection)
+  const addToCollection = useScene((state) => state.addToCollection)
+  const removeFromCollection = useScene((state) => state.removeFromCollection)
+  const [newFolderName, setNewFolderName] = useState('')
+  const [expandedFolders, setExpandedFolders] = useState<Set<CollectionId>>(new Set())
+  const [renamingFolderId, setRenamingFolderId] = useState<CollectionId | null>(null)
+  const [renameFolderName, setRenameFolderName] = useState('')
 
   const level = useScene((s) =>
     selectedLevelId ? ((s.nodes[selectedLevelId] as LevelNode | undefined) ?? null) : null,
@@ -1350,6 +1391,58 @@ const ContentSection = memo(function ContentSection() {
       return lvl.children.filter((childId) => s.nodes[childId as AnyNodeId]?.type !== 'zone')
     }),
   )
+  const levelElementSet = new Set(elementChildren.map(String))
+  const folders = Object.values(collections).sort((a, b) => a.name.localeCompare(b.name))
+  const assignedElementIds = new Set<string>()
+  const selectedLevelElementIds = selectedIds.filter((id) => levelElementSet.has(String(id)))
+
+  for (const folder of folders) {
+    for (const nodeId of folder.nodeIds) {
+      if (levelElementSet.has(String(nodeId))) assignedElementIds.add(String(nodeId))
+    }
+  }
+
+  const unfiledElementChildren = elementChildren.filter((childId) => !assignedElementIds.has(String(childId)))
+
+  const createFolder = () => {
+    const name = newFolderName.trim()
+    if (!name) return
+    const initialIds = selectedLevelElementIds.map((id) => id as AnyNodeId)
+    const id = createCollection(name, initialIds)
+    setExpandedFolders((prev) => new Set(prev).add(id))
+    setNewFolderName('')
+  }
+
+  const toggleFolder = (folderId: CollectionId) => {
+    setExpandedFolders((prev) => {
+      const next = new Set(prev)
+      if (next.has(folderId)) {
+        next.delete(folderId)
+      } else {
+        next.add(folderId)
+      }
+      return next
+    })
+  }
+
+  const addSelectedToFolder = (folderId: CollectionId) => {
+    for (const nodeId of selectedLevelElementIds) {
+      addToCollection(folderId, nodeId as AnyNodeId)
+    }
+    setExpandedFolders((prev) => new Set(prev).add(folderId))
+  }
+
+  const startRenameFolder = (folderId: CollectionId, name: string) => {
+    setRenamingFolderId(folderId)
+    setRenameFolderName(name)
+  }
+
+  const finishRenameFolder = (folderId: CollectionId) => {
+    const name = renameFolderName.trim()
+    if (name) updateCollection(folderId, { name })
+    setRenamingFolderId(null)
+    setRenameFolderName('')
+  }
 
   if (!level) {
     return (
@@ -1396,10 +1489,158 @@ const ContentSection = memo(function ContentSection() {
   return (
     <TreeNodeDragProvider>
       <div className="flex flex-col">
-        {elementChildren.map((childId, index) => (
+        <div className="flex items-center gap-1.5 border-border/50 border-b bg-muted/10 px-3 py-2">
+          <FolderPlus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <input
+            className="min-w-0 flex-1 rounded border border-border/50 bg-background/60 px-2 py-1 text-xs outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring"
+            onChange={(event) => setNewFolderName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') createFolder()
+              if (event.key === 'Escape') setNewFolderName('')
+            }}
+            placeholder="新建文件夹"
+            value={newFolderName}
+          />
+          <button
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={!newFolderName.trim()}
+            onClick={createFolder}
+            title="新建文件夹"
+            type="button"
+          >
+            <Check className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        {folders.map((folder) => {
+          const folderNodeIds = folder.nodeIds.filter((nodeId) => levelElementSet.has(String(nodeId)))
+          const isExpanded = expandedFolders.has(folder.id)
+          const canAddSelected = selectedLevelElementIds.some(
+            (nodeId) => !folder.nodeIds.includes(nodeId as AnyNodeId),
+          )
+
+          return (
+            <div className="border-border/50 border-b" key={folder.id}>
+              <div className="group/folder flex h-8 items-center gap-1.5 px-3 text-muted-foreground text-sm transition-colors hover:bg-accent/30 hover:text-foreground">
+                <button
+                  className="flex h-4 w-4 shrink-0 items-center justify-center"
+                  onClick={() => toggleFolder(folder.id)}
+                  type="button"
+                >
+                  <motion.div
+                    animate={{ rotate: isExpanded ? 90 : 0 }}
+                    initial={false}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <ChevronDown className="h-3 w-3 -rotate-90" />
+                  </motion.div>
+                </button>
+                <Folder
+                  className="h-4 w-4 shrink-0"
+                  style={{ color: folder.color ?? undefined }}
+                />
+                {renamingFolderId === folder.id ? (
+                  <input
+                    autoFocus
+                    className="min-w-0 flex-1 rounded border border-border/50 bg-background/70 px-1.5 py-0.5 text-xs text-foreground outline-none focus:border-ring"
+                    onBlur={() => finishRenameFolder(folder.id)}
+                    onChange={(event) => setRenameFolderName(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') finishRenameFolder(folder.id)
+                      if (event.key === 'Escape') {
+                        setRenamingFolderId(null)
+                        setRenameFolderName('')
+                      }
+                    }}
+                    value={renameFolderName}
+                  />
+                ) : (
+                  <button
+                    className="min-w-0 flex-1 truncate text-left"
+                    onClick={() => toggleFolder(folder.id)}
+                    type="button"
+                  >
+                    {folder.name}
+                  </button>
+                )}
+                <span className="rounded bg-background/50 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  {folderNodeIds.length}
+                </span>
+                <button
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded opacity-0 transition-colors hover:bg-black/5 hover:text-foreground group-hover/folder:opacity-100 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-white/10"
+                  disabled={!canAddSelected}
+                  onClick={() => addSelectedToFolder(folder.id)}
+                  title="将选中项放入文件夹"
+                  type="button"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded opacity-0 transition-colors hover:bg-black/5 hover:text-foreground group-hover/folder:opacity-100 dark:hover:bg-white/10"
+                  onClick={() => startRenameFolder(folder.id, folder.name)}
+                  title="重命名文件夹"
+                  type="button"
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
+                <button
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded opacity-0 transition-colors hover:bg-destructive/10 hover:text-destructive group-hover/folder:opacity-100"
+                  onClick={() => deleteCollection(folder.id)}
+                  title="删除文件夹"
+                  type="button"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
+              <AnimatePresence initial={false}>
+                {isExpanded && (
+                  <motion.div
+                    animate={{ height: 'auto', opacity: 1 }}
+                    className="overflow-hidden"
+                    exit={{ height: 0, opacity: 0 }}
+                    initial={{ height: 0, opacity: 0 }}
+                    transition={{ type: 'spring', bounce: 0, duration: 0.3 }}
+                  >
+                    {folderNodeIds.length === 0 ? (
+                      <div className="border-border/50 border-t px-9 py-2 text-muted-foreground text-xs">
+                        选择结构对象后点击文件夹右侧的 + 放入这里
+                      </div>
+                    ) : (
+                      folderNodeIds.map((nodeId, index) => (
+                        <div className="group/member relative" key={`${folder.id}:${nodeId}`}>
+                          <TreeNode
+                            depth={1}
+                            isLast={index === folderNodeIds.length - 1}
+                            nodeId={nodeId as AnyNodeId}
+                          />
+                          <button
+                            className="absolute top-1 right-2 z-20 flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-colors hover:bg-destructive/10 hover:text-destructive group-hover/member:opacity-100"
+                            onClick={() => removeFromCollection(folder.id, nodeId as AnyNodeId)}
+                            title="从文件夹移除"
+                            type="button"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )
+        })}
+
+        {folders.length > 0 && unfiledElementChildren.length > 0 && (
+          <div className="border-border/50 border-b bg-muted/10 px-3 py-1.5 font-medium text-[11px] text-muted-foreground">
+            未归档
+          </div>
+        )}
+
+        {unfiledElementChildren.map((childId, index) => (
           <TreeNode
             depth={0}
-            isLast={index === elementChildren.length - 1}
+            isLast={index === unfiledElementChildren.length - 1}
             key={childId}
             nodeId={childId as AnyNodeId}
           />

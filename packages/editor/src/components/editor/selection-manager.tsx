@@ -2223,9 +2223,9 @@ const EditorOutlinerSync = () => {
   const previewSelectedIds = useViewer((s) => s.previewSelectedIds)
   const hoveredId = useViewer((s) => s.hoveredId)
   const outliner = useViewer((s) => s.outliner)
-  const nodes = useScene((s) => s.nodes)
 
   useEffect(() => {
+    const nodes = useScene.getState().nodes
     let idsToHighlight: string[] = []
 
     // 1. Determine what should be highlighted based on Phase
@@ -2282,7 +2282,7 @@ const EditorOutlinerSync = () => {
         if (obj?.parent) outliner.hoveredObjects.push(obj)
       }
     }
-  }, [phase, previewSelectedIds, selection, hoveredId, outliner, nodes])
+  }, [phase, previewSelectedIds, selection, hoveredId, outliner])
 
   return null
 }

@@ -1,3 +1,4 @@
+export type { EquipmentNodeDescriptor, EquipmentPort } from '../equipment'
 export type {
   ArcResizeHandle,
   Cursor,
@@ -14,6 +15,15 @@ export type {
   TapActionHandle,
   TranslateHandle,
 } from './handles'
+export {
+  INDUSTRIAL_RENDER_INSTANCING_HINTS,
+  INDUSTRIAL_RENDER_KERNELS,
+  INDUSTRIAL_RENDER_MATERIALS,
+  type IndustrialRenderContract,
+  type IndustrialRenderInstancingHint,
+  type IndustrialRenderKernel,
+  type IndustrialRenderMaterial,
+} from './industrial-render-vocabulary'
 export {
   bakePolicyOf,
   discoverPlugins,
@@ -32,13 +42,14 @@ export {
   setPluginDiscovery,
 } from './registry'
 export {
-  assertSemanticRecipeComposeResult,
-  assertSemanticRecipeDefinition,
-  registerSemanticRecipe,
-  semanticRecipeRegistry,
-  validateSemanticRecipeComposeResult,
-  validateSemanticRecipeDefinition,
-} from './semantic-recipes'
+  type CascadeContext,
+  type ChildQuery,
+  cascadeDirty,
+  collectDescendants,
+  getLinkedNodeIds,
+  type SpatialQuery,
+} from './relations-resolver'
+export { createSceneApi, type SceneStoreLike } from './scene-api'
 export type {
   SemanticRecipeComposeInput,
   SemanticRecipeComposeResult,
@@ -49,25 +60,26 @@ export type {
   SemanticRecipeEnvelope,
   SemanticRecipeId,
   SemanticRecipePart,
+  SemanticRecipePartGroup,
+  SemanticRecipePartGroupEditable,
   SemanticRecipePort,
   SemanticRecipePortSide,
   SemanticRecipeRegistry,
   SemanticRecipeValidationIssue,
 } from './semantic-recipes'
 export {
-  type CascadeContext,
-  type ChildQuery,
-  cascadeDirty,
-  collectDescendants,
-  type SpatialQuery,
-} from './relations-resolver'
-export { createSceneApi, type SceneStoreLike } from './scene-api'
-export type { EquipmentNodeDescriptor, EquipmentPort } from '../equipment'
+  assertSemanticRecipeComposeResult,
+  assertSemanticRecipeDefinition,
+  registerSemanticRecipe,
+  semanticRecipeRegistry,
+  validateSemanticRecipeComposeResult,
+  validateSemanticRecipeDefinition,
+} from './semantic-recipes'
 export type {
-  Affordance,
-  AnyNodeDefinition,
   ActionMenuLabel,
   ActionMenuPlacementRule,
+  Affordance,
+  AnyNodeDefinition,
   AssetRef,
   BakePolicy,
   BakeReplaceRenderer,
@@ -96,11 +108,11 @@ export type {
   McpOverrides,
   Modifiers,
   MovableConfig,
-  NodeCategory,
   NodeActionMenu,
+  NodeCategory,
   NodeDefinition,
-  NudgeDelta,
   NodeRegistry,
+  NudgeDelta,
   PanelWorkspace,
   ParametricDescriptor,
   ParamField,

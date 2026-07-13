@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { AnyNode, AnyNodeId } from '@pascal-app/core/schema'
 import {
   CeilingNode,
+  getActiveRoofHeight,
   LevelNode,
   RoofNode,
   RoofSegmentNode,
@@ -13,6 +14,7 @@ import {
 import { z } from 'zod'
 import type { SceneOperations } from '../operations'
 import { publishLiveSceneSnapshot } from './live-sync'
+import { measurement } from './measurement'
 import { NodeIdSchema, Vec2Schema, Vec3Schema } from './schemas'
 
 const ROOF_TYPES = ['hip', 'gable', 'shed', 'gambrel', 'dutch', 'mansard', 'flat'] as const
@@ -21,12 +23,20 @@ const RAILING_MODES = ['none', 'left', 'right', 'both'] as const
 export const createStoryShellInput = {
   levelId: NodeIdSchema,
   footprint: z.array(Vec2Schema).min(3),
-  wallHeight: z.number().positive().default(2.8),
-  wallThickness: z.number().positive().default(0.16),
+  wallHeight: measurement('length', 'm', { positive: true, description: 'Wall height.' }).default(
+    2.8,
+  ),
+  wallThickness: measurement('length', 'm', {
+    positive: true,
+    description: 'Wall thickness.',
+  }).default(0.16),
   createSlab: z.boolean().default(true),
   createCeiling: z.boolean().default(true),
-  slabElevation: z.number().default(0.1),
-  ceilingHeight: z.number().positive().optional(),
+  slabElevation: measurement('length', 'm', { description: 'Slab elevation.' }).default(0.1),
+  ceilingHeight: measurement('length', 'm', {
+    positive: true,
+    description: 'Ceiling height.',
+  }).optional(),
   namePrefix: z.string().optional(),
   wallMaterialPreset: z.string().optional(),
   slabMaterialPreset: z.string().optional(),
@@ -46,16 +56,25 @@ export const createRoofInput = {
   roofLevelId: NodeIdSchema.optional(),
   useDedicatedRoofLevel: z.boolean().default(true),
   roofLevelLabel: z.string().default('Roof'),
+  // A level ordinal (story index), not a length — kept numeric.
   roofLevelElevation: z.number().optional(),
-  roofLevelHeight: z.number().positive().optional(),
+  roofLevelHeight: measurement('length', 'm', {
+    positive: true,
+    description: 'Roof level height.',
+  }).optional(),
   center: Vec3Schema.optional(),
-  width: z.number().positive(),
-  depth: z.number().positive(),
+  width: measurement('length', 'm', { positive: true, description: 'Roof width.' }),
+  depth: measurement('length', 'm', { positive: true, description: 'Roof depth.' }),
   roofType: z.enum(ROOF_TYPES).default('hip'),
-  roofHeight: z.number().positive().default(1.8),
-  wallHeight: z.number().min(0).default(0.35),
-  wallThickness: z.number().positive().default(0.16),
-  overhang: z.number().min(0).default(0.45),
+  pitch: measurement('angle', 'deg', { min: 0, max: 85, description: 'Roof pitch.' }).default(35),
+  wallHeight: measurement('length', 'm', { min: 0, description: 'Knee-wall height.' }).default(
+    0.35,
+  ),
+  wallThickness: measurement('length', 'm', {
+    positive: true,
+    description: 'Wall thickness.',
+  }).default(0.16),
+  overhang: measurement('length', 'm', { min: 0, description: 'Eave overhang.' }).default(0.45),
   materialPreset: z.string().optional(),
   name: z.string().optional(),
 }
@@ -72,21 +91,33 @@ export const createStairBetweenLevelsInput = {
   fromLevelId: NodeIdSchema,
   toLevelId: NodeIdSchema,
   position: Vec3Schema,
-  rotation: z.number().default(0),
-  width: z.number().positive().default(1),
-  runLength: z.number().positive().default(3),
-  totalRise: z.number().positive().default(2.8),
+  rotation: measurement('angle', 'rad', { description: 'Y-axis rotation.' }).default(0),
+  width: measurement('length', 'm', { positive: true, description: 'Stair width.' }).default(1),
+  runLength: measurement('length', 'm', {
+    positive: true,
+    description: 'Horizontal run length.',
+  }).default(3),
+  totalRise: measurement('length', 'm', {
+    positive: true,
+    description: 'Total vertical rise.',
+  }).default(2.8),
   stepCount: z.number().int().positive().default(14),
   railingMode: z.enum(RAILING_MODES).default('both'),
   destinationSlabId: NodeIdSchema.optional(),
   sourceCeilingId: NodeIdSchema.optional(),
   createDestinationSlabOpening: z.boolean().default(true),
   createSourceCeilingOpening: z.boolean().default(true),
-  openingWidth: z.number().positive().optional(),
-  openingLength: z.number().positive().optional(),
-  openingOffset: z.number().min(0).default(0.15),
+  openingWidth: measurement('length', 'm', {
+    positive: true,
+    description: 'Floor opening width.',
+  }).optional(),
+  openingLength: measurement('length', 'm', {
+    positive: true,
+    description: 'Floor opening length.',
+  }).optional(),
+  openingOffset: measurement('length', 'm', { min: 0, description: 'Opening offset.' }).default(0),
   openingCenter: Vec2Schema.optional(),
-  openingRotation: z.number().optional(),
+  openingRotation: measurement('angle', 'rad', { description: 'Opening rotation.' }).optional(),
   materialPreset: z.string().optional(),
   name: z.string().optional(),
 }
@@ -313,13 +344,16 @@ export function registerConstructionTools(server: McpServer, bridge: SceneOperat
       width,
       depth,
       roofType,
-      roofHeight,
+      pitch,
       wallHeight,
       wallThickness,
       overhang,
       materialPreset,
       name,
     }) => {
+      // Peak height is derived from pitch + footprint + type; we still
+      // need it to size the auto-generated roof level container below.
+      const peakHeight = getActiveRoofHeight({ roofType, pitch, width, depth })
       const referenceLevel = assertNode(bridge, levelId, 'level')
       const patches: Array<{ op: 'create'; node: AnyNode; parentId: AnyNodeId }> = []
       let targetRoofLevelId = levelId as AnyNodeId
@@ -343,7 +377,7 @@ export function registerConstructionTools(server: McpServer, bridge: SceneOperat
             role: 'roof',
             label: roofLevelLabel,
             referenceLevelId: levelId,
-            height: roofLevelHeight ?? Math.max(wallHeight + roofHeight, 0.2),
+            height: roofLevelHeight ?? Math.max(wallHeight + peakHeight, 0.2),
           },
         })
         targetRoofLevelId = roofLevel.id as AnyNodeId
@@ -356,7 +390,7 @@ export function registerConstructionTools(server: McpServer, bridge: SceneOperat
         width,
         depth,
         wallHeight,
-        roofHeight,
+        pitch,
         wallThickness,
         overhang,
         ...(materialPreset ? { materialPreset } : {}),

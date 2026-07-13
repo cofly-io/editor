@@ -258,6 +258,10 @@ function routeElevation(input: {
   fromPort?: ProcessRoutePortEndpoint
   toPort?: ProcessRoutePortEndpoint
 }) {
+  const override = input.connection.render?.elevation
+  if (typeof override === 'number' && Number.isFinite(override) && override > 0) {
+    return rounded(override)
+  }
   if (input.connection.visualKind === 'cable_tray') return 2.4
   if (input.connection.visualKind === 'material_conveyor') return 1.05
   const fromHeight = input.fromPort?.height

@@ -1,5 +1,5 @@
-import type { Vec3 } from '@pascal-app/core/lib/primitive-compose'
 import type { EquipmentParamValue, SemanticRecipeEditableParam } from '@pascal-app/core'
+import type { Vec3 } from '@pascal-app/core/lib/primitive-compose'
 
 export type ProcessLineDomain =
   | 'chemical'
@@ -73,6 +73,10 @@ export type ProcessEquipmentContract = {
     | 'profile-parts'
   profileParts?: Record<string, unknown>[]
   primarySemanticRole?: string
+  generatorRef?: {
+    componentPack: string
+    generator: string
+  }
 }
 
 export type ProcessStationPlan = {
@@ -92,6 +96,21 @@ export type ProcessConnectionPlan = {
   visualKind: ProcessConnectionVisualKind
   fromPortId?: string
   toPortId?: string
+  render?: {
+    color?: string
+    diameter?: number
+    elevation?: number
+    supportStyle?: 'single_support' | 'pipe_rack' | 'belt_gallery'
+    supportSpacing?: number
+    supportWidth?: number
+    walkway?: boolean
+    enclosed?: boolean
+    insulationThickness?: number
+    valves?: boolean
+    expansionJoints?: boolean
+    galleryWidth?: number
+    galleryHeight?: number
+  }
 }
 
 export type ProcessLinePlan = {
@@ -107,6 +126,8 @@ export type ProcessLinePlan = {
     keyFocusStationIds?: string[]
     zoneDisplay?: 'subtle' | 'debug'
     omitPerimeterWalls?: boolean
+    omitCeiling?: boolean
+    omitRoof?: boolean
     stationPositionHints?: Record<
       string,
       {

@@ -1,20 +1,25 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { EquipmentParamValue } from '@pascal-app/core'
+import {
+  CENTRIFUGAL_PUMP_EDITABLE_PART_ROLES,
+  CENTRIFUGAL_PUMP_PROFILE_ID,
+  CENTRIFUGAL_PUMP_RECIPE_ID,
+  DISTILLATION_UNIT_RECIPE_ID,
+  REFINERY_AUXILIARY_UNIT_RECIPE_ID,
+  REFINERY_REACTOR_UNIT_RECIPE_ID,
+  STORAGE_TANK_EDITABLE_PART_ROLES,
+  STORAGE_TANK_RECIPE_ID,
+} from '@pascal-app/plugin-factory-equipment'
+import { loadAssetIndustryPackResourcesSync } from '../asset-industry-packs'
+import { installedAssetIndustryPackDirsSync } from '../asset-packs'
+import { enabledProfilePackDirsSync } from '../profile-packs'
 import type {
   ProcessEquipmentContract,
   ProcessEquipmentPort,
   ProcessLinePlan,
   ProcessStationPlan,
 } from './process-line-types'
-import {
-  CENTRIFUGAL_PUMP_EDITABLE_PART_ROLES,
-  CENTRIFUGAL_PUMP_PROFILE_ID,
-  CENTRIFUGAL_PUMP_RECIPE_ID,
-  STORAGE_TANK_EDITABLE_PART_ROLES,
-  STORAGE_TANK_RECIPE_ID,
-} from '@pascal-app/plugin-factory-equipment'
-import { enabledProfilePackDirsSync } from '../profile-packs'
 
 type EquipmentProfile = Omit<ProcessEquipmentContract, 'ports'> & {
   aliases: RegExp[]
@@ -74,7 +79,10 @@ function hasThermalPowerIntent(text: string) {
   )
 }
 
-function profilePackMatchesPlanIntent(profile: ProfilePackContract, plan: ProcessLinePlan | undefined) {
+function profilePackMatchesPlanIntent(
+  profile: ProfilePackContract,
+  plan: ProcessLinePlan | undefined,
+) {
   const text = processPlanText(plan)
   if (!text) return false
   const industry = profile.sourcePack.industry.toLowerCase()
@@ -87,14 +95,24 @@ function preferredProfilePackContract(
   profiles: ProfilePackContract[],
   identity: string,
 ): ProfilePackContract | undefined {
-  const thermalProfiles = profiles.filter((profile) => profile.sourcePack.industry === 'thermal-power')
+  const thermalProfiles = profiles.filter(
+    (profile) => profile.sourcePack.industry === 'thermal-power',
+  )
   if (!thermalProfiles.length) return undefined
   const findThermal = (localId: string) =>
     thermalProfiles.find((profile) => profile.id === `thermal_power.${localId}`)
-  if (/\u5f00\u5173\u7ad9|\u5347\u538b\u7ad9|\u9ad8\u538b\u5f00\u5173|\u51fa\u7ebf|switchyard|substation/i.test(identity)) {
+  if (
+    /\u5f00\u5173\u7ad9|\u5347\u538b\u7ad9|\u9ad8\u538b\u5f00\u5173|\u51fa\u7ebf|switchyard|substation/i.test(
+      identity,
+    )
+  ) {
     return findThermal('switchyard')
   }
-  if (/\u6c7d\u8f6e\u673a\u623f|\u6c7d\u673a\u623f|\u6c7d\u8f6e\u53d1\u7535\u673a|\u6c7d\u8f6e\u673a|\u53d1\u7535\u673a\u623f|\u53d1\u7535\u673a\u7ec4|turbine|turbo[_\s-]?generator/i.test(identity)) {
+  if (
+    /\u6c7d\u8f6e\u673a\u623f|\u6c7d\u673a\u623f|\u6c7d\u8f6e\u53d1\u7535\u673a|\u6c7d\u8f6e\u673a|\u53d1\u7535\u673a\u623f|\u53d1\u7535\u673a\u7ec4|turbine|turbo[_\s-]?generator/i.test(
+      identity,
+    )
+  ) {
     return findThermal('steam_turbine_generator')
   }
   if (/\u53d8\u538b\u5668|\u4e3b\u53d8|\u5347\u538b\u53d8|transformer/i.test(identity)) {
@@ -104,7 +122,11 @@ function preferredProfilePackContract(
 }
 
 function profilePackAliasCandidates(profiles: ProfilePackContract[], identity: string) {
-  if (!/mcc|motor[_\s-]?control|control[_\s-]?cabinet|\u7535\u63a7\u67dc|\u63a7\u5236\u67dc/i.test(identity)) {
+  if (
+    !/mcc|motor[_\s-]?control|control[_\s-]?cabinet|\u7535\u63a7\u67dc|\u63a7\u5236\u67dc/i.test(
+      identity,
+    )
+  ) {
     return profiles
   }
   return profiles.filter((profile) => !profile.id.endsWith('.control_room'))
@@ -154,7 +176,7 @@ function findRepoRootSync(start = process.cwd()) {
 
 function runtimeProfilePackDirs() {
   findRepoRootSync()
-  return enabledProfilePackDirsSync()
+  return [...installedAssetIndustryPackDirsSync(), ...enabledProfilePackDirsSync()]
 }
 
 function safeRelativePath(value: string) {
@@ -400,7 +422,12 @@ const CEMENT_CLINKER_PROFILES: EquipmentProfile[] = [
     ],
     preferredTool: 'compose_parts',
     preferredResolver: 'primitive',
-    requiredRoles: ['cooler_outer_casing', 'cooler_support_base', 'cooler_grate_bed', 'hot_clinker_inlet_transition'],
+    requiredRoles: [
+      'cooler_outer_casing',
+      'cooler_support_base',
+      'cooler_grate_bed',
+      'hot_clinker_inlet_transition',
+    ],
     ports: [
       { id: 'hot_clinker_in', medium: 'material', side: 'left', height: 1.65, offset: 0 },
       { id: 'cooled_clinker_out', medium: 'material', side: 'right', height: 0.45, offset: 0 },
@@ -676,7 +703,9 @@ const CEMENT_CLINKER_PROFILES: EquipmentProfile[] = [
     equipmentFamily: 'cement.whr_boiler',
     scaleClass: 'conceptual_industrial',
     envelope: { length: 3.8, width: 2.4, height: 5.2, origin: 'station_profile', tolerance: 0.1 },
-    aliases: [/sp[_\s-]?boiler|whr[_\s-]?boiler|waste[_\s-]?heat[_\s-]?recovery|\u7a91\u5c3e.*\u9505\u7089|SP.*\u9505\u7089/i],
+    aliases: [
+      /sp[_\s-]?boiler|whr[_\s-]?boiler|waste[_\s-]?heat[_\s-]?recovery|\u7a91\u5c3e.*\u9505\u7089|SP.*\u9505\u7089/i,
+    ],
     preferredTool: 'compose_parts',
     preferredResolver: 'primitive',
     requiredRoles: ['boiler_casing', 'tube_bank', 'hot_gas_in'],
@@ -690,7 +719,9 @@ const CEMENT_CLINKER_PROFILES: EquipmentProfile[] = [
     equipmentFamily: 'cement.aqc_boiler',
     scaleClass: 'conceptual_industrial',
     envelope: { length: 3.8, width: 2.4, height: 5.2, origin: 'station_profile', tolerance: 0.1 },
-    aliases: [/aqc[_\s-]?boiler|\u7a91\u5934.*\u9505\u7089|AQC.*\u9505\u7089|\u51b7\u5374\u673a.*\u9505\u7089/i],
+    aliases: [
+      /aqc[_\s-]?boiler|\u7a91\u5934.*\u9505\u7089|AQC.*\u9505\u7089|\u51b7\u5374\u673a.*\u9505\u7089/i,
+    ],
     preferredTool: 'compose_parts',
     preferredResolver: 'primitive',
     requiredRoles: ['boiler_casing', 'tube_bank', 'hot_gas_in'],
@@ -704,7 +735,9 @@ const CEMENT_CLINKER_PROFILES: EquipmentProfile[] = [
     equipmentFamily: 'cement.raw_coal_silo',
     scaleClass: 'conceptual_industrial',
     envelope: { length: 3.6, width: 3.6, height: 6.5, origin: 'station_profile', tolerance: 0.1 },
-    aliases: [/raw[_\s-]?coal[_\s-]?silo|coal[_\s-]?bin|coal[_\s-]?storage|\u539f\u7164\u4ed3|\u7164\u4ed3/i],
+    aliases: [
+      /raw[_\s-]?coal[_\s-]?silo|coal[_\s-]?bin|coal[_\s-]?storage|\u539f\u7164\u4ed3|\u7164\u4ed3/i,
+    ],
     preferredTool: 'compose_parts',
     preferredResolver: 'primitive',
     requiredRoles: ['silo_shell', 'silo_support_base', 'bottom_discharge_hopper'],
@@ -735,7 +768,9 @@ const CEMENT_CLINKER_PROFILES: EquipmentProfile[] = [
     equipmentFamily: 'cement.gypsum_hopper',
     scaleClass: 'conceptual_industrial',
     envelope: { length: 3.0, width: 2.4, height: 3.5, origin: 'station_profile', tolerance: 0.1 },
-    aliases: [/gypsum[_\s-]?hopper|gypsum[_\s-]?silo|gypsum[_\s-]?storage|\u77f3\u818f\u4ed3|\u77f3\u818f/i],
+    aliases: [
+      /gypsum[_\s-]?hopper|gypsum[_\s-]?silo|gypsum[_\s-]?storage|\u77f3\u818f\u4ed3|\u77f3\u818f/i,
+    ],
     preferredTool: 'compose_parts',
     preferredResolver: 'primitive',
     requiredRoles: ['hopper_shell', 'silo_support_base', 'gypsum_discharge_hopper'],
@@ -874,6 +909,7 @@ function materializeProfile(profile: EquipmentProfile): ProcessEquipmentContract
       ? { profileParts: profile.profileParts.map((part) => ({ ...part })) }
       : {}),
     ...(profile.primarySemanticRole ? { primarySemanticRole: profile.primarySemanticRole } : {}),
+    ...(profile.generatorRef ? { generatorRef: { ...profile.generatorRef } } : {}),
   }
 }
 
@@ -1044,6 +1080,63 @@ function normalizeProfilePackPort(raw: unknown): Omit<ProcessEquipmentPort, 'dir
   }
 }
 
+function inferPortMediumFromId(id: string): ProcessEquipmentPort['medium'] {
+  if (/hydrogen|h2/i.test(id)) return 'hydrogen'
+  if (/oxygen|o2/i.test(id)) return 'oxygen'
+  if (/water|steam|condensate/i.test(id)) return 'water'
+  if (/cool/i.test(id)) return 'cooling'
+  if (/power|electric/i.test(id)) return 'power'
+  if (/gas|vapor|vapour|flue|flare|relief|air/i.test(id)) return 'gas'
+  if (/molten/i.test(id)) return 'molten_metal'
+  return 'material'
+}
+
+function inferPortSideFromId(id: string, index: number): ProcessEquipmentPort['side'] {
+  if (/top|overhead|vapor|vapour|flue|stack|relief|vent/i.test(id)) return 'top'
+  if (/inlet|_in$|feed|suction|coldin|hotin|from/i.test(id)) return 'left'
+  if (/outlet|_out$|product|discharge|coldout|hotout|to|bottoms|drain/i.test(id)) return 'right'
+  return index % 2 === 0 ? 'left' : 'right'
+}
+
+function inferPortHeightFromId(
+  id: string,
+  side: ProcessEquipmentPort['side'],
+  envelope: { height: number },
+) {
+  if (side === 'top') return envelope.height * 0.92
+  if (/bottom|drain|liquid/i.test(id)) return Math.max(0.2, envelope.height * 0.22)
+  if (/overhead|vapor|vapour|flue|relief/i.test(id)) return envelope.height * 0.82
+  return Math.max(0.2, envelope.height * 0.5)
+}
+
+function normalizeProfilePackPorts(
+  raw: Record<string, unknown>,
+  envelope: { length: number; width: number; height: number },
+) {
+  if (Array.isArray(raw.processPorts)) {
+    return raw.processPorts
+      .map(normalizeProfilePackPort)
+      .filter((port): port is Omit<ProcessEquipmentPort, 'direction'> => Boolean(port))
+  }
+  if (!isRecord(raw.ports)) return []
+  return Object.entries(raw.ports).flatMap(([externalId, internalRole], index) => {
+    if (!externalId.trim()) return []
+    const internalId =
+      typeof internalRole === 'string' && internalRole.trim() ? internalRole.trim() : externalId
+    const id = externalId.trim()
+    const side = inferPortSideFromId(`${id} ${internalId}`, index)
+    return [
+      {
+        id,
+        medium: inferPortMediumFromId(`${id} ${internalId}`),
+        side,
+        height: inferPortHeightFromId(`${id} ${internalId}`, side, envelope),
+        offset: 0,
+      },
+    ]
+  })
+}
+
 function inferProfilePackPortMedium(role: string): ProcessEquipmentPort['medium'] {
   if (/air|gas|exhaust|dust|smoke|flue/i.test(role)) return 'gas'
   if (/cooling|coolant/i.test(role)) return 'cooling'
@@ -1106,6 +1199,139 @@ function preferredProfilePackResolver(raw: Record<string, unknown>, id: string) 
   return id.startsWith('cement.') ? 'primitive' : 'profile-parts'
 }
 
+function rawGeneratorRef(raw: Record<string, unknown>) {
+  const generatorRef = isRecord(raw.generatorRef) ? raw.generatorRef : undefined
+  const componentPack = stringValue(generatorRef?.componentPack)
+  const generator = stringValue(generatorRef?.generator)
+  return componentPack && generator ? { componentPack, generator } : undefined
+}
+
+function rawGeneratorId(raw: Record<string, unknown>) {
+  return rawGeneratorRef(raw)?.generator
+}
+
+function mappedRole(role: string | undefined) {
+  switch (role) {
+    case 'tank_shell':
+      return 'vessel_shell'
+    case 'service_ladder':
+    case 'external_spiral_ladder':
+      return 'access_ladder'
+    case 'exchanger_shell':
+      return 'heat_exchanger_shell'
+    case 'pump_casing':
+      return 'volute_casing'
+    case 'pump_motor':
+      return 'drive_motor'
+    case 'pump_skid':
+      return 'support_base'
+    case 'pipe_rack_frame':
+      return 'pipe_rack_support_frame'
+    default:
+      return role
+  }
+}
+
+function sanitizedEquipmentParams(raw: unknown): Record<string, EquipmentParamValue> | undefined {
+  if (!isRecord(raw)) return undefined
+  const params: Record<string, EquipmentParamValue> = {}
+  for (const [key, value] of Object.entries(raw)) {
+    if (isEquipmentParamValue(value)) params[key] = value
+  }
+  return params
+}
+
+function assetRecipeBinding(raw: Record<string, unknown>, id: string) {
+  const generator = rawGeneratorId(raw)
+  const params = sanitizedEquipmentParams(raw.params) ?? {}
+  const radius = positiveNumber(params.radius)
+  switch (generator) {
+    case 'tank.vertical':
+      return {
+        recipeId: STORAGE_TANK_RECIPE_ID,
+        recipeParams: {
+          ...params,
+          orientation: 'vertical',
+          ...(radius ? { diameter: radius * 2 } : {}),
+        },
+      }
+    case 'vessel.horizontal':
+      return {
+        recipeId: STORAGE_TANK_RECIPE_ID,
+        recipeParams: {
+          ...params,
+          orientation: 'horizontal',
+          materialState: params.materialState ?? 'liquid',
+          ...(radius ? { diameter: radius * 2 } : {}),
+        },
+      }
+    case 'tower.distillation':
+      return { recipeId: DISTILLATION_UNIT_RECIPE_ID, recipeParams: params }
+    case 'pump.centrifugal':
+      return { recipeId: CENTRIFUGAL_PUMP_RECIPE_ID, recipeParams: params }
+    case 'pipe-rack.standard':
+      return {
+        recipeId: REFINERY_AUXILIARY_UNIT_RECIPE_ID,
+        recipeParams: { ...params, variant: 'pipe-rack' },
+      }
+    case 'flare.stack':
+      return {
+        recipeId: REFINERY_AUXILIARY_UNIT_RECIPE_ID,
+        recipeParams: {
+          ...params,
+          variant: 'flare',
+          ...(params.height ? { stackHeight: params.height } : {}),
+        },
+      }
+    case 'boiler.utility':
+      return {
+        recipeId: REFINERY_AUXILIARY_UNIT_RECIPE_ID,
+        recipeParams: { ...params, variant: 'boiler' },
+      }
+    default:
+      if (/fluid_catalytic_cracking|hydrotreating|reformer|sulfur/i.test(id)) {
+        return { recipeId: REFINERY_REACTOR_UNIT_RECIPE_ID, recipeParams: params }
+      }
+      return { recipeParams: Object.keys(params).length ? params : undefined }
+  }
+}
+
+function assetProfileParts(raw: Record<string, unknown>): Record<string, unknown>[] | undefined {
+  const generator = rawGeneratorId(raw)
+  const primaryRole = mappedRole(stringValue(raw.primarySemanticRole))
+  switch (generator) {
+    case 'heat-exchanger.shell':
+      return [
+        { id: 'shell', kind: 'heat_exchanger', semanticRole: 'heat_exchanger_shell' },
+        { id: 'support', kind: 'skid_base', semanticRole: 'support_base', required: false },
+      ]
+    case 'heater.fired':
+      return [
+        { id: 'heater_body', kind: 'generic_body', semanticRole: primaryRole ?? 'fired_heater' },
+        { id: 'stack', kind: 'chimney_stack', semanticRole: 'heater_stack_stub', required: false },
+        { id: 'burners', kind: 'generic_panel', semanticRole: 'burner', required: false },
+      ]
+    case 'boiler.utility':
+      return [
+        { id: 'boiler_body', kind: 'generic_body', semanticRole: primaryRole ?? 'boiler_body' },
+        { id: 'steam_drum', kind: 'cylindrical_tank', semanticRole: 'steam_drum', required: false },
+        { id: 'stack', kind: 'chimney_stack', semanticRole: 'boiler_stack', required: false },
+        {
+          id: 'steam_header',
+          kind: 'pipe_manifold',
+          semanticRole: 'steam_header',
+          required: false,
+        },
+      ]
+    case 'pipe.run':
+      return [{ id: 'pipe', kind: 'pipe_run', semanticRole: 'pipe_segment' }]
+    case 'platform.stair':
+      return [{ id: 'platform', kind: 'platform_ladder', semanticRole: 'service_platform' }]
+    default:
+      return undefined
+  }
+}
+
 function normalizeProfilePackContract(
   raw: unknown,
   manifest: { id: string; version: string; industry: string },
@@ -1118,43 +1344,44 @@ function normalizeProfilePackContract(
   const height = positiveNumber(dimensions?.height)
   if (!id || !length || !width || !height) return null
   const name = stringValue(raw.name) ?? id
-  const ports = Array.isArray(raw.processPorts)
-    ? raw.processPorts
-        .map(normalizeProfilePackPort)
-        .filter((port): port is Omit<ProcessEquipmentPort, 'direction'> => Boolean(port))
-    : []
-  const requiredRoles = Array.isArray(raw.parts)
-    ? raw.parts
-        .filter(isRecord)
-        .flatMap((part) =>
-          part.required !== false && typeof part.semanticRole === 'string'
-            ? [part.semanticRole]
-            : [],
-        )
-    : undefined
-  const profileParts = Array.isArray(raw.parts)
+  const envelope = { length, width, height }
+  const ports = normalizeProfilePackPorts(raw, envelope)
+  const fallbackParts = assetProfileParts(raw)
+  const rawParts = Array.isArray(raw.parts)
     ? raw.parts.filter(isRecord).map((part) => ({ ...part }))
     : undefined
-  const inferredPorts = inferProfilePackPortsFromParts(profileParts, { length, width, height })
+  const requiredRolesFromParts = rawParts?.flatMap((part) =>
+    part.required !== false && typeof part.semanticRole === 'string'
+      ? [mappedRole(part.semanticRole) ?? part.semanticRole]
+      : [],
+  )
+  const requiredRolesFromQuality = Array.isArray(raw.qualityRequiredRoles)
+    ? raw.qualityRequiredRoles
+        .filter((role): role is string => typeof role === 'string' && role.trim().length > 0)
+        .map(mappedRole)
+        .filter((role): role is string => Boolean(role))
+    : []
+  const requiredRoles = [...(requiredRolesFromParts ?? []), ...requiredRolesFromQuality]
+  const profileParts = Array.isArray(raw.parts)
+    ? raw.parts.filter(isRecord).map((part) => ({ ...part }))
+    : fallbackParts
+  const inferredPorts = inferProfilePackPortsFromParts(profileParts, envelope)
   const mergedPorts = [
     ...ports,
     ...inferredPorts.filter((port) => !ports.some((existing) => existing.id === port.id)),
   ]
-  const primarySemanticRole = stringValue(raw.primarySemanticRole)
+  const primarySemanticRole = mappedRole(stringValue(raw.primarySemanticRole))
+  const assetBinding = assetRecipeBinding(raw, id)
+  const explicitRecipeParams = sanitizedEquipmentParams(raw.recipeParams)
   const recipeId =
     stringValue(raw.recipeId) ??
     stringValue(raw.equipmentRecipeId) ??
-    (stringValue(raw.preferredResolver) === 'profile-parts' && /tank|storage|vessel|separator/i.test(id)
+    assetBinding.recipeId ??
+    (stringValue(raw.preferredResolver) === 'profile-parts' &&
+    /tank|storage|vessel|separator/i.test(id)
       ? STORAGE_TANK_RECIPE_ID
       : undefined)
-  const recipeParams: Record<string, EquipmentParamValue> | undefined = isRecord(raw.recipeParams)
-    ? {}
-    : undefined
-  if (recipeParams && isRecord(raw.recipeParams)) {
-    for (const [key, value] of Object.entries(raw.recipeParams)) {
-      if (isEquipmentParamValue(value)) recipeParams[key] = value
-    }
-  }
+  const recipeParams = explicitRecipeParams ?? assetBinding.recipeParams
   return {
     id,
     label: name,
@@ -1163,9 +1390,7 @@ function normalizeProfilePackContract(
       stringValue(raw.archetypeFamily) ?? stringValue(raw.family) ?? id.replace(/\.[^.]+$/, ''),
     scaleClass: 'industry_profile',
     envelope: {
-      length,
-      width,
-      height,
+      ...envelope,
       origin: 'station_profile',
       tolerance: 0.12,
     },
@@ -1173,10 +1398,11 @@ function normalizeProfilePackContract(
     preferredTool: raw.preferredTool === 'compose_assembly' ? 'compose_assembly' : 'compose_parts',
     preferredResolver: preferredProfilePackResolver(raw, id),
     ...(recipeId ? { recipeId, recipeSource: 'industry-binding' as const } : {}),
-    ...(recipeParams ? { recipeParams } : {}),
-    ...(requiredRoles?.length ? { requiredRoles } : {}),
+    ...(recipeParams && Object.keys(recipeParams).length ? { recipeParams } : {}),
+    ...(requiredRoles.length ? { requiredRoles } : {}),
     ...(profileParts?.length ? { profileParts } : {}),
     ...(primarySemanticRole ? { primarySemanticRole } : {}),
+    ...(rawGeneratorRef(raw) ? { generatorRef: rawGeneratorRef(raw) } : {}),
     ports: mergedPorts,
     sourcePack: {
       id: manifest.id,
@@ -1188,7 +1414,18 @@ function normalizeProfilePackContract(
 
 function loadProfilePackContractsFromDir(dir: string): ProfilePackContract[] {
   const manifestPath = path.join(dir, 'pack.json')
-  if (!fs.existsSync(manifestPath)) return []
+  if (!fs.existsSync(manifestPath)) {
+    const resources = loadAssetIndustryPackResourcesSync(dir)
+    if (!resources) return []
+    return resources.profiles.flatMap((value) => {
+      const contract = normalizeProfilePackContract(value, {
+        id: resources.manifest.id,
+        version: resources.manifest.version,
+        industry: resources.manifest.industry,
+      })
+      return contract ? [contract] : []
+    })
+  }
   const manifest = readJson(manifestPath)
   if (!isRecord(manifest)) return []
   const profilePaths = stringArray(manifest.profiles)

@@ -102,26 +102,26 @@ export const ToolManager: React.FC = () => {
   const selectedIds = useViewer((state) => state.selection.selectedIds)
   const buildingId = useViewer((state) => state.selection.buildingId)
   const activeLevelId = useViewer((state) => state.selection.levelId)
+  const rendererHealth = useViewer((state) => state.rendererHealth)
   const setSelection = useViewer((state) => state.setSelection)
-  const nodes = useScene((state) => state.nodes)
 
   // Building transform for the local group — all building-relative tools live inside this group
   // so their cursor positions and committed data are naturally in building-local space.
-  const building = buildingId
-    ? (nodes[buildingId as AnyNodeId] as BuildingNode | undefined)
-    : undefined
+  const building = useScene((state) =>
+    buildingId ? (state.nodes[buildingId as AnyNodeId] as BuildingNode | undefined) : undefined,
+  )
   const buildingPosition = building?.position ?? [0, 0, 0]
   const buildingRotation = building?.rotation ?? [0, 0, 0]
 
   // Check if a slab is selected
-  const selectedSlabId = selectedIds.find((id) => nodes[id as AnyNodeId]?.type === 'slab') as
-    | SlabNode['id']
-    | undefined
+  const selectedSlabId = useScene((state) =>
+    selectedIds.find((id) => state.nodes[id as AnyNodeId]?.type === 'slab'),
+  ) as SlabNode['id'] | undefined
 
   // Check if a ceiling is selected
-  const selectedCeilingId = selectedIds.find((id) => nodes[id as AnyNodeId]?.type === 'ceiling') as
-    | CeilingNode['id']
-    | undefined
+  const selectedCeilingId = useScene((state) =>
+    selectedIds.find((id) => state.nodes[id as AnyNodeId]?.type === 'ceiling'),
+  ) as CeilingNode['id'] | undefined
 
   // Show site boundary editor when in site phase (toggle controls entry/exit)
   const showSiteBoundaryEditor = phase === 'site'
@@ -168,59 +168,63 @@ export const ToolManager: React.FC = () => {
   const useRegistryTool = RegistryToolComponent != null
 
   const BuildToolComponent = showBuildTool && !useRegistryTool ? tools[phase]?.[tool] : null
-  const endpointAffordanceMounts = ([
-    movingWallEndpoint && {
-      key: 'wall',
-      kind: movingWallEndpoint.wall.type,
-      props: { target: movingWallEndpoint },
-    },
-    movingFenceEndpoint && {
-      key: 'fence',
-      kind: movingFenceEndpoint.fence.type,
-      props: { target: movingFenceEndpoint },
-    },
-    movingPipeEndpoint && {
-      key: 'pipe',
-      kind: movingPipeEndpoint.pipe.type,
-      props: { target: movingPipeEndpoint },
-    },
-    movingCableTrayEndpoint && {
-      key: 'cable-tray',
-      kind: movingCableTrayEndpoint.cableTray.type,
-      props: { target: movingCableTrayEndpoint },
-    },
-    movingConveyorBeltEndpoint && {
-      key: 'conveyor-belt',
-      kind: movingConveyorBeltEndpoint.conveyorBelt.type,
-      props: { target: movingConveyorBeltEndpoint },
-    },
-    movingRoadEndpoint && {
-      key: 'road',
-      kind: movingRoadEndpoint.road.type,
-      props: { target: movingRoadEndpoint },
-    },
-    movingSteelBeamEndpoint && {
-      key: 'steel-beam',
-      kind: movingSteelBeamEndpoint.steelBeam.type,
-      props: { target: movingSteelBeamEndpoint },
-    },
-  ] as Array<AffordanceMount | null>).filter(isAffordanceMount)
-  const curveAffordanceMounts = ([
-    curvingWall && { key: 'wall', kind: curvingWall.type, props: { node: curvingWall } },
-    curvingFence && { key: 'fence', kind: curvingFence.type, props: { node: curvingFence } },
-    curvingPipe && { key: 'pipe', kind: curvingPipe.type, props: { node: curvingPipe } },
-    curvingCableTray && {
-      key: 'cable-tray',
-      kind: curvingCableTray.type,
-      props: { node: curvingCableTray },
-    },
-    curvingRoad && { key: 'road', kind: curvingRoad.type, props: { node: curvingRoad } },
-    curvingSteelBeam && {
-      key: 'steel-beam',
-      kind: curvingSteelBeam.type,
-      props: { node: curvingSteelBeam },
-    },
-  ] as Array<AffordanceMount | null>).filter(isAffordanceMount)
+  const endpointAffordanceMounts = (
+    [
+      movingWallEndpoint && {
+        key: 'wall',
+        kind: movingWallEndpoint.wall.type,
+        props: { target: movingWallEndpoint },
+      },
+      movingFenceEndpoint && {
+        key: 'fence',
+        kind: movingFenceEndpoint.fence.type,
+        props: { target: movingFenceEndpoint },
+      },
+      movingPipeEndpoint && {
+        key: 'pipe',
+        kind: movingPipeEndpoint.pipe.type,
+        props: { target: movingPipeEndpoint },
+      },
+      movingCableTrayEndpoint && {
+        key: 'cable-tray',
+        kind: movingCableTrayEndpoint.cableTray.type,
+        props: { target: movingCableTrayEndpoint },
+      },
+      movingConveyorBeltEndpoint && {
+        key: 'conveyor-belt',
+        kind: movingConveyorBeltEndpoint.conveyorBelt.type,
+        props: { target: movingConveyorBeltEndpoint },
+      },
+      movingRoadEndpoint && {
+        key: 'road',
+        kind: movingRoadEndpoint.road.type,
+        props: { target: movingRoadEndpoint },
+      },
+      movingSteelBeamEndpoint && {
+        key: 'steel-beam',
+        kind: movingSteelBeamEndpoint.steelBeam.type,
+        props: { target: movingSteelBeamEndpoint },
+      },
+    ] as Array<AffordanceMount | null>
+  ).filter(isAffordanceMount)
+  const curveAffordanceMounts = (
+    [
+      curvingWall && { key: 'wall', kind: curvingWall.type, props: { node: curvingWall } },
+      curvingFence && { key: 'fence', kind: curvingFence.type, props: { node: curvingFence } },
+      curvingPipe && { key: 'pipe', kind: curvingPipe.type, props: { node: curvingPipe } },
+      curvingCableTray && {
+        key: 'cable-tray',
+        kind: curvingCableTray.type,
+        props: { node: curvingCableTray },
+      },
+      curvingRoad && { key: 'road', kind: curvingRoad.type, props: { node: curvingRoad } },
+      curvingSteelBeam && {
+        key: 'steel-beam',
+        kind: curvingSteelBeam.type,
+        props: { node: curvingSteelBeam },
+      },
+    ] as Array<AffordanceMount | null>
+  ).filter(isAffordanceMount)
   const handlePlacedNodeSelected = (nodeId: AnyNodeId) => {
     setSelection({ selectedIds: [nodeId] })
   }
@@ -230,6 +234,8 @@ export const ToolManager: React.FC = () => {
   ) => {
     setSelection({ buildingId: elevatorBuildingId, selectedIds: [nodeId] })
   }
+
+  if (rendererHealth === 'lost') return null
 
   return (
     <>
@@ -247,40 +253,34 @@ export const ToolManager: React.FC = () => {
         rotation={buildingRotation as [number, number, number]}
       >
         {showZoneBoundaryEditor && selectedZoneId && <ZoneBoundaryEditor zoneId={selectedZoneId} />}
-        {showSlabBoundaryEditor &&
-          selectedSlabId && (
-            <RegistryAffordanceMount
-              affordance="boundary-edit"
-              kind="slab"
-              props={{ slabId: selectedSlabId }}
-            />
-          )}
-        {showSlabHoleEditor &&
-          selectedSlabId &&
-          editingHole && (
-            <RegistryAffordanceMount
-              affordance="hole-edit"
-              kind="slab"
-              props={{ holeIndex: editingHole.holeIndex, slabId: selectedSlabId }}
-            />
-          )}
-        {showCeilingBoundaryEditor &&
-          selectedCeilingId && (
-            <RegistryAffordanceMount
-              affordance="boundary-edit"
-              kind="ceiling"
-              props={{ ceilingId: selectedCeilingId }}
-            />
-          )}
-        {showCeilingHoleEditor &&
-          selectedCeilingId &&
-          editingHole && (
-            <RegistryAffordanceMount
-              affordance="hole-edit"
-              kind="ceiling"
-              props={{ ceilingId: selectedCeilingId, holeIndex: editingHole.holeIndex }}
-            />
-          )}
+        {showSlabBoundaryEditor && selectedSlabId && (
+          <RegistryAffordanceMount
+            affordance="boundary-edit"
+            kind="slab"
+            props={{ slabId: selectedSlabId }}
+          />
+        )}
+        {showSlabHoleEditor && selectedSlabId && editingHole && (
+          <RegistryAffordanceMount
+            affordance="hole-edit"
+            kind="slab"
+            props={{ holeIndex: editingHole.holeIndex, slabId: selectedSlabId }}
+          />
+        )}
+        {showCeilingBoundaryEditor && selectedCeilingId && (
+          <RegistryAffordanceMount
+            affordance="boundary-edit"
+            kind="ceiling"
+            props={{ ceilingId: selectedCeilingId }}
+          />
+        )}
+        {showCeilingHoleEditor && selectedCeilingId && editingHole && (
+          <RegistryAffordanceMount
+            affordance="hole-edit"
+            kind="ceiling"
+            props={{ ceilingId: selectedCeilingId, holeIndex: editingHole.holeIndex }}
+          />
+        )}
         {activeAffordance && (
           <RegistryAffordanceMount
             affordance={activeAffordance.affordance}

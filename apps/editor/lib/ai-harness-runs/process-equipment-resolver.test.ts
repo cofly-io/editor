@@ -552,9 +552,21 @@ describe('process equipment resolver', () => {
     })
     const semanticRoles = result.patches.map((patch) => patch.node.metadata?.semanticRole)
     expect(semanticRoles).toContain('vessel_shell')
+    expect(semanticRoles).toContain('vessel_roof')
+    expect(semanticRoles).toContain('tank_bottom')
+    expect(semanticRoles).toContain('top_rim')
+    expect(semanticRoles).toContain('foundation_ring')
     expect(semanticRoles).toContain('inlet_port')
     expect(semanticRoles).toContain('outlet_port')
-    expect(semanticRoles).toContain('access_ladder')
+    expect(semanticRoles).toContain('helical_ladder_tread')
+    expect(semanticRoles).toContain('helical_ladder_guard_rail')
+    const storageTankParts = result.patches.filter(
+      (patch) => patch.node.metadata?.sourcePartKind === 'storage_tank_shell',
+    )
+    expect(storageTankParts.length).toBeGreaterThanOrEqual(5)
+    expect(
+      result.patches.some((patch) => patch.node.name?.includes('flat storage tank roof')),
+    ).toBe(true)
     expect(result.patches[0]?.node.metadata?.catalogItemId).toBeUndefined()
   })
 
@@ -608,21 +620,21 @@ describe('process equipment resolver', () => {
     expect(semanticRoles).toContain('heat_exchanger_shell')
     expect(semanticRoles).toContain('fired_heater')
     expect(semanticRoles).toContain('side_draw_manifold')
+    expect(semanticRoles).toContain('upper_service_platform')
+    expect(semanticRoles).toContain('side_draw_nozzle')
+    expect(semanticRoles).toContain('crude_feed_inlet')
     expect(semanticRoles).toContain('helical_ladder_tread')
     expect(result.patches.map((patch) => patch.node.metadata?.sourcePartKind)).toContain(
       'helical_ladder',
+    )
+    expect(result.patches.map((patch) => patch.node.metadata?.sourcePartKind)).toContain(
+      'flanged_nozzle',
     )
     expect(
       result.patches[0]?.node.metadata?.equipmentAssembly?.editableParams.map(
         (param: { key: string }) => param.key,
       ),
-    ).toEqual([
-      'columnColor',
-      'columnOpacity',
-      'heaterColor',
-      'exchangerColor',
-      'manifoldColor',
-    ])
+    ).toEqual(['columnColor', 'columnOpacity', 'heaterColor', 'exchangerColor', 'manifoldColor'])
   })
 
   test('compiles refinery FCC profile through reactor semantic assembly recipe', () => {

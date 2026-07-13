@@ -1,6 +1,7 @@
 import { type LevelNode, useScene } from '@pascal-app/core'
 import { useMemo } from 'react'
 import * as THREE from 'three'
+import { useShallow } from 'zustand/react/shallow'
 import { unionPolygons } from '../../lib/polygon-union'
 import { getSceneTheme } from '../../lib/scene-themes'
 import useViewer from '../../store/use-viewer'
@@ -8,7 +9,11 @@ import useViewer from '../../store/use-viewer'
 export const GroundOccluder = () => {
   const bgColor = useViewer((state) => getSceneTheme(state.sceneTheme).ground)
 
-  const nodes = useScene((state) => state.nodes)
+  const groundNodes = useScene(
+    useShallow((state) =>
+      Object.values(state.nodes).filter((node) => node.type === 'level' || node.type === 'slab'),
+    ),
+  )
 
   const shape = useMemo(() => {
     const s = new THREE.Shape()
@@ -23,7 +28,7 @@ export const GroundOccluder = () => {
     const levelIndexById = new Map<LevelNode['id'], number>()
     let lowestLevelIndex = Number.POSITIVE_INFINITY
 
-    Object.values(nodes).forEach((node) => {
+    groundNodes.forEach((node) => {
       if (node.type !== 'level') {
         return
       }
@@ -37,7 +42,7 @@ export const GroundOccluder = () => {
     // reveal their footprint on the level-zero ground material.
     const polygons: [number, number][][] = []
 
-    Object.values(nodes).forEach((node) => {
+    groundNodes.forEach((node) => {
       if (
         !(
           node.type === 'slab' &&
@@ -78,7 +83,7 @@ export const GroundOccluder = () => {
     }
 
     return s
-  }, [nodes])
+  }, [groundNodes])
 
   return (
     <mesh position-y={-0.05} rotation-x={-Math.PI / 2}>

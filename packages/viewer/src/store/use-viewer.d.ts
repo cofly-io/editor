@@ -1,6 +1,7 @@
 import type { AnyNode, BaseNode, BuildingNode, LevelNode, ZoneNode } from '@pascal-app/core'
 import type { Object3D } from 'three'
 export type HoverHighlightIntent = 'default' | 'danger' | 'accent' | 'blocked'
+export type RendererHealth = 'healthy' | 'degraded' | 'lost'
 
 type SelectionPath = {
   buildingId: BuildingNode['id'] | null
@@ -34,11 +35,18 @@ type ViewerState = {
   setShowZoneLabels: (show: boolean) => void
   showGrid: boolean
   setShowGrid: (show: boolean) => void
+  showSelectionHints: boolean
+  setShowSelectionHints: (show: boolean) => void
   setSelection: (updates: Partial<SelectionPath>) => void
   resetSelection: () => void
   outliner: Outliner
   exportScene: ((format?: 'glb' | 'stl' | 'obj') => Promise<void>) | null
   setExportScene: (fn: ((format?: 'glb' | 'stl' | 'obj') => Promise<void>) | null) => void
+  sceneComplexity: import('../lib/scene-complexity').SceneComplexityBudget
+  setSceneComplexity: (complexity: import('../lib/scene-complexity').SceneComplexityBudget) => void
+  rendererHealth: RendererHealth
+  rendererHealthMessage: string | null
+  setRendererHealth: (health: RendererHealth, message?: string | null) => void
 }
 declare const useViewer: import('zustand').UseBoundStore<import('zustand').StoreApi<ViewerState>>
 export default useViewer

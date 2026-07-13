@@ -1,6 +1,7 @@
 import { findCatalogItem, searchCatalogItems } from '@pascal-app/core/lib/asset-catalog'
 import { callConfiguredAi } from '@/lib/ai-provider'
 import { buildFactoryAgentSystemPrompt } from './factory-agent-prompt'
+import { loadCloudIndustryProcessTemplates } from './industry-factory-knowledge'
 import type {
   ProcessConnectionMedium,
   ProcessConnectionPlan,
@@ -13,8 +14,8 @@ import type {
 import {
   allProcessTemplates,
   buildProcessLinePlanFromTemplate,
-  matchUnavailableProcessTemplate,
   matchProcessTemplate,
+  matchUnavailableProcessTemplate,
 } from './process-template-registry'
 
 export type FactoryPlan =
@@ -452,6 +453,71 @@ function inferLayoutStoryMetadata(
   }
 }
 
+const INDUSTRY_PACK_INTENTS = [
+  {
+    packId: 'industry.discrete-manufacturing.basic',
+    version: '0.1.0',
+    processId: 'discrete_manufacturing_flexible_workshop',
+    displayLabel: '\u6c7d\u8f66\u52a0\u5de5/\u79bb\u6563\u5236\u9020\u67d4\u6027\u8f66\u95f4',
+    patterns: [
+      /\u6c7d\u8f66.*(?:\u52a0\u5de5|\u5236\u9020|\u603b\u88c5|\u88c5\u914d|\u5de5\u5382|\u8f66\u95f4|\u4ea7\u7ebf|\u751f\u4ea7\u7ebf)/,
+      /(?:\u52a0\u5de5|\u5236\u9020|\u603b\u88c5|\u88c5\u914d).*\u6c7d\u8f66.*(?:\u5de5\u5382|\u8f66\u95f4|\u4ea7\u7ebf|\u751f\u4ea7\u7ebf)?/,
+      /\b(?:automotive|vehicle|car)\b.*\b(?:factory|plant|workshop|assembly|manufacturing|processing|production\s+line)\b/i,
+      /\b(?:factory|plant|workshop|assembly|manufacturing|processing|production\s+line)\b.*\b(?:automotive|vehicle|car)\b/i,
+    ],
+  },
+  {
+    packId: 'industry.pcb-fabrication.basic',
+    version: '0.1.0',
+    processId: 'pcb_fabrication_factory',
+    displayLabel: 'PCB\u7535\u8def\u677f\u5236\u4f5c\u5382',
+    patterns: [
+      /(?:PCB|pcb|\u7535\u8def\u677f|\u5370\u5236\u7535\u8def\u677f).*(?:\u5236\u4f5c|\u5236\u9020|\u52a0\u5de5|\u751f\u4ea7|\u5de5\u5382|\u8f66\u95f4|\u4ea7\u7ebf|\u751f\u4ea7\u7ebf)/,
+      /(?:\u5236\u4f5c|\u5236\u9020|\u52a0\u5de5|\u751f\u4ea7).*(?:PCB|pcb|\u7535\u8def\u677f|\u5370\u5236\u7535\u8def\u677f).*(?:\u5de5\u5382|\u8f66\u95f4|\u4ea7\u7ebf|\u751f\u4ea7\u7ebf)?/,
+      /\b(?:pcb|printed\s+circuit\s+board|circuit\s+board)\b.*\b(?:factory|plant|workshop|fabrication|manufacturing|production\s+line)\b/i,
+      /\b(?:factory|plant|workshop|fabrication|manufacturing|production\s+line)\b.*\b(?:pcb|printed\s+circuit\s+board|circuit\s+board)\b/i,
+    ],
+  },
+] as const
+function matchIndustryPackIntent(prompt: string) {
+  return INDUSTRY_PACK_INTENTS.find((intent) =>
+    intent.patterns.some((pattern) => pattern.test(prompt)),
+  )
+}
+
+function industryIntentPlan(prompt: string): FactoryPlan | undefined {
+  const intent = matchIndustryPackIntent(prompt)
+  if (!intent) return undefined
+  const installedTemplates = allProcessTemplates()
+  const template =
+    installedTemplates.find(
+      (candidate) =>
+        candidate.processId === intent.processId || candidate.sourcePack?.id === intent.packId,
+    ) ??
+    loadCloudIndustryProcessTemplates().find(
+      (candidate) =>
+        candidate.processId === intent.processId || candidate.sourcePack?.id === intent.packId,
+    )
+  if (template && installedTemplates.includes(template)) {
+    return {
+      kind: 'process_line',
+      reason: 'Request matches an installed industry process template.',
+      process: buildProcessLinePlanFromTemplate(template, prompt),
+    }
+  }
+  const sourcePack = template?.sourcePack ?? {
+    id: intent.packId,
+    version: intent.version,
+    industry: 'discrete-manufacturing',
+  }
+  return {
+    kind: 'missing',
+    reason:
+      'Request needs an industry process template, but the required industry pack is not installed or enabled locally.',
+    missingName: `${template?.processDisplayLabel ?? intent.displayLabel} (${sourcePack.id}@${sourcePack.version})`,
+  }
+}
+
 export function fallbackFactoryPlan(prompt: string): FactoryPlan {
   const normalized = prompt.trim()
   const processTemplate = matchProcessTemplate(normalized)
@@ -472,6 +538,8 @@ export function fallbackFactoryPlan(prompt: string): FactoryPlan {
       missingName: `${unavailableTemplate.processDisplayLabel ?? unavailableTemplate.processLabel} (${unavailableTemplate.sourcePack.id}@${unavailableTemplate.sourcePack.version})`,
     }
   }
+  const industryIntent = industryIntentPlan(normalized)
+  if (industryIntent) return industryIntent
   const type = inferLayoutType(normalized)
   const isProductionLine = type === 'production_line'
   const catalogMatches = searchCatalogItems({ query: normalized }).slice(0, 1)

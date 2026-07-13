@@ -18,7 +18,7 @@ import { furnishTools, getFurnishToolLabel } from '../../../action-menu/furnish-
 import { CATALOG_ITEMS } from '../../../item-catalog/catalog-items'
 import { ItemCatalog } from '../../../item-catalog/item-catalog'
 
-const PLACEMENT_TAGS = new Set(['floor', 'wall', 'ceiling', 'countertop'])
+const VISIBLE_PLACEMENT_FILTER_TAGS = ['ceiling', 'wall', 'floor'] as const
 const IMPORTED_ASSETS_UPDATED_EVENT = 'imported-assets:updated'
 
 type GlbImportInspection = {
@@ -126,7 +126,6 @@ export function ItemsPanel({
   const setSelectedItem = useEditor((s) => s.setSelectedItem)
 
   const [activePlacementTag, setActivePlacementTag] = useState<string | null>(null)
-  const [activeFunctionalTag, setActiveFunctionalTag] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [generatedItems, setGeneratedItems] = useState<AssetInput[]>([])
   const [generatedGeometryArtifacts, setGeneratedGeometryArtifacts] = useState<GeneratedGeometryArtifact[]>([])
@@ -185,7 +184,6 @@ export function ItemsPanel({
       setSelectedItem(data.asset)
       setCatalogCategory('mine')
       setActivePlacementTag(null)
-      setActiveFunctionalTag(null)
       setSearch('')
       setTool('item')
       if (mode !== 'build') setMode('build')
@@ -297,7 +295,6 @@ export function ItemsPanel({
     setCatalogCategory(categoryId)
     setTool('item')
     setActivePlacementTag(null)
-    setActiveFunctionalTag(null)
     setSearch('')
     if (mode !== 'build') setMode('build')
   }
@@ -313,24 +310,14 @@ export function ItemsPanel({
     ? generatedGeometryArtifacts.filter((artifact) => matchesGeneratedGeometrySearch(artifact, search))
     : []
 
-  const allTags = Array.from(new Set(categoryItems.flatMap((item) => item.tags ?? [])))
-  const placementTags = allTags.filter((t) => PLACEMENT_TAGS.has(t))
-  const functionalTags = allTags.filter((t) => !PLACEMENT_TAGS.has(t))
-  const hasFilters = allTags.length > 1
+  const allTags = new Set(categoryItems.flatMap((item) => item.tags ?? []))
+  const placementTags = VISIBLE_PLACEMENT_FILTER_TAGS.filter((tag) => allTags.has(tag))
+  const hasFilters = placementTags.length > 0
 
   const placementCount = (tag: string | null) =>
     categoryItems.filter((item) => {
       const tags = item.tags ?? []
       if (tag !== null && !tags.includes(tag)) return false
-      if (activeFunctionalTag && !tags.includes(activeFunctionalTag)) return false
-      return true
-    }).length
-
-  const functionalCount = (tag: string) =>
-    categoryItems.filter((item) => {
-      const tags = item.tags ?? []
-      if (!tags.includes(tag)) return false
-      if (activePlacementTag && !tags.includes(activePlacementTag)) return false
       return true
     }).length
 
@@ -405,18 +392,6 @@ export function ItemsPanel({
           <div className="flex flex-col gap-1.5">
             {placementTags.length > 0 && (
               <div className="flex flex-wrap gap-1">
-                <button
-                  className={cn(
-                    'cursor-pointer rounded-md px-2 py-0.5 font-medium text-xs transition-colors',
-                    activePlacementTag === null
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-blue-950/50 text-blue-300 hover:bg-blue-900/60 hover:text-blue-200',
-                  )}
-                  onClick={() => setActivePlacementTag(null)}
-                  type="button"
-                >
-                  {t('sidebar.all', 'All')}
-                </button>
                 {placementTags.map((tag) => {
                   const count = placementCount(tag)
                   const isActive = activePlacementTag === tag
@@ -445,46 +420,6 @@ export function ItemsPanel({
                             : isEmpty
                               ? 'text-zinc-600'
                               : 'text-blue-500/70',
-                        )}
-                      >
-                        {count}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-
-            {functionalTags.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {functionalTags.map((tag) => {
-                  const count = functionalCount(tag)
-                  const isActive = activeFunctionalTag === tag
-                  const isEmpty = count === 0 && !isActive
-                  return (
-                    <button
-                      className={cn(
-                        'inline-flex cursor-pointer items-center gap-1 rounded-md py-0.5 pr-1.5 pl-2 font-medium text-xs capitalize transition-colors',
-                        isActive
-                          ? 'bg-violet-500 text-white'
-                          : isEmpty
-                            ? 'cursor-not-allowed bg-zinc-800 text-zinc-500'
-                            : 'bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground',
-                      )}
-                      disabled={isEmpty}
-                      key={tag}
-                      onClick={() => setActiveFunctionalTag(isActive ? null : tag)}
-                      type="button"
-                    >
-                      {tag}
-                      <span
-                        className={cn(
-                          'text-[10px]',
-                          isActive
-                            ? 'text-violet-200'
-                            : isEmpty
-                              ? 'text-zinc-600'
-                              : 'text-zinc-500/70',
                         )}
                       >
                         {count}
@@ -534,7 +469,7 @@ export function ItemsPanel({
               </div>
             ) : null}
             <ItemCatalog
-              activeFunctionalTag={!isMineCategory && isServerSearch ? null : activeFunctionalTag}
+              activeFunctionalTag={null}
               activePlacementTag={!isMineCategory && isServerSearch ? null : activePlacementTag}
               category={activeCategory.catalogCategory}
               emptyState={aiGeometryArtifacts.length > 0 ? undefined : emptyState}

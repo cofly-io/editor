@@ -198,6 +198,7 @@ export interface PrimitiveShapeInput {
   sourcePartKind?: string
   sourcePartId?: string
   editableHints?: PrimitiveEditableHints
+  renderContract?: unknown
   industrialArchetype?: string
   industrialVariant?: string
   position?: Vec3

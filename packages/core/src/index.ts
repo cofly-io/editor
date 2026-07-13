@@ -91,6 +91,8 @@ export {
   type SemanticRecipeEnvelope,
   type SemanticRecipeId,
   type SemanticRecipePart,
+  type SemanticRecipePartGroup,
+  type SemanticRecipePartGroupEditable,
   type SemanticRecipePort,
   type SemanticRecipePortSide,
   type SemanticRecipeRegistry,

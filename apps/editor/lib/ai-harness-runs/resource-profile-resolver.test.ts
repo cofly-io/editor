@@ -41,4 +41,52 @@ describe('resource-profile-resolver', () => {
       reason: 'explicit profile id',
     })
   })
+
+  test('returns multiple distillation candidates for a generic tower request', () => {
+    const profiles = [
+      profile('refinery.atmospheric_distillation_unit', 'Atmospheric distillation unit', [
+        '\u5e38\u538b\u84b8\u998f\u5854',
+        'atmospheric distillation unit',
+      ]),
+      profile('refinery.vacuum_distillation_unit', 'Vacuum distillation unit', [
+        '\u51cf\u538b\u84b8\u998f\u5854',
+        'vacuum distillation unit',
+      ]),
+    ]
+
+    const resolution = resolveProfileResourceCandidates(
+      '\u751f\u6210\u4e00\u4e2a\u84b8\u998f\u5854',
+      profiles,
+    )
+
+    expect(resolution.selectedProfile).toBeUndefined()
+    expect(resolution.candidates.map((candidate) => candidate.profile.id)).toEqual([
+      'refinery.atmospheric_distillation_unit',
+      'refinery.vacuum_distillation_unit',
+    ])
+  })
+
+  test('selects a specific distillation profile when the prompt names its alias', () => {
+    const profiles = [
+      profile('refinery.atmospheric_distillation_unit', 'Atmospheric distillation unit', [
+        '\u5e38\u538b\u84b8\u998f\u5854',
+        'atmospheric distillation unit',
+      ]),
+      profile('refinery.vacuum_distillation_unit', 'Vacuum distillation unit', [
+        '\u51cf\u538b\u84b8\u998f\u5854',
+        'vacuum distillation unit',
+      ]),
+    ]
+
+    const resolution = resolveProfileResourceCandidates(
+      '\u751f\u6210\u4e00\u4e2a\u5e38\u538b\u84b8\u998f\u5854',
+      profiles,
+    )
+
+    expect(resolution.selectedProfile?.id).toBe('refinery.atmospheric_distillation_unit')
+    expect(resolution.selectedCandidate).toMatchObject({
+      matchedLabel: '\u5e38\u538b\u84b8\u998f\u5854',
+      matchKind: 'alias',
+    })
+  })
 })

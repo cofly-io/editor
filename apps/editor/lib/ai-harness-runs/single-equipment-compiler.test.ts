@@ -23,6 +23,13 @@ describe('single equipment compiler', () => {
             kind: 'semantic-assembly',
             profileId: 'generic.centrifugal_pump',
             recipeId: 'factory:centrifugal-pump',
+            renderContracts: {
+              kernels: expect.objectContaining({
+                'volute-pump-casing': 1,
+                'ribbed-motor': 1,
+                'skid-mounted-pump': 1,
+              }),
+            },
             editableParams: expect.arrayContaining([
               expect.objectContaining({ key: 'casingColor' }),
               expect.objectContaining({ key: 'motorColor' }),
@@ -44,11 +51,17 @@ describe('single equipment compiler', () => {
     expect(result.patchPlan.patches.map((patch) => patch.node.metadata?.semanticRole)).toEqual(
       expect.arrayContaining(['support_base', 'drive_motor', 'volute_casing']),
     )
+    expect(
+      result.patchPlan.patches.find(
+        (patch) => patch.node.metadata?.semanticRole === 'volute_casing',
+      )?.node.metadata?.renderContract,
+    ).toMatchObject({ kernel: 'volute-pump-casing', material: 'painted-metal' })
   })
 
   test('compiles a storage tank prompt to a recipe semantic assembly with liquid volume', () => {
     const result = compileSingleEquipmentPrompt({
-      prompt: '\u751f\u6210\u4e00\u4e2a\u539f\u6cb9\u50a8\u7f50\uff0c\u6db2\u4f4d82%\uff0c\u58f3\u4f53\u534a\u900f\u660e',
+      prompt:
+        '\u751f\u6210\u4e00\u4e2a\u539f\u6cb9\u50a8\u7f50\uff0c\u6db2\u4f4d82%\uff0c\u58f3\u4f53\u534a\u900f\u660e',
       placement: { parentId: 'level_factory', generatedBy: 'factory-agent' },
     })
 
@@ -73,6 +86,14 @@ describe('single equipment compiler', () => {
             kind: 'semantic-assembly',
             profileId: 'generic.vertical_tank',
             recipeId: 'factory:storage-tank',
+            renderContracts: {
+              kernels: expect.objectContaining({
+                'painted-cylindrical-shell': 1,
+                'translucent-fill-volume': 1,
+                'liquid-surface': 1,
+              }),
+              runtimeEffects: ['tank-liquid-wave'],
+            },
             params: {
               liquidLevel: 0.82,
               shellOpacity: 0.34,
@@ -82,6 +103,12 @@ describe('single equipment compiler', () => {
               expect.objectContaining({ key: 'shellOpacity' }),
               expect.objectContaining({ key: 'liquidOpacity' }),
               expect.objectContaining({ key: 'liquidColor' }),
+            ]),
+            partGroups: expect.arrayContaining([
+              expect.objectContaining({ id: 'shell' }),
+              expect.objectContaining({ id: 'liquid' }),
+              expect.objectContaining({ id: 'access_stair' }),
+              expect.objectContaining({ id: 'ports' }),
             ]),
           },
           equipmentContract: {
@@ -95,9 +122,10 @@ describe('single equipment compiler', () => {
       expect.arrayContaining([
         'vessel_shell',
         'liquid_volume',
+        'liquid_surface',
         'inlet_port',
         'outlet_port',
-        'access_ladder',
+        'helical_ladder_tread',
       ]),
     )
     const liquidPatch = result.patchPlan.patches.find(
@@ -110,6 +138,28 @@ describe('single equipment compiler', () => {
           transparent: true,
         },
       },
+    })
+    expect(liquidPatch?.node.metadata).toMatchObject({
+      equipmentRootId: result.patchPlan.rootNode?.id,
+      partGroupId: 'liquid',
+      renderContract: {
+        kernel: 'translucent-fill-volume',
+        material: 'translucent-liquid',
+      },
+    })
+    const liquidSurfacePatch = result.patchPlan.patches.find(
+      (patch) => patch.node.metadata?.semanticRole === 'liquid_surface',
+    )
+    expect(liquidSurfacePatch?.node.metadata?.renderContract).toMatchObject({
+      kernel: 'liquid-surface',
+      runtimeEffects: ['tank-liquid-wave'],
+    })
+    const accessPatch = result.patchPlan.patches.find(
+      (patch) => patch.node.metadata?.sourcePartKind === 'helical_ladder',
+    )
+    expect(accessPatch?.node.metadata).toMatchObject({
+      equipmentRootId: result.patchPlan.rootNode?.id,
+      partGroupId: 'access_stair',
     })
   })
 
@@ -127,7 +177,8 @@ describe('single equipment compiler', () => {
 
   test('updates selected factory equipment parameters instead of creating a replacement', () => {
     const result = compileSingleEquipmentPrompt({
-      prompt: '\u628a\u8fd9\u4e2a\u79bb\u5fc3\u6cf5\u6539\u6210 3 \u7c73\u957f\u7684\u7ea2\u8272\u8ba1\u91cf\u6cf5',
+      prompt:
+        '\u628a\u8fd9\u4e2a\u79bb\u5fc3\u6cf5\u6539\u6210 3 \u7c73\u957f\u7684\u7ea2\u8272\u8ba1\u91cf\u6cf5',
       placement: { generatedBy: 'factory-agent' },
       context: {
         selection: {

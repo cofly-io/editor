@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { resolveArticraftMaxTurns } from '@/lib/ai-harness-runs/articraft-turn-budget'
-import { createRun, listRecentRuns } from '@/lib/ai-harness-runs/run-store'
+import { createRun, isTerminalStatus, listRecentRuns } from '@/lib/ai-harness-runs/run-store'
 import type { AiHarnessRun, AiHarnessRunMode } from '@/lib/ai-harness-runs/types'
+import { parseJsonRequestBody } from '@/lib/request-json'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -10,25 +11,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function decodeJsonBody(bytes: ArrayBuffer) {
-  const decoders = [
-    new TextDecoder('utf-8', { fatal: true }),
-    new TextDecoder('gb18030', { fatal: true }),
-  ]
-
-  for (const decoder of decoders) {
-    try {
-      return decoder.decode(bytes)
-    } catch {
-      // Try the next likely JSON body encoding.
-    }
-  }
-
-  return new TextDecoder().decode(bytes)
+function clientRunId(value: unknown) {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  if (!/^run_[A-Za-z0-9._-]{1,96}$/.test(trimmed)) return undefined
+  return trimmed
 }
 
 export async function parseAiHarnessRunRequestBody(request: Request): Promise<unknown> {
-  return JSON.parse(decodeJsonBody(await request.arrayBuffer()))
+  return parseJsonRequestBody(request)
 }
 
 async function ensureRunRunning(run: AiHarnessRun) {
@@ -60,7 +51,9 @@ export async function POST(request: Request) {
   }
 
   const mode = body.mode
-  if (!(mode === 'articraft' || mode === 'image-to-3d' || mode === 'primitive' || mode === 'factory')) {
+  if (
+    !(mode === 'articraft' || mode === 'image-to-3d' || mode === 'primitive' || mode === 'factory')
+  ) {
     return NextResponse.json({ error: 'Unsupported run mode' }, { status: 400 })
   }
 
@@ -79,20 +72,22 @@ export async function POST(request: Request) {
 
   try {
     const run = await createRun({
+      id: clientRunId(body.runId),
       conversationId: typeof body.conversationId === 'string' ? body.conversationId : 'default',
+      sceneId:
+        typeof body.sceneId === 'string' && body.sceneId.trim() ? body.sceneId.trim() : undefined,
       mode: mode as AiHarnessRunMode,
       prompt: prompt || 'Generate a 3D model from the reference image',
       articraftMode: body.articraftMode === 'static' ? 'static' : 'articulated',
-      maxTurns:
-        mode === 'articraft'
-          ? resolveArticraftMaxTurns(prompt, body.maxTurns)
-          : undefined,
+      maxTurns: mode === 'articraft' ? resolveArticraftMaxTurns(prompt, body.maxTurns) : undefined,
       params: isRecord(body.params) ? body.params : undefined,
       context: body.context,
       image,
     })
 
-    await ensureRunRunning(run)
+    if (!isTerminalStatus(run.status)) {
+      await ensureRunRunning(run)
+    }
 
     return NextResponse.json({ runId: run.id, conversationId: run.conversationId, run })
   } catch (error) {

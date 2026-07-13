@@ -23,6 +23,11 @@ import useViewer, {
 import { type ThreeEvent, useFrame } from '@react-three/fiber'
 import { useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
+import {
+  createIndustrialMaterial,
+  industrialRenderContractFromMetadata,
+} from '../shared/industrial-render-contract-rendering'
+import { canBatchTorusBase, primitiveMaterialBatchKey } from '../shared/primitive-batching'
 
 type TorusBatch = {
   key: string
@@ -34,34 +39,12 @@ type TorusBatch = {
   nodes: TorusNode[]
 }
 
-const MIN_BATCH_SIZE = 3
-
 const tempMatrix = new THREE.Matrix4()
 const tempInverse = new THREE.Matrix4()
 const tempLocalPoint = new THREE.Vector3()
 
-function stableStringify(value: unknown): string {
-  if (value == null || typeof value !== 'object') return JSON.stringify(value)
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`
-  const record = value as Record<string, unknown>
-  return `{${Object.keys(record)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
-    .join(',')}}`
-}
-
 function numberKey(value: number | undefined, fallback: number): string {
   return String(Number.isFinite(value) ? value : fallback)
-}
-
-function materialKey(node: TorusNode): string {
-  return `preset:${node.materialPreset ?? ''}|material:${stableStringify(node.material ?? null)}`
-}
-
-function canBatchTorus(node: TorusNode, excludedIds: ReadonlySet<string>): boolean {
-  if (node.visible === false) return false
-  if (excludedIds.has(node.id)) return false
-  return true
 }
 
 function buildTorusBatches(
@@ -73,7 +56,7 @@ function buildTorusBatches(
   for (const node of Object.values(nodes)) {
     if (!node || typeof node !== 'object' || (node as { type?: unknown }).type !== 'torus') continue
     const torus = node as TorusNode
-    if (!canBatchTorus(torus, excludedIds)) continue
+    if (excludedIds.has(torus.id) || !canBatchTorusBase(torus)) continue
 
     const majorRadius = torus.majorRadius ?? 0.5
     const tubeRadius = torus.tubeRadius ?? 0.08
@@ -86,7 +69,7 @@ function buildTorusBatches(
       numberKey(torus.radialSegments, 16),
       numberKey(torus.tubularSegments, 48),
       numberKey(torus.arc, Math.PI * 2),
-      materialKey(torus),
+      primitiveMaterialBatchKey(torus),
     ].join('|')
 
     const existing = groups.get(key)
@@ -105,7 +88,7 @@ function buildTorusBatches(
     }
   }
 
-  return Array.from(groups.values()).filter((batch) => batch.nodes.length >= MIN_BATCH_SIZE)
+  return Array.from(groups.values())
 }
 
 function emitNodeEvent(
@@ -135,36 +118,6 @@ function emitNodeEvent(
   emitter.emit(`torus:${suffix}`, payload as never)
 }
 
-function useBatchedOriginalVisibility(batchedIds: ReadonlySet<string>) {
-  const previouslyBatched = useRef<Set<string>>(new Set())
-
-  useLayoutEffect(() => {
-    const previous = previouslyBatched.current
-    for (const id of previous) {
-      if (batchedIds.has(id)) continue
-      const obj = sceneRegistry.nodes.get(id)
-      const node = useScene.getState().nodes[id as AnyNodeId] as TorusNode | undefined
-      if (obj) obj.visible = node?.visible !== false
-    }
-    previouslyBatched.current = new Set(batchedIds)
-
-    return () => {
-      for (const id of batchedIds) {
-        const obj = sceneRegistry.nodes.get(id)
-        const node = useScene.getState().nodes[id as AnyNodeId] as TorusNode | undefined
-        if (obj) obj.visible = node?.visible !== false
-      }
-    }
-  }, [batchedIds])
-
-  useFrame(() => {
-    for (const id of batchedIds) {
-      const obj = sceneRegistry.nodes.get(id)
-      if (obj?.visible) obj.visible = false
-    }
-  }, 20)
-}
-
 function TorusBatchMesh({ batch }: { batch: TorusBatch }) {
   const meshRef = useRef<THREE.InstancedMesh>(null)
   const lastClickRef = useRef<{ time: number; x: number; y: number; instanceId: number } | null>(
@@ -189,10 +142,13 @@ function TorusBatchMesh({ batch }: { batch: TorusBatch }) {
 
   const material = useMemo(() => {
     const exemplar = batch.nodes[0]
+    const contract = industrialRenderContractFromMetadata(exemplar?.metadata)
     const presetMaterial = createMaterialFromPresetRef(exemplar?.materialPreset, shading)
-    if (presetMaterial) return presetMaterial
-    if (exemplar?.material) return createMaterial(exemplar.material, shading)
-    return createDefaultMaterial('#cccccc', 1, shading)
+    if (presetMaterial) return createIndustrialMaterial(contract, presetMaterial)
+    const base = exemplar?.material
+      ? createMaterial(exemplar.material, shading)
+      : createDefaultMaterial('#cccccc', 1, shading)
+    return createIndustrialMaterial(contract, base)
   }, [batch.nodes, shading])
 
   const applyMatrices = useCallback(() => {
@@ -329,7 +285,6 @@ export default function TorusBatchSystem() {
   const selection = useViewer((state) => state.selection)
   const previewSelectedIds = useViewer((state) => state.previewSelectedIds)
   const hoveredId = useViewer((state) => state.hoveredId)
-  const inputDragging = useViewer((state) => state.inputDragging)
 
   const excludedIds = useMemo(() => {
     const ids = new Set<string>()
@@ -339,20 +294,10 @@ export default function TorusBatchSystem() {
     return ids
   }, [selection.selectedIds, previewSelectedIds, hoveredId])
 
-  const batches = useMemo(() => {
-    if (inputDragging) return []
-    return buildTorusBatches(nodes as Record<AnyNodeId, unknown>, excludedIds)
-  }, [nodes, excludedIds, inputDragging])
-
-  const batchedIds = useMemo(() => {
-    const ids = new Set<string>()
-    for (const batch of batches) {
-      for (const node of batch.nodes) ids.add(node.id)
-    }
-    return ids
-  }, [batches])
-
-  useBatchedOriginalVisibility(batchedIds)
+  const batches = useMemo(
+    () => buildTorusBatches(nodes as Record<AnyNodeId, unknown>, excludedIds),
+    [nodes, excludedIds],
+  )
 
   return (
     <>

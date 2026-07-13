@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { listConversations, saveConversation } from '@/lib/ai-harness-runs/run-store'
+import { parseJsonRequestBody } from '@/lib/request-json'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -13,6 +14,7 @@ export async function GET(request: Request) {
   const searchParams = new URL(request.url).searchParams
   const limitParam = searchParams.get('limit')
   const cursorParam = searchParams.get('cursor')
+  const sceneId = searchParams.get('sceneId')?.trim() || undefined
   const parsedLimit = limitParam ? Number.parseInt(limitParam, 10) : undefined
   const parsedCursor = cursorParam ? Number.parseInt(cursorParam, 10) : 0
   const limit =
@@ -21,17 +23,24 @@ export async function GET(request: Request) {
       : 15
   const cursor =
     parsedCursor != null && Number.isFinite(parsedCursor) ? Math.max(0, parsedCursor) : 0
-  const page = await listConversations(limit + 1, cursor)
+  const page = await listConversations(limit + 1, cursor, { sceneId })
   const conversations = page.slice(0, limit)
   const nextCursor = page.length > limit ? String(cursor + conversations.length) : null
   return NextResponse.json({ conversations, nextCursor })
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   const now = new Date().toISOString()
   const id = conversationId()
+  let sceneId: string | undefined
+  try {
+    const body = (await parseJsonRequestBody(request)) as { sceneId?: unknown }
+    sceneId =
+      typeof body.sceneId === 'string' && body.sceneId.trim() ? body.sceneId.trim() : undefined
+  } catch {}
   await saveConversation({
     id,
+    ...(sceneId ? { sceneId } : {}),
     messages: [],
     activeRunIds: [],
     createdAt: now,

@@ -9,6 +9,17 @@ type RouteParams = { params: Promise<{ id: string }> }
 const POLL_MS = 500
 const HEARTBEAT_MS = 15_000
 const MAX_EVENTS_PER_POLL = 100
+const RUN_LOOKUP_RETRY_MS = 150
+const RUN_LOOKUP_RETRY_ATTEMPTS = 10
+
+async function loadRunWithBriefRetry(runId: string) {
+  for (let attempt = 0; attempt <= RUN_LOOKUP_RETRY_ATTEMPTS; attempt += 1) {
+    const run = await loadRun(runId)
+    if (run || attempt === RUN_LOOKUP_RETRY_ATTEMPTS) return run
+    await new Promise((resolve) => setTimeout(resolve, RUN_LOOKUP_RETRY_MS))
+  }
+  return null
+}
 
 async function ensureRunRunning(run: AiHarnessRun) {
   if (isTerminalStatus(run.status)) return
@@ -29,7 +40,7 @@ async function ensureRunRunning(run: AiHarnessRun) {
 
 export async function GET(request: Request, { params }: RouteParams) {
   const { id } = await params
-  const run = await loadRun(id)
+  const run = await loadRunWithBriefRetry(id)
   if (!run) {
     return Response.json({ error: 'not_found' }, { status: 404 })
   }

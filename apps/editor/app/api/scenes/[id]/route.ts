@@ -1,3 +1,4 @@
+import { applySceneGraphPatch, type PatchableSceneGraph } from '@pascal-app/editor/scene-patch'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { apiGraphSchema, diagnoseApiGraph } from '@/lib/graph-schema'
@@ -11,6 +12,7 @@ import { getSceneOperations } from '@/lib/scene-store-server'
 import { sceneThumbnailUrlSchema } from '@/lib/scene-thumbnail-url'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 type RouteParams = { params: Promise<{ id: string }> }
 
@@ -21,10 +23,27 @@ const putSceneSchema = z.object({
   expectedVersion: z.number().int().nonnegative().optional(),
 })
 
-const patchSceneSchema = z.object({
-  name: z.string().min(1).max(200),
-  expectedVersion: z.number().int().nonnegative().optional(),
+const graphPatchSchema = z.object({
+  nodes: z.object({
+    upsert: z.record(z.string(), z.unknown()),
+    remove: z.array(z.string()),
+  }),
+  rootNodeIds: z.array(z.string()).optional(),
+  collections: z.record(z.string(), z.unknown()).optional(),
 })
+
+const patchSceneSchema = z.union([
+  z.object({
+    name: z.string().min(1).max(200),
+    graphPatch: z.never().optional(),
+    expectedVersion: z.number().int().nonnegative().optional(),
+  }),
+  z.object({
+    name: z.never().optional(),
+    graphPatch: graphPatchSchema,
+    expectedVersion: z.number().int().nonnegative().optional(),
+  }),
+])
 
 export function OPTIONS(request: NextRequest) {
   return sceneApiPreflight(request)
@@ -160,7 +179,50 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
   const operations = await getSceneOperations()
   try {
-    const meta = await operations.renameStoredScene(id, parsed.data.name, { expectedVersion })
+    if ('name' in parsed.data && parsed.data.name) {
+      const meta = await operations.renameStoredScene(id, parsed.data.name, { expectedVersion })
+      return sceneApiJson(request, meta, {
+        headers: { ETag: `"${meta.version}"` },
+      })
+    }
+
+    const existing = await operations.loadStoredScene(id)
+    if (!existing) {
+      return sceneApiJson(request, { error: 'not_found' }, { status: 404 })
+    }
+    const graphPatch = 'graphPatch' in parsed.data ? parsed.data.graphPatch : undefined
+    if (!graphPatch) {
+      return sceneApiJson(
+        request,
+        { error: 'invalid_request', details: 'graphPatch is required' },
+        { status: 400 },
+      )
+    }
+    const graph = applySceneGraphPatch(
+      existing.graph as PatchableSceneGraph,
+      graphPatch,
+    )
+    const validatedGraph = apiGraphSchema.safeParse(graph)
+    if (!validatedGraph.success) {
+      return sceneApiJson(
+        request,
+        {
+          error: 'invalid_request',
+          details: validatedGraph.error.issues,
+          diagnostics: diagnoseApiGraph(graph),
+        },
+        { status: 400 },
+      )
+    }
+    const meta = await operations.saveScene({
+      id,
+      name: existing.name,
+      projectId: existing.projectId,
+      ownerId: existing.ownerId,
+      graph: validatedGraph.data as never,
+      thumbnailUrl: existing.thumbnailUrl,
+      expectedVersion: expectedVersion ?? existing.version,
+    })
     return sceneApiJson(request, meta, {
       headers: { ETag: `"${meta.version}"` },
     })

@@ -1,13 +1,18 @@
 import {
   assertSemanticRecipeComposeResult,
-  semanticRecipeRegistry,
   type EquipmentParamValue,
+  semanticRecipeRegistry,
 } from '@pascal-app/core'
 import { composePartPrimitives, type PartComposeInput } from '@pascal-app/core/lib/part-compose'
 import {
   type PrimitiveShapeInput,
   resolvePrimitiveWorldTransforms,
 } from '@pascal-app/core/lib/primitive-compose'
+import {
+  applyIndustrialRenderContractsToShapes,
+  attachIndustrialRenderContracts,
+  summarizeIndustrialRenderContracts,
+} from '@pascal-app/plugin-factory-equipment'
 import {
   computeGeneratedAssemblyPosition,
   createGeneratedGeometryId,
@@ -32,6 +37,12 @@ function colorParam(params: Record<string, EquipmentParamValue>, key: string, fa
   return typeof value === 'string' && value.trim() ? value : fallback
 }
 
+function shouldAttachIndustrialRenderContracts(recipeFamily: string): boolean {
+  return /tank|pump|distillation|refinery|reactor|auxiliary|pipe|heater|exchanger|boiler|flare/i.test(
+    recipeFamily,
+  )
+}
+
 export function createSemanticAssemblyPatchPlan(input: {
   spec: SemanticEquipmentSpec
   placement?: GeneratedGeometryPlacementSpec
@@ -53,11 +64,15 @@ export function createSemanticAssemblyPatchPlan(input: {
   })
   assertSemanticRecipeComposeResult(recipe, result)
   if (!result.parts.length) return null
+  const industrialRenderEnabled = shouldAttachIndustrialRenderContracts(recipe.family)
+  const renderedParts = industrialRenderEnabled
+    ? attachIndustrialRenderContracts(result.parts)
+    : result.parts
+  const renderContractSummary = industrialRenderEnabled
+    ? summarizeIndustrialRenderContracts(result.parts)
+    : undefined
   const sourceArgs: PartComposeInput = {
-    name:
-      typeof input.spec.params.name === 'string'
-        ? input.spec.params.name
-        : recipe.label,
+    name: typeof input.spec.params.name === 'string' ? input.spec.params.name : recipe.label,
     family: recipe.family,
     category: recipe.label,
     detail: 'high',
@@ -65,16 +80,23 @@ export function createSemanticAssemblyPatchPlan(input: {
     width,
     depth: width,
     height,
-    parts: result.parts,
+    parts: renderedParts,
     autoComplete: false,
     enhanceVisualDetails: false,
     registryPartPlan: true,
-    primaryColor: colorParam(input.spec.params, 'casingColor', colorParam(input.spec.params, 'shellColor', '#cbd5e1')),
+    primaryColor: colorParam(
+      input.spec.params,
+      'casingColor',
+      colorParam(input.spec.params, 'shellColor', '#cbd5e1'),
+    ),
     metalColor: '#cbd5e1',
     darkColor: '#1f2937',
     accentColor: '#f59e0b',
   } as PartComposeInput
-  const shapes = composePartPrimitives(sourceArgs) as PrimitiveShapeInput[]
+  const composedShapes = composePartPrimitives(sourceArgs) as PrimitiveShapeInput[]
+  const shapes = industrialRenderEnabled
+    ? applyIndustrialRenderContractsToShapes(composedShapes, result.parts)
+    : composedShapes
   if (!shapes.length) return null
   const artifactShapes: GeneratedGeometryArtifact['shapes'] = shapes.map((shape) => ({
     ...shape,
@@ -98,6 +120,7 @@ export function createSemanticAssemblyPatchPlan(input: {
       height,
       primarySemanticRole: result.primarySemanticRole,
       recipeParams: input.spec.params,
+      ...(renderContractSummary ? { renderContractSummary } : {}),
     },
     userPrompt: input.prompt ?? input.spec.profileId,
     version: 1,
@@ -141,10 +164,14 @@ export function createSemanticAssemblyPatchPlan(input: {
         primarySemanticRole: result.primarySemanticRole,
         envelope: { length, width, height, origin: 'profile' },
         ports: result.ports ?? [],
-        editableParams: [
-          ...(result.editableParams ?? recipe.editableParams ?? []),
-        ],
+        partGroups: [...(result.partGroups ?? recipe.partGroups ?? [])],
+        editableParams: [...(result.editableParams ?? recipe.editableParams ?? [])],
         editablePartRoles: [...(result.editablePartRoles ?? recipe.editablePartRoles ?? [])],
+        ...(renderContractSummary
+          ? {
+              renderContracts: renderContractSummary,
+            }
+          : {}),
       },
       equipmentContract: {
         profileId: input.spec.profileId,

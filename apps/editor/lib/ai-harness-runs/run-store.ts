@@ -15,7 +15,9 @@ import type {
 
 const AI_HARNESS_RUNS_DIR = path.join('apps', 'editor', '.generated', 'ai-harness-runs')
 const fileLocks = new Map<string, Promise<void>>()
+const cancellationRequestedRunIds = new Set<string>()
 const WINDOWS_REPLACE_RETRY_DELAYS_MS = [20, 50, 100, 200, 400]
+const EVENT_TAIL_READ_BYTES = 64 * 1024
 
 async function exists(filePath: string) {
   try {
@@ -153,7 +155,9 @@ async function readJson<T>(filePath: string, fallback: T): Promise<T> {
 }
 
 export async function createRun(input: {
+  id?: string
   conversationId?: string
+  sceneId?: string
   mode: AiHarnessRunMode
   prompt: string
   articraftMode?: 'articulated' | 'static'
@@ -163,7 +167,14 @@ export async function createRun(input: {
   image?: { name: string; type: string; dataUrl: string }
 }) {
   const now = new Date().toISOString()
-  const id = `run_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`
+  const id = input.id ?? `run_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`
+  if (input.id && safeSegment(input.id) !== input.id) {
+    throw new Error('Invalid run id')
+  }
+  if (input.id && (await exists(await runPath(input.id)))) {
+    throw new Error(`Run already exists: ${input.id}`)
+  }
+  const cancellationRequested = cancellationRequestedRunIds.delete(id)
   const dir = await runDir(id)
   await fs.mkdir(path.join(dir, 'inputs'), { recursive: true })
 
@@ -179,8 +190,9 @@ export async function createRun(input: {
   const run: AiHarnessRun = {
     id,
     conversationId: input.conversationId || 'default',
+    ...(input.sceneId ? { sceneId: input.sceneId } : {}),
     mode: input.mode,
-    status: 'queued',
+    status: cancellationRequested ? 'cancelled' : 'queued',
     prompt: input.prompt,
     articraftMode: input.articraftMode,
     maxTurns: input.maxTurns,
@@ -189,11 +201,24 @@ export async function createRun(input: {
     image,
     createdAt: now,
     updatedAt: now,
+    ...(cancellationRequested
+      ? { completedAt: now, error: 'Generation cancelled before run started' }
+      : {}),
   }
   await writeJsonAtomic(await runPath(id), run)
-  await appendRunEvent(id, { type: 'status', message: 'queued', data: { status: 'queued' } })
-  await addActiveRun(run.conversationId, id, run.mode)
+  await appendRunEvent(id, {
+    type: 'status',
+    message: run.status,
+    data: { status: run.status },
+  })
+  if (!cancellationRequested) {
+    await addActiveRun(run.conversationId, id, run.mode, input.sceneId)
+  }
   return run
+}
+
+export function markRunCancellationRequested(runId: string) {
+  cancellationRequestedRunIds.add(runId)
 }
 
 function parseDataUrlImage(dataUrl: string): { buffer: Buffer; mime: string; ext: string } | null {
@@ -239,9 +264,9 @@ export async function appendRunEvent(
 ) {
   const filePath = await runEventsPath(runId)
   return withFileLock(filePath, async () => {
-    const existing = await listRunEvents(runId, { after: 0, limit: Number.MAX_SAFE_INTEGER })
+    const lastEventId = await readLastRunEventId(filePath)
     const event: AiHarnessRunEvent = {
-      id: (existing.at(-1)?.id ?? 0) + 1,
+      id: lastEventId + 1,
       runId,
       createdAt: new Date().toISOString(),
       ...input,
@@ -252,11 +277,42 @@ export async function appendRunEvent(
   })
 }
 
+async function readLastRunEventId(filePath: string) {
+  if (!(await exists(filePath))) return 0
+  const handle = await fs.open(filePath, 'r')
+  try {
+    const { size } = await handle.stat()
+    if (size <= 0) return 0
+    const byteLength = Math.min(size, EVENT_TAIL_READ_BYTES)
+    const offset = size - byteLength
+    const buffer = Buffer.alloc(byteLength)
+    const { bytesRead } = await handle.read(buffer, 0, byteLength, offset)
+    const lines = buffer.subarray(0, bytesRead).toString('utf8').split(/\r?\n/).filter(Boolean)
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      try {
+        const event = JSON.parse(lines[index] ?? '') as { id?: unknown }
+        if (typeof event.id === 'number' && Number.isFinite(event.id)) return event.id
+      } catch {}
+    }
+  } finally {
+    await handle.close()
+  }
+  const events = await listRunEventsFromPath(filePath, { after: 0, limit: Number.MAX_SAFE_INTEGER })
+  return events.at(-1)?.id ?? 0
+}
+
 export async function listRunEvents(
   runId: string,
   options: { after?: number; limit?: number } = {},
 ) {
   const filePath = await runEventsPath(runId)
+  return listRunEventsFromPath(filePath, options)
+}
+
+async function listRunEventsFromPath(
+  filePath: string,
+  options: { after?: number; limit?: number } = {},
+) {
   if (!(await exists(filePath))) return []
   const after = Math.max(0, options.after ?? 0)
   const limit = Math.max(1, options.limit ?? 100)
@@ -299,6 +355,7 @@ export async function saveConversation(conversation: AiConversation) {
     saved = {
       createdAt: existing?.createdAt ?? new Date().toISOString(),
       ...conversation,
+      sceneId: conversation.sceneId ?? existing?.sceneId,
       activeRunIds: Array.from(new Set(conversation.activeRunIds)),
       ...(conversationPurpose ? { conversationPurpose } : {}),
       title,
@@ -374,6 +431,7 @@ function inferConversationTitle(messages: unknown[]) {
 function toConversationSummary(conversation: AiConversation): AiConversationSummary {
   return {
     id: conversation.id,
+    sceneId: conversation.sceneId,
     title: resolveConversationTitle(conversation.title, conversation.messages),
     messageCount: conversation.messages.length,
     activeRunCount: conversation.activeRunIds.length,
@@ -462,12 +520,16 @@ async function rebuildConversationIndex() {
 export async function listConversations(
   limit = DEFAULT_CONVERSATION_LIST_LIMIT,
   cursor = 0,
+  options: { sceneId?: string } = {},
 ): Promise<AiConversationSummary[]> {
   try {
     const summaries = (await readConversationIndex()) ?? (await rebuildConversationIndex())
+    const filtered = options.sceneId
+      ? summaries.filter((summary) => summary.sceneId === options.sceneId)
+      : summaries
     const safeLimit = Math.min(100, Math.max(1, limit))
     const offset = Math.max(0, cursor)
-    return summaries.slice(offset, offset + safeLimit)
+    return filtered.slice(offset, offset + safeLimit)
   } catch {
     return []
   }
@@ -482,10 +544,16 @@ function conversationPurposeFromRunMode(mode: AiHarnessRunMode): AiConversationP
   return mode === 'factory' ? 'factory' : 'asset'
 }
 
-async function addActiveRun(conversationId: string, runId: string, mode: AiHarnessRunMode) {
+async function addActiveRun(
+  conversationId: string,
+  runId: string,
+  mode: AiHarnessRunMode,
+  sceneId?: string,
+) {
   const conversation = await loadConversation(conversationId)
   await saveConversation({
     ...conversation,
+    sceneId: conversation.sceneId ?? sceneId,
     activeRunIds: Array.from(new Set([...conversation.activeRunIds, runId])),
     conversationPurpose: conversation.conversationPurpose ?? conversationPurposeFromRunMode(mode),
   })

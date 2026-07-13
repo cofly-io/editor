@@ -6,13 +6,16 @@ import Editor from '@pascal-app/editor/components/editor'
 import { useSidebarStore } from '@pascal-app/editor/components/sidebar/store'
 import type { SidebarTab } from '@pascal-app/editor/components/sidebar/types'
 import { applySceneGraphToEditor, type SceneGraph } from '@pascal-app/editor/scene'
+import type { SceneGraphPatch } from '@pascal-app/editor/scene-patch'
 import useEditor from '@pascal-app/editor/store'
 import useViewer from '@pascal-app/viewer/store'
-import { Layers, MessageCircle, Package, Settings } from 'lucide-react'
+import { Database, Layers, MessageCircle, Package, Settings } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { t } from '@/i18n'
+import { DataPanel } from './data-panel'
+import { UnsSimulationRuntime } from './uns-simulation-runtime'
 import { CommunityViewerToolbarLeft, CommunityViewerToolbarRight } from './viewer-toolbar'
 
 const LazyAiChatPanel = lazy(async () => {
@@ -24,10 +27,10 @@ const LazyItemsPanel = lazy(async () => {
   return { default: mod.ItemsPanel }
 })
 
-function AiChatPanel() {
+function AiChatPanel({ sceneId }: { sceneId: string }) {
   return (
     <Suspense fallback={null}>
-      <LazyAiChatPanel />
+      <LazyAiChatPanel sceneId={sceneId} />
     </Suspense>
   )
 }
@@ -53,11 +56,11 @@ export interface SceneMeta {
   nodeCount: number
 }
 
-const SIDEBAR_TABS = (): (SidebarTab & { component: React.ComponentType })[] => [
+const SIDEBAR_TABS = (sceneId: string): (SidebarTab & { component: React.ComponentType })[] => [
   {
     id: 'ai',
     label: t('sidebar.ai', 'AI'),
-    component: AiChatPanel,
+    component: () => <AiChatPanel sceneId={sceneId} />,
     mobileDefaultSnap: 0.5,
     mobileIcon: <MessageCircle className="h-5 w-5" />,
   },
@@ -74,6 +77,13 @@ const SIDEBAR_TABS = (): (SidebarTab & { component: React.ComponentType })[] => 
     component: ItemsPanel,
     mobileDefaultSnap: 0.5,
     mobileIcon: <Package className="h-5 w-5" />,
+  },
+  {
+    id: 'uns',
+    label: t('sidebar.uns', 'UNS'),
+    component: () => <DataPanel sceneId={sceneId} />,
+    mobileDefaultSnap: 0.5,
+    mobileIcon: <Database className="h-5 w-5" />,
   },
   {
     id: 'settings',
@@ -151,7 +161,7 @@ async function readSceneSaveError(response: Response) {
 
 export function SceneLoader({ initialScene, meta }: SceneLoaderProps) {
   const router = useRouter()
-  const sidebarTabs = useMemo(() => SIDEBAR_TABS(), [])
+  const sidebarTabs = useMemo(() => SIDEBAR_TABS(meta.id), [meta.id])
   const versionRef = useRef(meta.version)
   const thumbnailUrlRef = useRef(meta.thumbnailUrl)
   const lastRemoteGraphJsonRef = useRef<string | null>(null)
@@ -219,6 +229,45 @@ export function SceneLoader({ initialScene, meta }: SceneLoaderProps) {
       }
     },
     [meta.id, meta.name],
+  )
+
+  const handlePatchSave = useCallback(
+    async (graphPatch: SceneGraphPatch) => {
+      if (Date.now() < suppressRemoteSaveUntilRef.current) return
+
+      try {
+        const response = await fetch(`/api/scenes/${meta.id}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'If-Match': String(versionRef.current),
+          },
+          body: JSON.stringify({ graphPatch }),
+        })
+
+        if (response.status === 409) {
+          setConflict(true)
+          const detail = await readSceneSaveError(response)
+          throw new Error(detail || t('save.conflictReload', 'Conflict - reload to continue'))
+        }
+        if (!response.ok) {
+          const detail = await readSceneSaveError(response)
+          throw new Error(detail || `Save failed (${response.status})`)
+        }
+
+        const next = (await response.json()) as SceneMeta
+        versionRef.current = next.version
+        setSaveError(null)
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : t('save.saveFailed', { fallback: 'Save failed ({status})', params: { status: '' } })
+        setSaveError(message)
+        throw error instanceof Error ? error : new Error(message)
+      }
+    },
+    [meta.id],
   )
 
   useEffect(() => {
@@ -317,6 +366,7 @@ export function SceneLoader({ initialScene, meta }: SceneLoaderProps) {
 
   return (
     <div className="relative h-screen w-screen">
+      <UnsSimulationRuntime sceneId={meta.id} />
       {conflict && (
         <div className="pointer-events-auto absolute top-4 left-1/2 z-50 w-full max-w-md -translate-x-1/2 rounded-lg border border-border bg-background p-4 shadow-xl">
           <h2 className="font-semibold text-sm">
@@ -379,6 +429,7 @@ export function SceneLoader({ initialScene, meta }: SceneLoaderProps) {
       <Editor
         layoutVersion="v2"
         onLoad={handleLoad}
+        onPatchSave={handlePatchSave}
         onSave={handleSave}
         onThumbnailCapture={handleThumb}
         projectId={meta.projectId ?? 'default'}

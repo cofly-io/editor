@@ -20,6 +20,11 @@ export interface HealSceneResult {
   droppedWallIds: string[]
   /** Count of non-string (e.g. null) entries removed from `children` arrays. */
   strippedChildRefs: number
+  /**
+   * Count of child references removed because the child's `parentId` points at
+   * a different node, plus same-array duplicates.
+   */
+  strippedStaleChildRefs: number
   /** Count of missing child parentId links restored from parent children arrays. */
   restoredParentLinks: number
 }
@@ -64,6 +69,7 @@ export function healSceneNodes(input: Record<string, unknown>): HealSceneResult 
 
   const dropped = new Set(droppedWallIds)
   let strippedChildRefs = 0
+  let strippedStaleChildRefs = 0
 
   // Pass 2: clean `children` arrays — drop non-string entries (the `[null]` bug)
   // and references to walls we just removed.
@@ -71,9 +77,25 @@ export function healSceneNodes(input: Record<string, unknown>): HealSceneResult 
   for (const [id, node] of Object.entries(kept)) {
     const children = (node as { children?: unknown })?.children
     if (Array.isArray(children)) {
-      const cleaned = children.filter((c): c is string => typeof c === 'string' && !dropped.has(c))
+      const seen = new Set<string>()
+      const cleaned = children.filter((c): c is string => {
+        if (typeof c !== 'string' || dropped.has(c)) {
+          strippedChildRefs++
+          return false
+        }
+        if (seen.has(c)) {
+          strippedStaleChildRefs++
+          return false
+        }
+        seen.add(c)
+        const child = kept[c] as { parentId?: unknown } | undefined
+        if (child && typeof child.parentId === 'string' && child.parentId !== id) {
+          strippedStaleChildRefs++
+          return false
+        }
+        return true
+      })
       if (cleaned.length !== children.length) {
-        strippedChildRefs += children.length - cleaned.length
         nodes[id] = { ...(node as Record<string, unknown>), children: cleaned }
         continue
       }
@@ -98,5 +120,11 @@ export function healSceneNodes(input: Record<string, unknown>): HealSceneResult 
     }
   }
 
-  return { nodes, droppedWallIds, strippedChildRefs, restoredParentLinks }
+  return {
+    nodes,
+    droppedWallIds,
+    strippedChildRefs,
+    strippedStaleChildRefs,
+    restoredParentLinks,
+  }
 }

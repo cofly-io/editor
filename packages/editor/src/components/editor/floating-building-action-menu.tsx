@@ -8,7 +8,7 @@ import { useCallback, useRef } from 'react'
 import * as THREE from 'three'
 import { sfxEmitter } from '../../lib/sfx-bus'
 import useEditor from '../../store/use-editor'
-import { ACTION_MENU_DISTANCE_FACTOR, getActionMenuAnchor } from './action-menu-placement'
+import { getActionMenuAnchor } from './action-menu-placement'
 import { NodeActionMenu } from './node-action-menu'
 
 export function FloatingBuildingActionMenu() {
@@ -79,7 +79,6 @@ export function FloatingBuildingActionMenu() {
     <group ref={groupRef}>
       <Html
         center
-        distanceFactor={ACTION_MENU_DISTANCE_FACTOR}
         style={{
           pointerEvents: 'auto',
           touchAction: 'none',

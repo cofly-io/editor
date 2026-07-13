@@ -8,7 +8,6 @@ import {
   type DynamicJointBinding,
   type DynamicJointChannel,
   type DynamicType,
-  type LiveDataPath,
   formatLiveDataValue,
   getDynamicTypesForNode,
   getNodeSemanticType,
@@ -21,15 +20,14 @@ import {
   writeDynamicMetadataPatch,
 } from '@pascal-app/core'
 import useViewer from '@pascal-app/viewer/store'
-import { Plus } from 'lucide-react'
 import { useCallback, useMemo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { PanelSection } from '../../controls/panel-section'
 import {
   getArticraftJointChannelsForSelection,
   getArticraftRecordIdForSelection,
 } from '../../../../lib/articraft-dynamic-channels'
-import { createBinding, isConveyorSemanticType } from './binding-defaults'
+import { PanelSection } from '../../controls/panel-section'
+import { isConveyorSemanticType } from './binding-defaults'
 import { DynamicBindingCard } from './dynamic-binding-card'
 import { NumberField, type PathOption, SelectField } from './fields'
 
@@ -38,11 +36,19 @@ const SEMANTIC_TYPE_OPTIONS = [
   'pipe',
   'conveyor',
   'tank',
+  'tower',
+  'pump',
+  'compressor',
+  'machineTool',
+  'grateCooler',
   'fan',
   'motor',
   'roller',
   'valve',
-  'pump',
+  'silo',
+  'container',
+  'cabinet',
+  'battery',
   'light',
   'display',
 ]
@@ -69,17 +75,17 @@ function createJointBinding(channel: DynamicJointChannel, path: string): Dynamic
 }
 
 function JointBindingsSection({
-  channels,
   bindings,
+  channels,
+  onWriteBindings,
   pathOptions,
   title = '关节动态',
-  onWriteBindings,
 }: {
-  channels: DynamicJointChannel[]
   bindings: DynamicJointBinding[]
+  channels: DynamicJointChannel[]
+  onWriteBindings: (bindings: DynamicJointBinding[]) => void
   pathOptions: PathOption[]
   title?: string
-  onWriteBindings: (bindings: DynamicJointBinding[]) => void
 }) {
   if (channels.length === 0) return null
   const bindingsByChannel = new Map(bindings.map((binding) => [binding.channelId, binding]))
@@ -136,7 +142,7 @@ function JointBindingsSection({
                   ) : null}
                 </div>
                 <div className="shrink-0 text-muted-foreground">
-                  {channel.motion === 'rotation' ? '旋转' : '平移'} · {channel.axis.toUpperCase()}
+                  {channel.motion === 'rotation' ? '旋转' : '平移'} / {channel.axis.toUpperCase()}
                 </div>
               </div>
               <SelectField
@@ -162,11 +168,7 @@ function JointBindingsSection({
                 <NumberField
                   label={channel.motion === 'rotation' ? '角度最小' : '位移最小'}
                   onChange={(value) => updateRange(channel, binding, 'outputRange', 0, value)}
-                  value={
-                    binding?.outputRange?.[0] ??
-                    channel.outputRange?.[0] ??
-                    0
-                  }
+                  value={binding?.outputRange?.[0] ?? channel.outputRange?.[0] ?? 0}
                 />
                 <NumberField
                   label={channel.motion === 'rotation' ? '角度最大' : '位移最大'}
@@ -187,26 +189,24 @@ function JointBindingsSection({
 }
 
 function DeviceTypeSection({
-  dynamicTypes,
+  lockedSemanticType = false,
+  onSemanticTypeChange,
   recommendedType,
   semanticType,
   specializedTypes,
-  onSemanticTypeChange,
-  lockedSemanticType = false,
 }: {
-  dynamicTypes: DynamicType[]
+  lockedSemanticType?: boolean
+  onSemanticTypeChange: (semanticType: string) => void
   recommendedType: DynamicType
   semanticType: string
   specializedTypes: readonly DynamicType[]
-  onSemanticTypeChange: (semanticType: string) => void
-  lockedSemanticType?: boolean
 }) {
   return (
     <PanelSection title="设备类型" defaultExpanded>
       <SelectField
+        disabled={lockedSemanticType}
         getLabel={(type) => SEMANTIC_TYPE_LABELS[type] ?? type}
         label="语义类型"
-        disabled={lockedSemanticType}
         onChange={lockedSemanticType ? () => undefined : onSemanticTypeChange}
         options={lockedSemanticType ? [semanticType] : SEMANTIC_TYPE_OPTIONS}
         testId="dynamic-semantic-type-select"
@@ -240,7 +240,7 @@ function ArticraftDeviceSection({ recordId }: { recordId: string | null }) {
           ) : null}
         </div>
         <div className="rounded-md border border-[#a684ff]/25 bg-[#3A3358]/35 px-2 py-1.5 text-[#E8DEFF] text-[11px] leading-4">
-          从 Articraft 生成的 URDF 关节自动提取，绑定 WebSocket 数据后在预览模式驱动设备运动。
+          从 Articraft 生成的 URDF 关节自动提取。绑定 WebSocket 数据后，在预览模式驱动设备运动。
         </div>
       </div>
     </PanelSection>
@@ -252,42 +252,21 @@ function BindingsSection({
   dynamicTypes,
   isConveyorNode,
   isPipeNode,
-  livePaths,
-  pathOptions,
-  onAddBinding,
   onWriteBindings,
+  pathOptions,
 }: {
   bindings: DynamicBinding[]
   dynamicTypes: DynamicType[]
   isConveyorNode: boolean
   isPipeNode: boolean
-  livePaths: LiveDataPath[]
-  pathOptions: PathOption[]
-  onAddBinding: (type?: DynamicType) => void
   onWriteBindings: (bindings: DynamicBinding[]) => void
+  pathOptions: PathOption[]
 }) {
   return (
     <PanelSection title="动态" defaultExpanded>
-      <div className="grid grid-cols-1 gap-2">
-        <button
-          className="flex h-8 items-center justify-center gap-1.5 rounded-md bg-[#3A3358] font-medium text-[#E8DEFF] text-[11px] transition hover:bg-[#463a6b] disabled:opacity-50"
-          data-testid="dynamic-add-recommended"
-          disabled={pathOptions.length === 0}
-          onClick={() => onAddBinding()}
-          type="button"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          添加类型
-        </button>
-      </div>
-      {pathOptions.length === 0 ? (
-        <div className="rounded-lg border border-border/40 bg-[#252527] p-3 text-muted-foreground text-xs">
-          暂无可绑定数据路径。未连接 WebSocket 时会使用静态示例数据；如果这里为空，请检查数据源服务。
-        </div>
-      ) : null}
       {bindings.length === 0 ? (
         <div className="rounded-lg border border-border/40 bg-[#252527] p-3 text-muted-foreground text-xs">
-          还没有动态绑定。普通物体只显示通用动态；输送带、管道、储罐、风机等设备会自动追加对应专用动态。
+          还没有动态绑定。普通物体只显示通用动态；储罐、管道、泵、压缩机、机床等设备会根据类型推荐专用动态。
         </div>
       ) : (
         <div className="flex flex-col gap-2">
@@ -342,7 +321,7 @@ export function DynamicInspector() {
         return {
           path: path.path,
           category: path.category,
-          label: `${path.label} · ${valueText} · ${path.path}`,
+          label: `${path.label} / ${valueText} / ${path.path}`,
           valueText,
         }
       }),
@@ -400,16 +379,6 @@ export function DynamicInspector() {
     },
     [node, updateNode],
   )
-  const addBinding = useCallback(
-    (type: DynamicType = recommendedType) => {
-      const path =
-        pathOptions.find((option) => option.category === semanticType)?.path ??
-        pathOptions[0]?.path ??
-        ''
-      writeBindings([...bindings, createBinding(type, path)])
-    },
-    [bindings, pathOptions, recommendedType, semanticType, writeBindings],
-  )
 
   if (!node) {
     return (
@@ -427,7 +396,6 @@ export function DynamicInspector() {
         <ArticraftDeviceSection recordId={articraftRecordId} />
       ) : (
         <DeviceTypeSection
-          dynamicTypes={dynamicTypes}
           lockedSemanticType={lockedSemanticType}
           onSemanticTypeChange={setSemanticType}
           recommendedType={recommendedType}
@@ -448,8 +416,6 @@ export function DynamicInspector() {
           dynamicTypes={dynamicTypes}
           isConveyorNode={isConveyorNode}
           isPipeNode={isPipeNode}
-          livePaths={livePaths}
-          onAddBinding={addBinding}
           onWriteBindings={writeBindings}
           pathOptions={pathOptions}
         />

@@ -65,6 +65,12 @@ export {
   ensureWebGPUCompatibleGeometry,
 } from './lib/safe-geometry'
 export {
+  assessSceneComplexity,
+  DEFAULT_SCENE_COMPLEXITY,
+  type SceneComplexityBudget,
+  type SceneComplexityTier,
+} from './lib/scene-complexity'
+export {
   getSceneTheme,
   SCENE_THEMES,
   type SceneSurfaceRole,
@@ -76,6 +82,7 @@ export {
   type HoverHighlightIntent,
   isViewerSelectionInputSuppressed,
   isViewerSpatialInputSuppressed,
+  type RendererHealth,
   shouldLatchViewerPointerSuppression,
 } from './store/use-viewer'
 export { CeilingSystem } from './systems/ceiling/ceiling-system'

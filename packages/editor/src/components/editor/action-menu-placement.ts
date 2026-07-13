@@ -1,9 +1,7 @@
 'use client'
 
-import { nodeRegistry, type ActionMenuPlacementRule } from '@pascal-app/core'
+import { type ActionMenuPlacementRule, nodeRegistry } from '@pascal-app/core'
 import * as THREE from 'three'
-
-export const ACTION_MENU_DISTANCE_FACTOR = 6
 
 type ActionMenuPlacementNode = { type: string; widgetType?: string }
 

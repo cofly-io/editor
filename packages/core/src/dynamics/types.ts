@@ -50,11 +50,15 @@ export type DynamicBinding = {
   id: string
   type: DynamicType
   path: string
+  source?: string
+  sourceLabel?: string
+  pending?: boolean
   axis?: DynamicAxis
   motionMode?: DynamicMotionMode
   moveStyle?: DynamicMoveStyle
   color?: string
   arrowColor?: string
+  arrowScale?: number
   endColor?: string
   colorMode?: DynamicColorMode
   scaleEffect?: DynamicScaleEffect
@@ -96,7 +100,7 @@ export const DYNAMIC_TYPE_LABELS: Record<DynamicType, string> = {
   fill: '装载量',
   scale: '缩放',
   color: '颜色',
-  rotate: '转动',
+  rotate: '旋转',
   flow: '流量',
   conveyorFlow: '输送流动',
   level: '液位',
@@ -104,9 +108,8 @@ export const DYNAMIC_TYPE_LABELS: Record<DynamicType, string> = {
   openClose: '开关',
   running: '运行',
   brightness: '亮度',
-  valueDisplay: '数值反馈',
+  valueDisplay: '数值显示',
 }
-
 
 export const SEMANTIC_TYPE_LABELS: Record<string, string> = {
   generic: '普通物体',
@@ -122,6 +125,10 @@ export const SEMANTIC_TYPE_LABELS: Record<string, string> = {
   roller: '滚筒',
   valve: '阀门',
   pump: '泵',
+  compressor: '压缩机',
+  tower: '塔器',
+  machineTool: '机床',
+  grateCooler: '篦冷机',
   light: '灯',
   display: '仪表/数显',
 }

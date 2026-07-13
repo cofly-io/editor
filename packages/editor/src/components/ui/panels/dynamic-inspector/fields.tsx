@@ -11,11 +11,15 @@ export function NumberField({
   label,
   value,
   onChange,
+  min,
+  max,
   step = 0.1,
 }: {
   label: string
   value: number
   onChange: (value: number) => void
+  min?: number
+  max?: number
   step?: number
 }) {
   return (
@@ -23,6 +27,8 @@ export function NumberField({
       {label}
       <input
         className="h-8 rounded-md border border-border/50 bg-[#2C2C2E] px-2 text-foreground disabled:cursor-not-allowed disabled:opacity-70"
+        max={max}
+        min={min}
         onChange={(event) => onChange(Number(event.target.value))}
         step={step}
         type="number"

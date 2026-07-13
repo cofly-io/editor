@@ -91,7 +91,13 @@ function isTransientItem(node: ItemNode) {
 
 export const ItemRenderer = ({ node }: { node: ItemNode }) => {
   const ref = useRef<Group>(null!)
-  const useProxy = isImportedGlbAsset(node) && isTransientItem(node)
+  const useImportedModelProxy = useViewer((state) => state.sceneComplexity.useImportedModelProxy)
+  const selected = useViewer((state) => state.selection.selectedIds.includes(node.id))
+  const previewSelected = useViewer((state) => state.previewSelectedIds.includes(node.id))
+  const hovered = useViewer((state) => state.hoveredId === node.id)
+  const useProxy =
+    isImportedGlbAsset(node) &&
+    (isTransientItem(node) || (useImportedModelProxy && !(selected || previewSelected || hovered)))
 
   useRegistry(node.id, node.type, ref)
 
@@ -131,8 +137,13 @@ function getPreviewMaterial(shading: RenderShading) {
 
 const PreviewModel = ({ node }: { node: ItemNode }) => {
   const shading = useViewer((state) => state.shading)
+  const handlers = useNodeEvents(node, 'item')
   return (
-    <mesh material={getPreviewMaterial(shading)} position-y={node.asset.dimensions[1] / 2}>
+    <mesh
+      material={getPreviewMaterial(shading)}
+      position-y={node.asset.dimensions[1] / 2}
+      {...handlers}
+    >
       <boxGeometry
         args={[node.asset.dimensions[0], node.asset.dimensions[1], node.asset.dimensions[2]]}
       />

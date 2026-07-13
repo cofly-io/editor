@@ -19,6 +19,7 @@ import { useNodeEvents } from '@pascal-app/viewer/node-events'
 import useViewer from '@pascal-app/viewer/store'
 import { createContext, useContext, useMemo, useRef } from 'react'
 import { BufferGeometry, Float32BufferAttribute, type Group, type Material } from 'three'
+import { isPortalFrameBatchCandidate } from './portal-frame-batching'
 
 const ColumnMaterialContext = createContext<Material>(createDefaultMaterial('#f2f0ed', 0.5))
 const ColumnEdgeSoftnessContext = createContext(0.025)
@@ -2122,6 +2123,14 @@ export const ColumnRenderer = ({ node }: { node: ColumnNode }) => {
   const textures = useViewer((state) => state.textures)
   const colorPreset = useViewer((state) => state.colorPreset)
   const liveTransform = useLiveTransforms((state) => state.get(node.id))
+  const selectedIds = useViewer((state) => state.selection.selectedIds)
+  const previewSelectedIds = useViewer((state) => state.previewSelectedIds)
+  const hoveredId = useViewer((state) => state.hoveredId)
+  const renderPortalFrameIndividually =
+    !isPortalFrameBatchCandidate(node) ||
+    selectedIds.includes(node.id) ||
+    previewSelectedIds.includes(node.id) ||
+    hoveredId === node.id
   const material = useMemo(
     () =>
       createColumnMaterial({
@@ -2163,7 +2172,7 @@ export const ColumnRenderer = ({ node }: { node: ColumnNode }) => {
           visible={node.visible}
           {...handlers}
         >
-          {node.supportStyle === 'a-frame' ? (
+          {!renderPortalFrameIndividually ? null : node.supportStyle === 'a-frame' ? (
             <AFrameSupport node={node} />
           ) : node.supportStyle === 'y-frame' ? (
             <YFrameSupport node={node} />

@@ -39,6 +39,7 @@ export type SemanticRecipeComposeResult = {
   parts: SemanticRecipePart[]
   ports?: SemanticRecipePort[]
   envelope?: SemanticRecipeEnvelope
+  partGroups?: readonly SemanticRecipePartGroup[]
   editableParams?: readonly SemanticRecipeEditableParam[]
   editablePartRoles?: readonly string[]
   corePartRoles?: readonly string[]
@@ -79,6 +80,25 @@ export type SemanticRecipeEditableParam = {
   effects?: readonly SemanticRecipeEditableParamEffect[]
 }
 
+export type SemanticRecipePartGroupEditable =
+  | 'delete'
+  | 'visible'
+  | 'color'
+  | 'opacity'
+  | 'scale'
+  | 'transform'
+  | 'level'
+
+export type SemanticRecipePartGroup = {
+  id: string
+  label?: string
+  roles?: readonly string[]
+  sourcePartKinds?: readonly string[]
+  sourcePartIds?: readonly string[]
+  editable?: readonly SemanticRecipePartGroupEditable[]
+  deleteParamPatch?: Record<string, EquipmentParamValue>
+}
+
 export type SemanticRecipeDefinition = {
   id: SemanticRecipeId
   label: string
@@ -86,6 +106,7 @@ export type SemanticRecipeDefinition = {
   acceptsProfiles?: readonly string[]
   paramSchema?: unknown
   defaultEnvelope?: SemanticRecipeEnvelope
+  partGroups?: readonly SemanticRecipePartGroup[]
   editableParams?: readonly SemanticRecipeEditableParam[]
   editablePartRoles?: readonly string[]
   corePartRoles?: readonly string[]

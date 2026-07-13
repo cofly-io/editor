@@ -4,7 +4,7 @@ import type {
   SemanticRecipeEditableParam,
   SemanticRecipePort,
 } from '@pascal-app/core'
-import { numberParam, stringParam, type FactorySemanticRecipePart } from './common'
+import { type FactorySemanticRecipePart, numberParam, stringParam } from './common'
 
 export const DISTILLATION_UNIT_RECIPE_ID = 'factory:distillation-unit'
 
@@ -16,10 +16,22 @@ export const DISTILLATION_UNIT_EDITABLE_PART_ROLES = [
   'vacuum_heater',
   'side_draw_manifold',
   'service_platform',
+  'lower_service_platform',
+  'middle_service_platform',
+  'upper_service_platform',
+  'top_service_platform',
+  'tray_band',
+  'crude_feed_inlet',
+  'side_draw_nozzle',
+  'overhead_product_outlet',
+  'bottoms_outlet',
   'helical_ladder_tread',
   'helical_ladder_guard_rail',
   'helical_ladder_stringer',
   'helical_ladder_landing',
+  'vertical_access_ladder',
+  'satellite_column',
+  'satellite_column_nozzle',
 ] as const
 
 export const DISTILLATION_UNIT_CORE_PART_ROLES = [
@@ -29,7 +41,10 @@ export const DISTILLATION_UNIT_CORE_PART_ROLES = [
   'side_draw_manifold',
 ] as const
 
-function distillationRoles(profileId: string | undefined, params: Record<string, EquipmentParamValue> | undefined) {
+function distillationRoles(
+  profileId: string | undefined,
+  params: Record<string, EquipmentParamValue> | undefined,
+) {
   const vacuum = /vacuum/i.test(profileId ?? '') || params?.columnKind === 'vacuum'
   return {
     columnRole: stringParam(
@@ -37,13 +52,13 @@ function distillationRoles(profileId: string | undefined, params: Record<string,
       'columnRole',
       vacuum ? 'vacuum_column_shell' : 'distillation_column_shell',
     ),
-    exchangerRole: stringParam(
-      params,
-      'exchangerRole',
-      'heat_exchanger_shell',
-    ),
+    exchangerRole: stringParam(params, 'exchangerRole', 'heat_exchanger_shell'),
     heaterRole: stringParam(params, 'heaterRole', vacuum ? 'vacuum_heater' : 'fired_heater'),
-    manifoldRole: stringParam(params, 'manifoldRole', vacuum ? 'vacuum_line' : 'side_draw_manifold'),
+    manifoldRole: stringParam(
+      params,
+      'manifoldRole',
+      vacuum ? 'vacuum_line' : 'side_draw_manifold',
+    ),
     vacuum,
   }
 }
@@ -129,6 +144,11 @@ function vec3(x: number, y: number, z: number): [number, number, number] {
   return [x, y, z]
 }
 
+function ladderStyle(params: Record<string, EquipmentParamValue> | undefined) {
+  const value = params?.ladderStyle
+  return value === 'vertical' || value === 'none' || value === 'spiral' ? value : 'spiral'
+}
+
 export function buildDistillationUnitProfileParts(input: {
   length: number
   width: number
@@ -138,20 +158,46 @@ export function buildDistillationUnitProfileParts(input: {
 }): FactorySemanticRecipePart[] {
   const roles = distillationRoles(input.profileId, input.params)
   const columnHeight = Math.max(3.2, numberParam(input.params, 'columnHeight', input.height * 0.96))
-  const radius = Math.max(0.36, numberParam(input.params, 'columnRadius', Math.min(input.width, input.length) * 0.13))
+  const radius = Math.max(
+    0.36,
+    numberParam(input.params, 'columnRadius', Math.min(input.width, input.length) * 0.13),
+  )
   const columnX = roles.vacuum ? -input.length * 0.2 : -input.length * 0.26
   const columnColor = stringParam(input.params, 'columnColor', roles.vacuum ? '#cbd5e1' : '#d1d5db')
   const columnOpacity = Math.max(0.18, Math.min(1, numberParam(input.params, 'columnOpacity', 1)))
   const exchangerColor = stringParam(input.params, 'exchangerColor', '#94a3b8')
   const heaterColor = stringParam(input.params, 'heaterColor', '#9ca3af')
   const manifoldColor = stringParam(input.params, 'manifoldColor', '#64748b')
+  const accessStyle = ladderStyle(input.params)
+  const satelliteColumnCount = Math.max(
+    0,
+    Math.min(4, Math.round(numberParam(input.params, 'satelliteColumnCount', 0))),
+  )
+  const satelliteColumnHeight = Math.max(
+    2.8,
+    numberParam(input.params, 'satelliteColumnHeight', columnHeight * 0.46),
+  )
+  const satelliteColumnRadius = Math.max(
+    0.16,
+    numberParam(input.params, 'satelliteColumnRadius', radius * 0.46),
+  )
   const metalColor = '#94a3b8'
   const yBase = radius * 0.25
   const columnCenterY = columnHeight / 2 + yBase
   const bandRadius = radius * 1.08
   const bandYs = roles.vacuum
-    ? [0.24, 0.44, 0.64, 0.82]
-    : [0.18, 0.34, 0.5, 0.66, 0.82]
+    ? [0.18, 0.3, 0.42, 0.54, 0.66, 0.78, 0.9]
+    : [0.14, 0.24, 0.34, 0.44, 0.54, 0.64, 0.74, 0.84, 0.93]
+  const platformFractions = roles.vacuum ? [0.32, 0.58, 0.8] : [0.25, 0.46, 0.67, 0.86]
+  const platformRoles = roles.vacuum
+    ? ['lower_service_platform', 'middle_service_platform', 'upper_service_platform']
+    : [
+        'lower_service_platform',
+        'middle_service_platform',
+        'upper_service_platform',
+        'top_service_platform',
+      ]
+  const sideDrawFractions = roles.vacuum ? [0.42, 0.62] : [0.38, 0.52, 0.66, 0.8]
   return [
     {
       id: 'column',
@@ -174,6 +220,18 @@ export function buildDistillationUnitProfileParts(input: {
         },
       },
     },
+    {
+      id: 'bottom_skirting_ring',
+      kind: 'flange_ring',
+      semanticRole: 'tray_band',
+      axis: 'y',
+      radius: radius * 1.16,
+      tubeRadius: Math.max(0.055, radius * 0.085),
+      includeBolts: true,
+      boltCount: roles.vacuum ? 14 : 16,
+      position: vec3(columnX, yBase + columnHeight * 0.08, 0),
+      metalColor,
+    },
     ...bandYs.map((fraction, index) => ({
       id: `tray_band_${index + 1}`,
       kind: 'flange_ring' as const,
@@ -185,6 +243,18 @@ export function buildDistillationUnitProfileParts(input: {
       position: vec3(columnX, yBase + columnHeight * fraction, 0),
       metalColor,
     })),
+    {
+      id: 'top_crown_ring',
+      kind: 'flange_ring',
+      semanticRole: 'tray_band',
+      axis: 'y',
+      radius: radius * 1.18,
+      tubeRadius: Math.max(0.055, radius * 0.085),
+      includeBolts: true,
+      boltCount: roles.vacuum ? 14 : 16,
+      position: vec3(columnX, yBase + columnHeight * 0.97, 0),
+      metalColor,
+    },
     {
       id: 'exchanger',
       kind: 'heat_exchanger',
@@ -220,75 +290,187 @@ export function buildDistillationUnitProfileParts(input: {
       metalColor,
       material: { properties: { color: manifoldColor, roughness: 0.42, metalness: 0.52 } },
     },
-    {
-      id: 'platform',
-      kind: 'service_platform',
-      semanticRole: 'service_platform',
-      position: vec3(columnX + radius * 1.12, yBase + columnHeight * 0.58, 0),
-      length: Math.max(1, radius * 1.6),
-      width: Math.max(0.72, radius * 1.05),
-      height: Math.max(1.8, input.height * 0.5),
+    ...platformFractions.map((fraction, index) => {
+      const sideSign = index % 2 === 0 ? 1 : -1
+      return {
+        id: `service_platform_${index + 1}`,
+        kind: 'service_platform' as const,
+        semanticRole: platformRoles[index] ?? 'service_platform',
+        position: vec3(columnX + sideSign * radius * 1.15, yBase + columnHeight * fraction, 0),
+        length: Math.max(1.35, radius * 2.35),
+        width: Math.max(0.82, radius * 1.28),
+        height: Math.max(0.9, radius * 0.96),
+        overallHeight: Math.max(0.42, radius * 0.52),
+        metalColor,
+      }
+    }),
+    ...(accessStyle === 'spiral'
+      ? [
+          {
+            id: 'column_access_ladder',
+            kind: 'helical_ladder' as const,
+            semanticRole: 'external_spiral_ladder',
+            sourcePartKind: 'helical_ladder',
+            position: vec3(columnX, yBase + columnHeight * 0.5, 0),
+            height: Math.min(12, Math.max(5.2, columnHeight * 0.88)),
+            innerRadius: radius * 1.18,
+            outerRadius: radius * 1.58,
+            width: Math.max(0.32, radius * 0.34),
+            depth: Math.max(0.18, radius * 0.28),
+            sweepAngle: roles.vacuum ? Math.PI * 4.2 : Math.PI * 4.8,
+            startAngle: roles.vacuum ? -Math.PI * 0.15 : Math.PI * 0.1,
+            stepCount: roles.vacuum ? 30 : 36,
+            ringCount: roles.vacuum ? 24 : 28,
+            railingHeight: 0.42,
+            wireRadius: Math.max(0.012, radius * 0.022),
+            metalColor,
+          },
+        ]
+      : accessStyle === 'vertical'
+        ? [
+            {
+              id: 'vertical_access_ladder',
+              kind: 'platform_ladder' as const,
+              semanticRole: 'vertical_access_ladder',
+              sourcePartKind: 'platform_ladder',
+              position: vec3(columnX - radius * 1.35, yBase + columnHeight * 0.46, -radius * 1.05),
+              length: Math.max(0.72, radius * 0.95),
+              width: Math.max(0.42, radius * 0.68),
+              height: Math.min(4, Math.max(1.8, columnHeight * 0.42)),
+              rungCount: 14,
+              wireRadius: Math.max(0.01, radius * 0.018),
+              metalColor,
+            },
+          ]
+        : []),
+    ...Array.from({ length: satelliteColumnCount }, (_, index) => {
+      const angle = -Math.PI * 0.42 + index * Math.PI * 0.36
+      const satelliteX = columnX + Math.cos(angle) * radius * 2.35
+      const satelliteZ = Math.sin(angle) * radius * 2.35
+      const satelliteHeight = Math.min(columnHeight * 0.72, satelliteColumnHeight)
+      return {
+        id: `satellite_column_${index + 1}`,
+        kind: 'cylindrical_tank' as const,
+        semanticRole: 'satellite_column',
+        axis: 'y' as const,
+        position: vec3(satelliteX, yBase + satelliteHeight / 2, satelliteZ),
+        height: satelliteHeight,
+        length: satelliteHeight,
+        radius: satelliteColumnRadius,
+        primaryColor: columnColor,
+        metalColor,
+        material: {
+          properties: {
+            color: columnColor,
+            roughness: 0.48,
+            metalness: 0.34,
+            opacity: columnOpacity,
+            transparent: columnOpacity < 1,
+          },
+        },
+      }
+    }),
+    ...Array.from({ length: satelliteColumnCount }, (_, index) => {
+      const angle = -Math.PI * 0.42 + index * Math.PI * 0.36
+      const satelliteX = columnX + Math.cos(angle) * radius * 2.35
+      const satelliteZ = Math.sin(angle) * radius * 2.35
+      return {
+        id: `satellite_column_nozzle_${index + 1}`,
+        kind: 'flanged_nozzle' as const,
+        semanticRole: 'satellite_column_nozzle',
+        position: vec3(
+          satelliteX,
+          yBase + satelliteColumnHeight * 0.55,
+          satelliteZ + satelliteColumnRadius,
+        ),
+        side: 'front' as const,
+        radius: Math.max(0.045, satelliteColumnRadius * 0.18),
+        length: Math.max(0.24, satelliteColumnRadius * 0.62),
+        flangeRadius: Math.max(0.09, satelliteColumnRadius * 0.32),
+        includeBolts: true,
+        boltCount: 8,
+        metalColor,
+      }
+    }),
+    ...sideDrawFractions.map((fraction, index) => ({
+      id: `side_draw_nozzle_${index + 1}`,
+      kind: 'flanged_nozzle' as const,
+      semanticRole: 'side_draw_nozzle',
+      position: vec3(columnX + radius * 1.03, yBase + columnHeight * fraction, 0),
+      side: 'right',
+      radius: Math.max(0.07, radius * 0.1),
+      length: Math.max(0.34, radius * 0.55),
+      flangeRadius: Math.max(0.13, radius * 0.2),
+      includeBolts: true,
+      boltCount: 8,
       metalColor,
-    },
-    {
-      id: 'column_access_ladder',
-      kind: 'helical_ladder',
-      semanticRole: 'external_spiral_ladder',
-      sourcePartKind: 'helical_ladder',
-      position: vec3(columnX, yBase + columnHeight * 0.5, 0),
-      height: Math.min(12, Math.max(5.2, columnHeight * 0.88)),
-      innerRadius: radius * 1.18,
-      outerRadius: radius * 1.58,
-      width: Math.max(0.32, radius * 0.34),
-      depth: Math.max(0.18, radius * 0.28),
-      sweepAngle: roles.vacuum ? Math.PI * 4.2 : Math.PI * 4.8,
-      startAngle: roles.vacuum ? -Math.PI * 0.15 : Math.PI * 0.1,
-      stepCount: roles.vacuum ? 30 : 36,
-      ringCount: roles.vacuum ? 24 : 28,
-      railingHeight: 0.42,
-      wireRadius: Math.max(0.012, radius * 0.022),
-      metalColor,
-    },
+    })),
     {
       id: 'feed_inlet',
-      kind: 'inlet_port',
+      kind: 'flanged_nozzle',
       semanticRole: 'crude_feed_inlet',
       position: vec3(columnX - radius * 1.1, yBase + columnHeight * 0.32, 0),
-      axis: 'x',
+      side: 'left',
       radius: Math.max(0.07, radius * 0.12),
+      length: Math.max(0.4, radius * 0.62),
+      flangeRadius: Math.max(0.15, radius * 0.22),
       metalColor,
     },
     {
       id: 'overhead_outlet',
-      kind: 'outlet_port',
+      kind: 'flanged_nozzle',
       semanticRole: 'overhead_product_outlet',
       position: vec3(columnX, yBase + columnHeight * 0.97, radius * 1.08),
-      axis: 'z',
+      side: 'front',
       radius: Math.max(0.06, radius * 0.1),
+      length: Math.max(0.36, radius * 0.56),
+      flangeRadius: Math.max(0.13, radius * 0.2),
       metalColor,
     },
     {
       id: 'bottoms_outlet',
-      kind: 'outlet_port',
+      kind: 'flanged_nozzle',
       semanticRole: 'bottoms_outlet',
       position: vec3(columnX + radius * 1.1, yBase + columnHeight * 0.12, 0),
-      axis: 'x',
+      side: 'right',
       radius: Math.max(0.07, radius * 0.12),
+      length: Math.max(0.4, radius * 0.62),
+      flangeRadius: Math.max(0.15, radius * 0.22),
       metalColor,
     },
   ]
 }
 
-export function buildDistillationUnitPorts(input: {
-  height?: number
-  medium?: string
-} = {}): SemanticRecipePort[] {
+export function buildDistillationUnitPorts(
+  input: { height?: number; medium?: string } = {},
+): SemanticRecipePort[] {
   const height = input.height ?? 9
   const medium = input.medium ?? 'material'
   return [
-    { id: 'feed_inlet', role: 'process-inlet', medium, side: 'left', height: height * 0.34, offset: 0 },
-    { id: 'overhead_product_outlet', role: 'process-outlet', medium, side: 'top', height: height * 0.96, offset: 0 },
-    { id: 'bottoms_outlet', role: 'process-outlet', medium, side: 'right', height: height * 0.16, offset: 0 },
+    {
+      id: 'feed_inlet',
+      role: 'process-inlet',
+      medium,
+      side: 'left',
+      height: height * 0.34,
+      offset: 0,
+    },
+    {
+      id: 'overhead_product_outlet',
+      role: 'process-outlet',
+      medium,
+      side: 'top',
+      height: height * 0.96,
+      offset: 0,
+    },
+    {
+      id: 'bottoms_outlet',
+      role: 'process-outlet',
+      medium,
+      side: 'right',
+      height: height * 0.16,
+      offset: 0,
+    },
   ]
 }
 
@@ -319,6 +501,10 @@ export const distillationUnitRecipe: SemanticRecipeDefinition = {
       'heaterColor',
       'manifoldRole',
       'manifoldColor',
+      'ladderStyle',
+      'satelliteColumnCount',
+      'satelliteColumnHeight',
+      'satelliteColumnRadius',
     ],
   },
   defaultEnvelope: { length: 6.4, width: 3.4, height: 9.5 },
@@ -348,11 +534,22 @@ export const distillationUnitRecipe: SemanticRecipeDefinition = {
         roles.heaterRole,
         roles.manifoldRole,
         'service_platform',
+        'lower_service_platform',
+        'middle_service_platform',
+        'upper_service_platform',
+        'top_service_platform',
+        'vertical_access_ladder',
+        'satellite_column',
+        'satellite_column_nozzle',
         'helical_ladder_tread',
         'helical_ladder_guard_rail',
         'helical_ladder_stringer',
         'helical_ladder_landing',
         'tray_band',
+        'crude_feed_inlet',
+        'overhead_product_outlet',
+        'bottoms_outlet',
+        'side_draw_nozzle',
       ],
       corePartRoles,
       primarySemanticRole: roles.columnRole,

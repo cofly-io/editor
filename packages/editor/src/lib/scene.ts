@@ -12,6 +12,7 @@ import { prepareSceneGraphForSave } from './scene-save'
 export type SceneGraph = {
   nodes: Record<string, unknown>
   rootNodeIds: string[]
+  collections?: Record<string, unknown>
 }
 
 type PersistedSelectionPath = {
@@ -193,6 +194,7 @@ function showStructurePhaseWithStaticSiteBoundary() {
   useEditor.setState({
     phase: 'structure',
     mode: 'select',
+    floorplanSelectionTool: 'click',
     tool: null,
     structureLayer: 'elements',
     catalogCategory: null,
@@ -366,6 +368,7 @@ function resetEditorInteractionState() {
   useEditor.setState({
     phase: 'site',
     mode: 'select',
+    floorplanSelectionTool: 'click',
     tool: null,
     structureLayer: 'elements',
     catalogCategory: null,
@@ -390,6 +393,9 @@ export function applySceneGraphToEditor(sceneGraph?: SceneGraph | null) {
   if (hasUsableSceneGraph(sceneGraph)) {
     const { nodes, rootNodeIds } = sceneGraph
     useScene.getState().setScene(nodes as any, rootNodeIds as any)
+    if (sceneGraph.collections) {
+      useScene.setState({ collections: sceneGraph.collections as any })
+    }
   } else {
     useScene.getState().clearScene()
   }

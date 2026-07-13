@@ -5,8 +5,13 @@ import {
   DataChartNode,
   DataTableNode,
   DataWidgetNode,
+  RoofNode,
 } from '@pascal-app/core'
-import { getPlanDrag3DKinds, isPlanDragMovableNode } from './plan-drag'
+import {
+  getPlanDrag3DKinds,
+  isPlanDragMovableNode,
+  shouldUseGenericPlanDrag3DMoveTool,
+} from './plan-drag'
 
 describe('plan drag movement', () => {
   test('treats assembly roots as plan-movable generated objects', () => {
@@ -18,6 +23,18 @@ describe('plan drag movement', () => {
 
     expect(getPlanDrag3DKinds()).toContain('assembly')
     expect(isPlanDragMovableNode(assembly)).toBe(true)
+    expect(shouldUseGenericPlanDrag3DMoveTool(assembly)).toBe(true)
+  })
+
+  test('keeps bespoke movers out of the generic 3D move dispatcher', () => {
+    const roof = RoofNode.parse({
+      id: 'roof_1',
+      type: 'roof',
+      position: [0, 0, 0],
+    })
+
+    expect(isPlanDragMovableNode(roof)).toBe(true)
+    expect(shouldUseGenericPlanDrag3DMoveTool(roof)).toBe(false)
   })
 
   test('treats conveyor belts as selected-drag plan movable objects', () => {

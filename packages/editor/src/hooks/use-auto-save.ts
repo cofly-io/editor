@@ -3,6 +3,11 @@
 import { getSceneHistoryPauseDepth, useScene } from '@pascal-app/core'
 import { type MutableRefObject, useCallback, useEffect, useRef } from 'react'
 import { type SceneGraph, saveSceneToLocalStorage } from '../lib/scene'
+import {
+  createSceneGraphPatch,
+  hasSceneGraphPatchChanges,
+  type SceneGraphPatch,
+} from '../lib/scene-patch'
 import { prepareSceneGraphForSave } from '../lib/scene-save'
 
 const AUTOSAVE_DEBOUNCE_MS = 1000
@@ -11,6 +16,7 @@ export type SaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'paused' | 'e
 
 interface UseAutoSaveOptions {
   onSave?: (scene: SceneGraph) => Promise<void>
+  onPatchSave?: (patch: SceneGraphPatch) => Promise<void>
   onDirty?: () => void
   onSaveStatusChange?: (status: SaveStatus) => void
   isVersionPreviewMode?: boolean
@@ -24,6 +30,7 @@ interface UseAutoSaveOptions {
  */
 export function useAutoSave({
   onSave,
+  onPatchSave,
   onDirty,
   onSaveStatusChange,
   isVersionPreviewMode = false,
@@ -37,6 +44,7 @@ export function useAutoSave({
 
   // Keep latest callback/value refs so the stable subscription always uses current values
   const onSaveRef = useRef(onSave)
+  const onPatchSaveRef = useRef(onPatchSave)
   const onDirtyRef = useRef(onDirty)
   const onSaveStatusChangeRef = useRef(onSaveStatusChange)
   const isVersionPreviewModeRef = useRef(isVersionPreviewMode)
@@ -44,6 +52,9 @@ export function useAutoSave({
   useEffect(() => {
     onSaveRef.current = onSave
   }, [onSave])
+  useEffect(() => {
+    onPatchSaveRef.current = onPatchSave
+  }, [onPatchSave])
   useEffect(() => {
     onDirtyRef.current = onDirty
   }, [onDirty])
@@ -60,8 +71,12 @@ export function useAutoSave({
 
   // Stable subscription to scene changes
   useEffect(() => {
-    let lastNodesSnapshot = JSON.stringify(useScene.getState().nodes)
-    let lastNodeCount = Object.keys(useScene.getState().nodes).length
+    const readPreparedScene = (): SceneGraph => {
+      const { nodes, rootNodeIds, collections } = useScene.getState()
+      return prepareSceneGraphForSave({ nodes, rootNodeIds, collections } as SceneGraph)
+    }
+    let lastSavedScene = readPreparedScene()
+    let lastNodeCount = Object.keys(lastSavedScene.nodes).length
 
     async function executeSave() {
       if (isLoadingSceneRef.current || isVersionPreviewModeRef.current) {
@@ -70,12 +85,17 @@ export function useAutoSave({
         return
       }
 
-      const { nodes, rootNodeIds } = useScene.getState()
-      const sceneGraph = prepareSceneGraphForSave({ nodes, rootNodeIds } as SceneGraph)
+      const sceneGraph = readPreparedScene()
+      const patch = createSceneGraphPatch(lastSavedScene, sceneGraph)
+      if (!hasSceneGraphPatchChanges(patch)) {
+        hasDirtyChangesRef.current = false
+        setSaveStatus('saved')
+        return
+      }
 
       // Guard: refuse to autosave if the scene went from populated to nearly empty.
       // This catches accidental full deletions before they're persisted.
-      const currentNodeCount = Object.keys(nodes).length
+      const currentNodeCount = Object.keys(sceneGraph.nodes).length
       const STRUCTURAL_NODE_COUNT = 4 // site + building + levels (empty scene skeleton)
       if (lastNodeCount > STRUCTURAL_NODE_COUNT && currentNodeCount <= STRUCTURAL_NODE_COUNT) {
         console.warn(
@@ -84,18 +104,20 @@ export function useAutoSave({
         setSaveStatus('error')
         return
       }
-      lastNodeCount = currentNodeCount
-
       isSavingRef.current = true
       pendingSaveRef.current = false
       setSaveStatus('saving')
 
       try {
-        if (onSaveRef.current) {
+        if (onPatchSaveRef.current) {
+          await onPatchSaveRef.current(patch)
+        } else if (onSaveRef.current) {
           await onSaveRef.current(sceneGraph)
         } else {
           saveSceneToLocalStorage(sceneGraph)
         }
+        lastSavedScene = sceneGraph
+        lastNodeCount = currentNodeCount
         hasDirtyChangesRef.current = false
         setSaveStatus('saved')
       } catch {
@@ -118,13 +140,23 @@ export function useAutoSave({
 
     const unsubscribe = useScene.subscribe((state) => {
       if (isLoadingSceneRef.current) {
-        lastNodesSnapshot = JSON.stringify(state.nodes)
+        lastSavedScene = prepareSceneGraphForSave({
+          nodes: state.nodes,
+          rootNodeIds: state.rootNodeIds,
+          collections: state.collections,
+        } as SceneGraph)
+        lastNodeCount = Object.keys(lastSavedScene.nodes).length
+        hasDirtyChangesRef.current = false
         return
       }
 
       if (isVersionPreviewModeRef.current) {
         setSaveStatus('paused')
-        lastNodesSnapshot = JSON.stringify(state.nodes)
+        lastSavedScene = prepareSceneGraphForSave({
+          nodes: state.nodes,
+          rootNodeIds: state.rootNodeIds,
+          collections: state.collections,
+        } as SceneGraph)
         return
       }
 
@@ -143,20 +175,17 @@ export function useAutoSave({
 
       saveTimeoutRef.current = setTimeout(() => {
         saveTimeoutRef.current = undefined
-
-        const currentNodesSnapshot = JSON.stringify(useScene.getState().nodes)
-        if (currentNodesSnapshot === lastNodesSnapshot) return
-        lastNodesSnapshot = currentNodesSnapshot
-
         executeSave()
       }, AUTOSAVE_DEBOUNCE_MS)
     })
 
     function flushOnExit() {
       if (!hasDirtyChangesRef.current) return
-      const { nodes, rootNodeIds } = useScene.getState()
-      const sceneGraph = prepareSceneGraphForSave({ nodes, rootNodeIds } as SceneGraph)
-      if (onSaveRef.current) {
+      const sceneGraph = readPreparedScene()
+      const patch = createSceneGraphPatch(lastSavedScene, sceneGraph)
+      if (onPatchSaveRef.current) {
+        if (hasSceneGraphPatchChanges(patch)) onPatchSaveRef.current(patch).catch(() => {})
+      } else if (onSaveRef.current) {
         onSaveRef.current(sceneGraph).catch(() => {})
       } else {
         saveSceneToLocalStorage(sceneGraph)

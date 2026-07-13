@@ -11,6 +11,8 @@ import {
   resolveEditableSchemaForProfile,
   validateDeviceProfileDefinition,
 } from '@pascal-app/core/lib/device-profile-registry'
+import { loadAssetIndustryPackResourcesSync } from './asset-industry-packs'
+import { installedAssetIndustryPackDirs } from './asset-packs'
 import { findRepoRoot } from './generated-assets/manifest'
 import { enabledProfilePackDirs, validateProfilePackDir } from './profile-packs'
 
@@ -264,11 +266,201 @@ async function loadProfilesFromPackDir(dir: string): Promise<LoadedDeviceProfile
   }
 }
 
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined
+}
+
+function assetGeneratorId(raw: Record<string, unknown>) {
+  const generatorRef = recordValue(raw.generatorRef)
+  return typeof generatorRef?.generator === 'string' ? generatorRef.generator : undefined
+}
+
+function mappedAssetRole(role: string | undefined) {
+  switch (role) {
+    case 'tank_shell':
+      return 'vessel_shell'
+    case 'service_ladder':
+    case 'external_spiral_ladder':
+      return 'access_ladder'
+    case 'exchanger_shell':
+      return 'heat_exchanger_shell'
+    case 'pump_casing':
+      return 'volute_casing'
+    case 'pump_motor':
+      return 'drive_motor'
+    case 'pump_skid':
+      return 'support_base'
+    case 'pipe_rack_frame':
+      return 'pipe_rack_support_frame'
+    default:
+      return role
+  }
+}
+
+function assetProfilePartFallbacks(raw: Record<string, unknown>) {
+  const generator = assetGeneratorId(raw)
+  const primary = mappedAssetRole(
+    typeof raw.primarySemanticRole === 'string' ? raw.primarySemanticRole : undefined,
+  )
+  switch (generator) {
+    case 'tank.vertical':
+    case 'vessel.horizontal':
+      return [
+        {
+          kind: generator === 'tank.vertical' ? 'storage_tank_shell' : 'cylindrical_tank',
+          semanticRole: 'vessel_shell',
+        },
+        { kind: 'liquid_volume', semanticRole: 'liquid_volume', required: false },
+        { kind: 'flanged_nozzle', semanticRole: 'inlet_port', required: false },
+        { kind: 'flanged_nozzle', semanticRole: 'outlet_port', required: false },
+        { kind: 'platform_ladder', semanticRole: 'access_ladder', required: false },
+      ]
+    case 'tower.distillation':
+      return [
+        { kind: 'cylindrical_tank', semanticRole: primary ?? 'distillation_column_shell' },
+        { kind: 'platform_ladder', semanticRole: 'service_platform', required: false },
+        { kind: 'flanged_nozzle', semanticRole: 'crude_feed_inlet', required: false },
+        { kind: 'flanged_nozzle', semanticRole: 'overhead_product_outlet', required: false },
+        { kind: 'flanged_nozzle', semanticRole: 'bottoms_outlet', required: false },
+      ]
+    case 'pump.centrifugal':
+      return [
+        { kind: 'skid_base', semanticRole: 'support_base' },
+        { kind: 'volute_casing', semanticRole: 'volute_casing' },
+        { kind: 'ribbed_motor_body', semanticRole: 'drive_motor' },
+        { kind: 'inlet_port', semanticRole: 'inlet_port', required: false },
+        { kind: 'outlet_port', semanticRole: 'outlet_port', required: false },
+      ]
+    case 'heat-exchanger.shell':
+      return [
+        { kind: 'heat_exchanger', semanticRole: 'heat_exchanger_shell' },
+        { kind: 'skid_base', semanticRole: 'support_base', required: false },
+      ]
+    case 'pipe-rack.standard':
+      return [
+        { kind: 'pipe_rack', semanticRole: 'pipe_rack_support_frame' },
+        { kind: 'pipe_run', semanticRole: 'parallel_pipe_run', required: false },
+      ]
+    case 'pipe.run':
+      return [{ kind: 'pipe_run', semanticRole: 'pipe_segment' }]
+    case 'platform.stair':
+      return [{ kind: 'platform_ladder', semanticRole: 'service_platform' }]
+    case 'heater.fired':
+      return [
+        { kind: 'generic_body', semanticRole: primary ?? 'fired_heater' },
+        { kind: 'chimney_stack', semanticRole: 'heater_stack_stub', required: false },
+        { kind: 'generic_panel', semanticRole: 'burner', required: false },
+      ]
+    case 'boiler.utility':
+      return [
+        { kind: 'generic_body', semanticRole: primary ?? 'boiler_body' },
+        { kind: 'cylindrical_tank', semanticRole: 'steam_drum', required: false },
+        { kind: 'chimney_stack', semanticRole: 'boiler_stack', required: false },
+        { kind: 'pipe_manifold', semanticRole: 'steam_header', required: false },
+      ]
+    case 'flare.stack':
+      return [
+        { kind: 'chimney_stack', semanticRole: 'flare_stack' },
+        { kind: 'cylindrical_tank', semanticRole: 'knockout_drum', required: false },
+        { kind: 'pipe_run', semanticRole: 'relief_gas_inlet', required: false },
+      ]
+    default:
+      return [{ kind: 'generic_body', semanticRole: primary ?? 'main_body' }]
+  }
+}
+
+function assetProfileArchetype(raw: Record<string, unknown>) {
+  const generator = assetGeneratorId(raw)
+  if (generator === 'pump.centrifugal') return 'rotating_fluid_machine'
+  if (
+    generator === 'pipe-rack.standard' ||
+    generator === 'pipe.run' ||
+    generator === 'platform.stair'
+  ) {
+    return 'pipe_valve_system'
+  }
+  if (generator === 'heat-exchanger.shell' || generator === 'heater.fired' || generator === 'boiler.utility')
+    return 'thermal_equipment'
+  if (
+    generator === 'tank.vertical' ||
+    generator === 'vessel.horizontal' ||
+    generator === 'tower.distillation'
+  ) {
+    return 'process_vessel'
+  }
+  return 'generic_industrial'
+}
+
+function normalizeAssetIndustryProfile(
+  raw: Record<string, unknown>,
+  sourcePack: { id: string; version: string; industry: string },
+) {
+  const params = recordValue(raw.params)
+  const primarySemanticRole = mappedAssetRole(
+    typeof raw.primarySemanticRole === 'string' ? raw.primarySemanticRole : undefined,
+  )
+  const qualityRequiredRoles = Array.isArray(raw.qualityRequiredRoles)
+    ? raw.qualityRequiredRoles
+        .filter((role): role is string => typeof role === 'string' && role.trim().length > 0)
+        .map(mappedAssetRole)
+        .filter((role): role is string => Boolean(role))
+    : []
+  return {
+    ...raw,
+    ...(typeof raw.family === 'string' ? { family: raw.family } : {}),
+    archetypeFamily: assetProfileArchetype(raw),
+    primarySemanticRole,
+    parts: assetProfilePartFallbacks(raw),
+    sourcePack,
+    aliases: [
+      ...(typeof raw.id === 'string' ? [raw.id, raw.id.split('.').pop() ?? raw.id] : []),
+      ...(typeof raw.name === 'string' ? [raw.name] : []),
+    ],
+    description:
+      typeof raw.description === 'string'
+        ? raw.description
+        : `IndustrialPack generator profile ${String(raw.id ?? raw.name ?? 'equipment')}.`,
+    qualityRules: qualityRequiredRoles.length ? { requiredRoles: qualityRequiredRoles } : undefined,
+    detailBudget: params?.detailBudget,
+  }
+}
+
+async function loadProfilesFromAssetIndustryPackDir(dir: string): Promise<LoadedDeviceProfiles> {
+  const resources = loadAssetIndustryPackResourcesSync(dir)
+  if (!resources) return { profiles: [], warnings: [] }
+  const sourcePack = {
+    id: resources.manifest.id,
+    version: resources.manifest.version,
+    industry: resources.manifest.industry,
+  }
+  const profiles: DeviceProfileDefinition[] = []
+  const warnings = [...resources.warnings]
+  for (const raw of resources.profiles) {
+    const profile = normalizeDeviceProfileInput(
+      normalizeAssetIndustryProfile(raw, sourcePack),
+      'imported_pack',
+    )
+    const validation = validateDeviceProfileDefinition(profile)
+    if (!validation.ok) {
+      warnings.push(
+        `Ignored invalid asset industry profile ${profile.id} from ${dir}: ${validation.issues.join('; ')}`,
+      )
+      continue
+    }
+    warnings.push(...validation.warnings.map((warning) => `${profile.id}: ${warning}`))
+    profiles.push(profile)
+  }
+  return { profiles, warnings }
+}
+
 export async function loadDeviceProfiles(
   options: LoadDeviceProfilesOptions = {},
 ): Promise<LoadedDeviceProfiles> {
   const root = await findRepoRoot()
   const enabledPackDirs = await enabledProfilePackDirs()
+  const assetIndustryPackDirs = await installedAssetIndustryPackDirs()
   const extraPackDirs = Array.from(
     new Set(
       (options.extraPackDirs ?? [])
@@ -291,6 +483,9 @@ export async function loadDeviceProfiles(
   const enabledPacks = await Promise.all(
     [...enabledPackDirs, ...extraPackDirs].map(loadProfilesFromPackDir),
   )
+  const assetIndustryPacks = await Promise.all(
+    [...assetIndustryPackDirs].map(loadProfilesFromAssetIndustryPackDir),
+  )
   const packResources: NonNullable<LoadedDeviceProfiles['knowledgeResources']> = {
     layouts: enabledPacks.flatMap((entry) => entry.knowledgeResources?.layouts ?? []),
     partPresets: enabledPacks.flatMap((entry) => entry.knowledgeResources?.partPresets ?? []),
@@ -303,6 +498,7 @@ export async function loadDeviceProfiles(
   const importedProfiles = [
     ...(loaded[0]?.profiles ?? []),
     ...enabledPacks.flatMap((entry) => entry.profiles),
+    ...assetIndustryPacks.flatMap((entry) => entry.profiles),
   ]
   const merged = mergeDeviceProfiles([
     loaded[1]?.profiles ?? [],
@@ -316,6 +512,7 @@ export async function loadDeviceProfiles(
     warnings: [
       ...loaded.flatMap((entry) => entry.warnings),
       ...enabledPacks.flatMap((entry) => entry.warnings),
+      ...assetIndustryPacks.flatMap((entry) => entry.warnings),
       ...merged.warnings,
     ],
   }

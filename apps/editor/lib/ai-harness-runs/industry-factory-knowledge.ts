@@ -1,5 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { loadAssetIndustryPackResourcesSync } from '../asset-industry-packs'
+import { installedAssetIndustryPackDirsSync } from '../asset-packs'
+import { enabledProfilePackDirsSync, simulatedProfilePackCloudRoot } from '../profile-packs'
 import type {
   ProcessConnectionPlan,
   ProcessConnectionVisualKind,
@@ -9,17 +12,17 @@ import type {
   ProcessStationPlan,
 } from './process-line-types'
 import type { ProcessTemplate } from './process-template-registry'
-import {
-  enabledProfilePackDirsSync,
-  simulatedProfilePackCloudRoot,
-} from '../profile-packs'
 
 type IndustryFactoryManifest = {
   id: string
+  name?: string
   industry: string
   version: string
   processTemplates?: string[]
   factoryArchitectures?: string[]
+  profiles?: string[]
+  layouts?: string[]
+  connections?: string[]
 }
 
 export type IndustryPackRef = {
@@ -66,6 +69,8 @@ type FactoryArchitectureLayoutHints = {
   longAxisStationId?: string
   sideBranchStationIds?: string[]
   omitPerimeterWalls?: boolean
+  omitCeiling?: boolean
+  omitRoof?: boolean
   stationPositionHints?: NonNullable<ProcessLinePlan['architecture']>['stationPositionHints']
 }
 
@@ -245,7 +250,7 @@ function findRepoRootSync(start = process.cwd()) {
 }
 
 function runtimeProfilePackDirs() {
-  return enabledProfilePackDirsSync()
+  return [...installedAssetIndustryPackDirsSync(), ...enabledProfilePackDirsSync()]
 }
 
 function profilePackCloudRoot() {
@@ -268,7 +273,9 @@ function resourceCacheSignature(
   if (dirs.length === 0) return 'no-enabled-packs'
   const parts: string[] = []
   for (const dir of dirs) {
-    const manifestPath = path.join(dir, 'pack.json')
+    const manifestPath = fs.existsSync(path.join(dir, 'pack.json'))
+      ? path.join(dir, 'pack.json')
+      : path.join(dir, 'industry-pack.json')
     parts.push(fileSignature(manifestPath))
     if (!fs.existsSync(manifestPath)) continue
     let manifest: IndustryFactoryManifest | null = null
@@ -277,8 +284,18 @@ function resourceCacheSignature(
     } catch {
       continue
     }
+    if (!manifest) continue
     const resolvedDir = path.resolve(dir)
-    for (const rel of manifest?.[resourceKey] ?? []) {
+    const resourcePaths =
+      resourceKey === 'processTemplates'
+        ? [
+            ...(manifest.processTemplates ?? []),
+            ...(manifest.profiles ?? []),
+            ...(manifest.layouts ?? []),
+            ...(manifest.connections ?? []),
+          ]
+        : [...(manifest.factoryArchitectures ?? []), ...(manifest.layouts ?? [])]
+    for (const rel of resourcePaths) {
       if (!safeRelativePath(rel)) continue
       const file = path.resolve(dir, rel)
       if (!(file === resolvedDir || file.startsWith(`${resolvedDir}${path.sep}`))) continue
@@ -291,17 +308,25 @@ function resourceCacheSignature(
 function normalizeManifest(raw: unknown): IndustryFactoryManifest | null {
   if (!isRecord(raw)) return null
   const id = stringValue(raw.id)
+  const name = stringValue(raw.name)
   const industry = stringValue(raw.industry)
   const version = stringValue(raw.version)
   if (!id || !industry || !version) return null
   const processTemplates = stringArray(raw.processTemplates)
   const factoryArchitectures = stringArray(raw.factoryArchitectures)
+  const profiles = stringArray(raw.profiles)
+  const layouts = stringArray(raw.layouts)
+  const connections = stringArray(raw.connections)
   return {
     id,
+    ...(name ? { name } : {}),
     industry,
     version,
     ...(processTemplates.length ? { processTemplates } : {}),
     ...(factoryArchitectures.length ? { factoryArchitectures } : {}),
+    ...(profiles.length ? { profiles } : {}),
+    ...(layouts.length ? { layouts } : {}),
+    ...(connections.length ? { connections } : {}),
   }
 }
 
@@ -371,7 +396,9 @@ function normalizeArchitecture(raw: unknown, manifest: IndustryFactoryManifest) 
         .filter((module): module is FactoryArchitectureModule => Boolean(module))
     : []
   const layoutHints = isRecord(raw.layoutHints) ? raw.layoutHints : {}
-  const positionHints = stationPositionHints(layoutHints.stationPositions)
+  const positionHints =
+    stationPositionHints(layoutHints.stationPositions) ??
+    stationPositionHints(layoutHints.stationPositionHints)
   return {
     id,
     label,
@@ -396,6 +423,12 @@ function normalizeArchitecture(raw: unknown, manifest: IndustryFactoryManifest) 
         : {}),
       ...(booleanValue(layoutHints.omitPerimeterWalls) != null
         ? { omitPerimeterWalls: booleanValue(layoutHints.omitPerimeterWalls) }
+        : {}),
+      ...(booleanValue(layoutHints.omitCeiling) != null
+        ? { omitCeiling: booleanValue(layoutHints.omitCeiling) }
+        : {}),
+      ...(booleanValue(layoutHints.omitRoof) != null
+        ? { omitRoof: booleanValue(layoutHints.omitRoof) }
         : {}),
       ...(positionHints ? { stationPositionHints: positionHints } : {}),
     },
@@ -484,9 +517,396 @@ function normalizeTemplate(raw: RawProcessTemplate, manifest: IndustryFactoryMan
   } satisfies ProcessTemplate
 }
 
+function assetProfileMap(profiles: readonly Record<string, unknown>[]) {
+  return new Map(
+    profiles.flatMap((profile) => {
+      const id = stringValue(profile.id)
+      return id ? [[id, profile] as const] : []
+    }),
+  )
+}
+
+function assetProcessId(manifest: IndustryFactoryManifest, layout: Record<string, unknown>) {
+  if (manifest.id === 'industry.refinery.basic') return 'refinery_basic_complex'
+  const layoutId = stringValue(layout.id) ?? 'factory'
+  return `${manifest.industry}_${layoutId}`.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '')
+}
+
+function assetProcessLabel(manifest: IndustryFactoryManifest) {
+  if (manifest.id === 'industry.refinery.basic') return 'Basic oil refinery complex'
+  return manifest.name ?? `${manifest.industry} factory`
+}
+
+function assetProcessDisplayLabel(manifest: IndustryFactoryManifest) {
+  if (manifest.id === 'industry.refinery.basic') return '\u70bc\u6cb9\u5382'
+  return assetIndustryDisplayLabel(manifest.industry) ?? manifest.name
+}
+
+function assetIndustryDisplayLabel(industry: string) {
+  if (industry === 'cement') return '\u6c34\u6ce5\u5382'
+  if (industry === 'thermal-power') return '\u706b\u7535\u5382'
+  if (industry === 'electrolytic-aluminum') return '\u7535\u89e3\u94dd\u5382'
+  if (industry === 'water-treatment') return '\u6c34\u5904\u7406\u5382'
+  if (industry === 'discrete-manufacturing')
+    return '\u79bb\u6563\u5236\u9020\u67d4\u6027\u8f66\u95f4'
+  if (industry === 'process') return '\u6d41\u7a0b\u884c\u4e1a\u57fa\u7840\u5de5\u5382'
+  if (industry === 'appliance-assembly') return '\u5bb6\u7535\u603b\u88c5\u5de5\u5382'
+  return undefined
+}
+
+function assetIndustryAliases(industry: string) {
+  if (industry === 'cement') {
+    return [
+      '\u6c34\u6ce5\u5382',
+      '\u6c34\u6ce5\u5de5\u5382',
+      '\u6c34\u6ce5\u751f\u4ea7\u7ebf',
+      '\u6c34\u6ce5\u719f\u6599',
+      '\u719f\u6599\u4ea7\u7ebf',
+      'cement plant',
+      'cement factory',
+      'cement production line',
+      'clinker line',
+    ]
+  }
+  if (industry === 'thermal-power') {
+    return ['\u706b\u7535\u5382', '\u706b\u529b\u53d1\u7535\u5382', 'thermal power plant']
+  }
+  if (industry === 'electrolytic-aluminum') {
+    return [
+      '\u7535\u89e3\u94dd\u5382',
+      '\u7535\u89e3\u94dd\u8f66\u95f4',
+      'electrolytic aluminum smelter',
+    ]
+  }
+  if (industry === 'water-treatment') {
+    return ['\u6c34\u5904\u7406\u5382', '\u6c61\u6c34\u5904\u7406\u5382', 'water treatment plant']
+  }
+  if (industry === 'discrete-manufacturing') {
+    return [
+      '\u79bb\u6563\u5236\u9020',
+      '\u6c7d\u8f66\u52a0\u5de5',
+      '\u67d4\u6027\u8f66\u95f4',
+      'discrete manufacturing',
+    ]
+  }
+  if (industry === 'appliance-assembly') {
+    return ['\u5bb6\u7535\u603b\u88c5', '\u5bb6\u7535\u88c5\u914d', 'appliance assembly']
+  }
+  return []
+}
+
+function assetProcessAliases(manifest: IndustryFactoryManifest) {
+  const aliases = [
+    manifest.id,
+    manifest.name,
+    manifest.industry,
+    assetProcessLabel(manifest),
+    assetProcessDisplayLabel(manifest),
+    ...assetIndustryAliases(manifest.industry),
+  ].filter((value): value is string => Boolean(value))
+  if (manifest.id === 'industry.refinery.basic') {
+    aliases.push(
+      '\u70bc\u6cb9\u5382',
+      '\u70bc\u6cb9',
+      'refinery',
+      'oil refinery',
+      'refinery factory',
+    )
+  }
+  return aliases.map(aliasPattern)
+}
+
+function assetDomain(industry: string): ProcessLineDomain {
+  if (/refinery|chemical|petrochemical|process/i.test(industry)) return 'chemical'
+  if (/power|energy|hydrogen/i.test(industry)) return 'energy'
+  if (/food/i.test(industry)) return 'food'
+  if (/assembly|discrete|manufacturing|robot/i.test(industry)) return 'assembly'
+  if (/logistics|warehouse/i.test(industry)) return 'logistics'
+  if (/aluminum|metal|metallurgy/i.test(industry)) return 'metallurgy'
+  return 'generic'
+}
+
+function assetFootprintHint(
+  profile: Record<string, unknown> | undefined,
+): ProcessStationPlan['footprintHint'] {
+  const dimensions = isRecord(profile?.defaultDimensions) ? profile?.defaultDimensions : undefined
+  const length = numberValue(dimensions?.length) ?? numberValue(dimensions?.diameter) ?? 2
+  const width = numberValue(dimensions?.width) ?? numberValue(dimensions?.diameter) ?? 2
+  const height = numberValue(dimensions?.height) ?? 2
+  if (height >= 7) return 'tall'
+  if (length >= 8) return 'long'
+  if (length * width >= 12) return 'large'
+  if (length * width <= 3) return 'small'
+  return 'medium'
+}
+
+function normalizeAssetStation(
+  raw: unknown,
+  profiles: Map<string, Record<string, unknown>>,
+): ProcessStationPlan | null {
+  if (!isRecord(raw)) return null
+  const id = stringValue(raw.id)
+  const profileId = stringValue(raw.profileId)
+  if (!id || !profileId) return null
+  const profile = profiles.get(profileId)
+  const name = stringValue(profile?.name) ?? profileId
+  const family = stringValue(profile?.family) ?? profileId
+  const generatorRef = isRecord(profile?.generatorRef) ? profile?.generatorRef : undefined
+  const generator = stringValue(generatorRef?.generator)
+  const safetyTags = stringArray(raw.safetyTags)
+  return {
+    id,
+    label: name,
+    displayLabel: name,
+    role: family,
+    equipmentHint: [profileId, name, family, generator].filter(Boolean).join(' '),
+    footprintHint: assetFootprintHint(profile),
+    ...(safetyTags.length ? { safetyTags } : {}),
+  }
+}
+
+function assetMedium(value: unknown): ProcessConnectionPlan['medium'] {
+  const text = typeof value === 'string' ? value : ''
+  if (/hydrogen|h2/i.test(text)) return 'hydrogen'
+  if (/oxygen|o2/i.test(text)) return 'oxygen'
+  if (/steam|utility_header/i.test(text)) return 'power'
+  if (/water|condensate/i.test(text)) return 'water'
+  if (/cool/i.test(text)) return 'cooling'
+  if (/power|electric/i.test(text)) return 'power'
+  if (/gas|vapor|vapour|flue|flare|relief|air/i.test(text)) return 'gas'
+  if (/molten/i.test(text)) return 'molten_metal'
+  return 'material'
+}
+
+function assetConnectionRender(raw: Record<string, unknown>): ProcessConnectionPlan['render'] {
+  const render = isRecord(raw.render) ? raw.render : {}
+  const color = stringValue(render.color) ?? stringValue(raw.color)
+  const elevation = finiteNumberValue(render.elevation) ?? finiteNumberValue(raw.elevation)
+  const diameter = finiteNumberValue(render.diameter) ?? finiteNumberValue(raw.diameter)
+  const supportStyle = stringValue(render.supportStyle)
+  const supportSpacing = finiteNumberValue(render.supportSpacing)
+  const supportWidth = finiteNumberValue(render.supportWidth)
+  const galleryWidth = finiteNumberValue(render.galleryWidth)
+  const galleryHeight = finiteNumberValue(render.galleryHeight)
+  const insulationThickness = finiteNumberValue(render.insulationThickness)
+  const output: NonNullable<ProcessConnectionPlan['render']> = {}
+  if (color && /^#[0-9a-f]{6}$/i.test(color)) output.color = color
+  if (elevation != null && elevation > 0) output.elevation = elevation
+  if (diameter != null && diameter > 0) output.diameter = diameter
+  if (
+    supportStyle === 'single_support' ||
+    supportStyle === 'pipe_rack' ||
+    supportStyle === 'belt_gallery'
+  ) {
+    output.supportStyle = supportStyle
+  }
+  if (supportSpacing != null && supportSpacing > 0) output.supportSpacing = supportSpacing
+  if (supportWidth != null && supportWidth > 0) output.supportWidth = supportWidth
+  if (galleryWidth != null && galleryWidth > 0) output.galleryWidth = galleryWidth
+  if (galleryHeight != null && galleryHeight > 0) output.galleryHeight = galleryHeight
+  if (insulationThickness != null && insulationThickness > 0)
+    output.insulationThickness = insulationThickness
+  if (typeof render.walkway === 'boolean') output.walkway = render.walkway
+  if (typeof render.enclosed === 'boolean') output.enclosed = render.enclosed
+  if (typeof render.valves === 'boolean') output.valves = render.valves
+  if (typeof render.expansionJoints === 'boolean') output.expansionJoints = render.expansionJoints
+  return Object.keys(output).length ? output : undefined
+}
+
+function normalizeAssetConnection(raw: unknown): ProcessConnectionPlan | null {
+  if (!isRecord(raw)) return null
+  const from = isRecord(raw.from) ? raw.from : undefined
+  const to = isRecord(raw.to) ? raw.to : undefined
+  const fromStationId = stringValue(from?.stationId)
+  const toStationId = stringValue(to?.stationId)
+  if (!fromStationId || !toStationId) return null
+  const medium = assetMedium(raw.medium)
+  return {
+    fromStationId,
+    toStationId,
+    medium,
+    visualKind: connectionVisualKind(raw.visualKind, medium),
+    ...(stringValue(from?.port) ? { fromPortId: stringValue(from?.port) } : {}),
+    ...(stringValue(to?.port) ? { toPortId: stringValue(to?.port) } : {}),
+    ...(assetConnectionRender(raw) ? { render: assetConnectionRender(raw) } : {}),
+  }
+}
+
+function assetPositionHints(layout: Record<string, unknown>) {
+  const stations = Array.isArray(layout.stations) ? layout.stations.filter(isRecord) : []
+  const entries = stations.flatMap((station) => {
+    const id = stringValue(station.id)
+    const position = Array.isArray(station.position) ? station.position : undefined
+    const x = typeof position?.[0] === 'number' ? position[0] : undefined
+    const z = typeof position?.[2] === 'number' ? position[2] : undefined
+    if (!id || x == null || z == null) return []
+    const rotationY = finiteNumberValue(station.rotationY)
+    return [
+      [
+        id,
+        {
+          x,
+          z,
+          ...(rotationY != null ? { rotationY } : {}),
+        },
+      ] as const,
+    ]
+  })
+  return entries.length ? Object.fromEntries(entries) : undefined
+}
+
+function assetDimensions(
+  layout: Record<string, unknown>,
+  profiles: Map<string, Record<string, unknown>>,
+) {
+  const stations = Array.isArray(layout.stations) ? layout.stations.filter(isRecord) : []
+  if (!stations.length) return { length: 24, width: 9 }
+  let minX = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let minZ = Number.POSITIVE_INFINITY
+  let maxZ = Number.NEGATIVE_INFINITY
+  for (const station of stations) {
+    const position = Array.isArray(station.position) ? station.position : undefined
+    const x = typeof position?.[0] === 'number' ? position[0] : 0
+    const z = typeof position?.[2] === 'number' ? position[2] : 0
+    const profile = profiles.get(stringValue(station.profileId) ?? '')
+    const dimensions = isRecord(profile?.defaultDimensions) ? profile?.defaultDimensions : undefined
+    const halfLength =
+      (numberValue(dimensions?.length) ?? numberValue(dimensions?.diameter) ?? 2) / 2
+    const halfWidth = (numberValue(dimensions?.width) ?? numberValue(dimensions?.diameter) ?? 2) / 2
+    minX = Math.min(minX, x - halfLength)
+    maxX = Math.max(maxX, x + halfLength)
+    minZ = Math.min(minZ, z - halfWidth)
+    maxZ = Math.max(maxZ, z + halfWidth)
+  }
+  return {
+    length: Math.max(12, maxX - minX + 4),
+    width: Math.max(8, maxZ - minZ + 4),
+  }
+}
+
+function assetTemplateFromLayout(input: {
+  manifest: IndustryFactoryManifest
+  layout: Record<string, unknown>
+  profiles: Map<string, Record<string, unknown>>
+  connections: readonly ProcessConnectionPlan[]
+}): ProcessTemplate | null {
+  const stations = Array.isArray(input.layout.stations)
+    ? input.layout.stations
+        .map((station) => normalizeAssetStation(station, input.profiles))
+        .filter((station): station is ProcessStationPlan => Boolean(station))
+    : []
+  if (stations.length < 2) return null
+  const stationIds = new Set(stations.map((station) => station.id))
+  const connections = input.connections.filter(
+    (connection) =>
+      stationIds.has(connection.fromStationId) && stationIds.has(connection.toStationId),
+  )
+  return {
+    processId: assetProcessId(input.manifest, input.layout),
+    processLabel: assetProcessLabel(input.manifest),
+    ...(assetProcessDisplayLabel(input.manifest)
+      ? { processDisplayLabel: assetProcessDisplayLabel(input.manifest) }
+      : {}),
+    domain: assetDomain(input.manifest.industry),
+    aliases: assetProcessAliases(input.manifest),
+    requiredRoles: stations.map((station) => station.role),
+    defaultLayoutStyle: 'parallel_bays',
+    defaultDimensions: assetDimensions(input.layout, input.profiles),
+    safetyTags:
+      input.manifest.industry === 'refinery' ? ['flammable', 'process', 'high-temperature'] : [],
+    stations,
+    connections,
+    sourcePack: {
+      id: input.manifest.id,
+      version: input.manifest.version,
+      industry: input.manifest.industry,
+    },
+  }
+}
+
+function loadAssetTemplatesFromPackDir(dir: string) {
+  const resources = loadAssetIndustryPackResourcesSync(dir)
+  if (!resources) return []
+  const profiles = assetProfileMap(resources.profiles)
+  const connections = resources.connections.flatMap((resource) =>
+    Array.isArray(resource.connections)
+      ? resource.connections
+          .map(normalizeAssetConnection)
+          .filter((connection): connection is ProcessConnectionPlan => Boolean(connection))
+      : [],
+  )
+  return resources.layouts.flatMap((layout) => {
+    const template = assetTemplateFromLayout({
+      manifest: resources.manifest,
+      layout,
+      profiles,
+      connections,
+    })
+    return template ? [template] : []
+  })
+}
+
+function loadAssetArchitecturesFromPackDir(dir: string) {
+  const resources = loadAssetIndustryPackResourcesSync(dir)
+  if (!resources) return []
+  const profiles = assetProfileMap(resources.profiles)
+  return resources.layouts.flatMap((layout) => {
+    const stationIds = Array.isArray(layout.stations)
+      ? layout.stations
+          .filter(isRecord)
+          .flatMap((station) => (stringValue(station.id) ? [stringValue(station.id)!] : []))
+      : []
+    if (!stationIds.length) return []
+    const processId = assetProcessId(resources.manifest, layout)
+    const dimensions = assetDimensions(layout, profiles)
+    return [
+      {
+        id: stringValue(layout.id) ?? `${processId}.layout`,
+        label: assetProcessLabel(resources.manifest),
+        industry: resources.manifest.industry,
+        processId,
+        layoutStyle: 'parallel_bays' as const,
+        defaultDimensions: dimensions,
+        scopes: [
+          {
+            id: 'full',
+            label:
+              assetProcessDisplayLabel(resources.manifest) ?? assetProcessLabel(resources.manifest),
+            aliases:
+              resources.manifest.id === 'industry.refinery.basic'
+                ? ['\u70bc\u6cb9\u5382', 'refinery']
+                : [],
+            includeModules: ['main'],
+          },
+        ],
+        modules: [{ id: 'main', order: 0, stationIds }],
+        layoutHints: {
+          omitPerimeterWalls: true,
+          ...(stringValue(layout.siteMode) === 'open-air'
+            ? { omitCeiling: true, omitRoof: true }
+            : {}),
+          ...(booleanValue(layout.omitCeiling) != null
+            ? { omitCeiling: booleanValue(layout.omitCeiling) }
+            : {}),
+          ...(booleanValue(layout.omitRoof) != null
+            ? { omitRoof: booleanValue(layout.omitRoof) }
+            : {}),
+          stationPositionHints: assetPositionHints(layout),
+        },
+        sourcePack: {
+          id: resources.manifest.id,
+          version: resources.manifest.version,
+          industry: resources.manifest.industry,
+        },
+      } satisfies IndustryFactoryArchitecture,
+    ]
+  })
+}
+
 function loadTemplatesFromPackDir(dir: string) {
   const manifestPath = path.join(dir, 'pack.json')
-  if (!fs.existsSync(manifestPath)) return []
+  if (!fs.existsSync(manifestPath)) return loadAssetTemplatesFromPackDir(dir)
   const manifest = normalizeManifest(readJson(manifestPath))
   if (!manifest?.processTemplates?.length) return []
   const resolvedDir = path.resolve(dir)
@@ -509,7 +929,7 @@ function loadTemplatesFromPackDir(dir: string) {
 
 function loadArchitecturesFromPackDir(dir: string) {
   const manifestPath = path.join(dir, 'pack.json')
-  if (!fs.existsSync(manifestPath)) return []
+  if (!fs.existsSync(manifestPath)) return loadAssetArchitecturesFromPackDir(dir)
   const manifest = normalizeManifest(readJson(manifestPath))
   if (!manifest?.factoryArchitectures?.length) return []
   const resolvedDir = path.resolve(dir)
@@ -695,6 +1115,12 @@ export function applyFactoryArchitectureToPlan(input: {
         ...(architecture.layoutHints.omitPerimeterWalls != null
           ? { omitPerimeterWalls: architecture.layoutHints.omitPerimeterWalls }
           : {}),
+        ...(architecture.layoutHints.omitCeiling != null
+          ? { omitCeiling: architecture.layoutHints.omitCeiling }
+          : {}),
+        ...(architecture.layoutHints.omitRoof != null
+          ? { omitRoof: architecture.layoutHints.omitRoof }
+          : {}),
         ...(positionHints ? { stationPositionHints: positionHints } : {}),
       },
     }
@@ -733,6 +1159,12 @@ export function applyFactoryArchitectureToPlan(input: {
       ...(architecture.layoutHints.omitPerimeterWalls != null
         ? { omitPerimeterWalls: architecture.layoutHints.omitPerimeterWalls }
         : {}),
+      ...(architecture.layoutHints.omitCeiling != null
+        ? { omitCeiling: architecture.layoutHints.omitCeiling }
+        : {}),
+      ...(architecture.layoutHints.omitRoof != null
+        ? { omitRoof: architecture.layoutHints.omitRoof }
+        : {}),
       ...(positionHints ? { stationPositionHints: positionHints } : {}),
     },
   }
@@ -740,7 +1172,9 @@ export function applyFactoryArchitectureToPlan(input: {
 
 export function resolveIndustryPackDir(ref: IndustryPackRef): string | undefined {
   for (const dir of runtimeProfilePackDirs()) {
-    const manifestPath = path.join(dir, 'pack.json')
+    const manifestPath = fs.existsSync(path.join(dir, 'pack.json'))
+      ? path.join(dir, 'pack.json')
+      : path.join(dir, 'industry-pack.json')
     if (!fs.existsSync(manifestPath)) continue
     try {
       const manifest = normalizeManifest(readJson(manifestPath))

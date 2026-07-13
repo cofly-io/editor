@@ -11,6 +11,10 @@ import { ensureWebGPUCompatibleGeometry } from '@pascal-app/viewer/safe-geometry
 import useViewer from '@pascal-app/viewer/store'
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
+import {
+  createIndustrialMaterial,
+  industrialRenderContractFromMetadata,
+} from '../shared/industrial-render-contract-rendering'
 
 export const SphereRenderer = ({ node }: { node: SphereNode }) => {
   const ref = useRef<THREE.Group>(null!)
@@ -23,14 +27,21 @@ export const SphereRenderer = ({ node }: { node: SphereNode }) => {
 
   const handlers = useNodeEvents(node, 'sphere')
   const shading = useViewer((state) => state.shading)
+  const renderContract = useMemo(
+    () => industrialRenderContractFromMetadata(node.metadata),
+    [node.metadata],
+  )
 
   const material = useMemo(() => {
     const presetMaterial = createMaterialFromPresetRef(node.materialPreset, shading)
-    if (presetMaterial) return presetMaterial
+    if (presetMaterial) return createIndustrialMaterial(renderContract, presetMaterial)
     const mat = node.material
-    if (!mat) return createDefaultMaterial('#cccccc', 1, shading)
-    return createMaterial(mat, shading)
+    const baseMaterial = mat
+      ? createMaterial(mat, shading)
+      : createDefaultMaterial('#cccccc', 1, shading)
+    return createIndustrialMaterial(renderContract, baseMaterial)
   }, [
+    renderContract,
     node.materialPreset,
     node.material,
     node.material?.preset,

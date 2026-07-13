@@ -19,6 +19,7 @@ const LABELS = {
   axis: zh(0x8f74, 0x5411),
   animationSpeed: zh(0x52a8, 0x753b, 0x901f, 0x5ea6),
   arrowColor: zh(0x7bad, 0x5934, 0x989c, 0x8272),
+  arrowSize: zh(0x7bad, 0x5934, 0x5927, 0x5c0f),
   arrowColorDesc: zh(
     0x4ec5,
     0x63a7,
@@ -469,8 +470,6 @@ export function DynamicBindingCard({
   onRemove: () => void
 }) {
   const previewSupported = PREVIEW_RUNTIME_TYPES.has(binding.type)
-  const pathValues = pathOptions.map((option) => option.path)
-  const selectPathOptions = pathValues.includes(binding.path) ? pathValues : [binding.path, ...pathValues]
   const selectDynamicTypes = dynamicTypes.includes(binding.type) ? dynamicTypes : [binding.type, ...dynamicTypes]
   const showConveyorSettings = binding.type === 'conveyorFlow' && isConveyorNode
   const validationIssues = validateDynamicBinding({ binding, isConveyorNode, pathOptions })
@@ -517,7 +516,15 @@ export function DynamicBindingCard({
             getLabel={(type) => DYNAMIC_TYPE_LABELS[type] ?? type}
             hideLabel
             label={LABELS.dynamicType}
-            onChange={(type) => onChange({ ...createBinding(type, binding.path), id: binding.id })}
+            onChange={(type) =>
+              onChange({
+                ...createBinding(type, binding.path),
+                id: binding.id,
+                pending: binding.pending,
+                source: binding.source,
+                sourceLabel: binding.sourceLabel,
+              })
+            }
             options={selectDynamicTypes}
             testId="dynamic-binding-type-select"
             value={binding.type}
@@ -533,6 +540,13 @@ export function DynamicBindingCard({
         </button>
       </div>
 
+      {binding.source === 'uns' ? (
+        <div className="rounded-md border border-[#a684ff]/25 bg-[#3A3358]/30 px-2 py-1.5 text-[#E8DEFF] text-[10px]">
+          <div className="font-medium">{binding.pending ? '待配置 UNS 绑定' : 'UNS 绑定'}</div>
+          <div className="mt-0.5 truncate text-[#E8DEFF]/70">{binding.sourceLabel ?? binding.path}</div>
+        </div>
+      ) : null}
+
       {!previewSupported ? (
         <div className="rounded-md border border-amber-400/20 bg-amber-400/10 px-2 py-1 text-[10px] text-amber-200">
           该动态可以保存配置，但预览运行效果还未接入。
@@ -540,14 +554,6 @@ export function DynamicBindingCard({
       ) : null}
 
       <BindingSection showTitle={false} testId="dynamic-section-data-mapping" title={LABELS.dataMapping}>
-        <SelectField
-          getLabel={(path) => pathOptions.find((option) => option.path === path)?.label ?? path}
-          label={LABELS.dataPath}
-          onChange={(path) => onChange({ ...binding, path })}
-          options={selectPathOptions}
-          testId="dynamic-binding-path-select"
-          value={binding.path}
-        />
         {binding.type === 'visible' ? (
           <DynamicConditionFields
             binding={binding}
@@ -613,6 +619,14 @@ export function DynamicBindingCard({
                 options={['forward', 'backward']}
                 testId="dynamic-flow-direction-select"
                 value={binding.direction === 'backward' ? 'backward' : 'forward'}
+              />
+              <NumberField
+                label={LABELS.arrowSize}
+                max={2}
+                min={0.2}
+                onChange={(arrowScale) => onChange({ ...binding, arrowScale })}
+                step={0.05}
+                value={binding.arrowScale ?? 0.72}
               />
             </>
           ) : null}

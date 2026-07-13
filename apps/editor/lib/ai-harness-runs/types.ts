@@ -13,6 +13,7 @@ export type AiHarnessRunImage = {
 export type AiHarnessRun = {
   id: string
   conversationId: string
+  sceneId?: string
   mode: AiHarnessRunMode
   status: AiHarnessRunStatus
   prompt: string
@@ -49,6 +50,7 @@ export type AiHarnessRunEvent = {
 
 export type AiConversation = {
   id: string
+  sceneId?: string
   messages: unknown[]
   activeRunIds: string[]
   conversationPurpose?: AiConversationPurpose
@@ -59,6 +61,7 @@ export type AiConversation = {
 
 export type AiConversationSummary = {
   id: string
+  sceneId?: string
   title: string
   messageCount: number
   activeRunCount: number

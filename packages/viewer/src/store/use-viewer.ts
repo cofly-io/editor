@@ -7,10 +7,16 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { EdgeMode } from '../lib/edge-style'
 import type { ColorPreset, RenderShading } from '../lib/materials'
+import {
+  DEFAULT_SCENE_COMPLEXITY,
+  type SceneComplexityBudget,
+  sameSceneComplexity,
+} from '../lib/scene-complexity'
 import { getSceneTheme, SCENE_THEME_IDS } from '../lib/scene-themes'
 
 export type RenderContext = 'authoring' | 'presentation'
 export type HoverHighlightIntent = 'default' | 'danger' | 'accent' | 'blocked'
+export type RendererHealth = 'healthy' | 'degraded' | 'lost'
 
 type SelectionPath = {
   buildingId: BuildingNode['id'] | null
@@ -89,6 +95,9 @@ type ViewerState = {
   showGrid: boolean
   setShowGrid: (show: boolean) => void
 
+  showSelectionHints: boolean
+  setShowSelectionHints: (show: boolean) => void
+
   transparentBackground: boolean
   setTransparentBackground: (transparent: boolean) => void
 
@@ -135,6 +144,12 @@ type ViewerState = {
    */
   inputDragging: boolean
   setInputDragging: (dragging: boolean) => void
+
+  sceneComplexity: SceneComplexityBudget
+  setSceneComplexity: (complexity: SceneComplexityBudget) => void
+  rendererHealth: RendererHealth
+  rendererHealthMessage: string | null
+  setRendererHealth: (health: RendererHealth, message?: string | null) => void
 }
 
 type PersistedViewerState = Partial<
@@ -150,6 +165,7 @@ type PersistedViewerState = Partial<
     | 'shadows'
     | 'levelMode'
     | 'wallMode'
+    | 'showSelectionHints'
     | 'projectPreferences'
   >
 >
@@ -228,6 +244,8 @@ function normalizePersistedViewerState(value: unknown): PersistedViewerState {
     shadows: typeof state.shadows === 'boolean' ? state.shadows : true,
     levelMode: pickString<ViewerState['levelMode']>(state.levelMode, LEVEL_MODES, 'stacked'),
     wallMode: pickString<ViewerState['wallMode']>(state.wallMode, WALL_MODES, 'up'),
+    showSelectionHints:
+      typeof state.showSelectionHints === 'boolean' ? state.showSelectionHints : true,
     projectPreferences: normalizeProjectPreferences(state.projectPreferences),
   }
 }
@@ -353,6 +371,9 @@ const useViewer = create<ViewerState>()(
           return { showGrid: show, projectPreferences }
         }),
 
+      showSelectionHints: true,
+      setShowSelectionHints: (show) => set({ showSelectionHints: show }),
+
       transparentBackground: false,
       setTransparentBackground: (transparent) => set({ transparentBackground: transparent }),
 
@@ -423,6 +444,22 @@ const useViewer = create<ViewerState>()(
       setSpacePanning: (panning) => set({ spacePanning: panning }),
       inputDragging: false,
       setInputDragging: (dragging) => set({ inputDragging: dragging }),
+      sceneComplexity: DEFAULT_SCENE_COMPLEXITY,
+      setSceneComplexity: (complexity) =>
+        set((state) =>
+          sameSceneComplexity(state.sceneComplexity, complexity)
+            ? state
+            : { sceneComplexity: complexity },
+        ),
+      rendererHealth: 'healthy',
+      rendererHealthMessage: null,
+      setRendererHealth: (health, message = null) =>
+        set((state) => {
+          if (state.rendererHealth === 'lost' && health !== 'lost') return state
+          if (state.rendererHealth === health && state.rendererHealthMessage === message)
+            return state
+          return { rendererHealth: health, rendererHealthMessage: message }
+        }),
     }),
     {
       name: 'viewer-preferences',
@@ -441,6 +478,7 @@ const useViewer = create<ViewerState>()(
         shadows: state.shadows,
         levelMode: state.levelMode,
         wallMode: state.wallMode,
+        showSelectionHints: state.showSelectionHints,
         projectPreferences: state.projectPreferences,
       }),
     },
@@ -449,12 +487,22 @@ const useViewer = create<ViewerState>()(
 
 export function isViewerSpatialInputSuppressed() {
   const state = useViewer.getState()
-  return state.cameraDragging || state.inputDragging || state.spacePanning
+  return (
+    state.rendererHealth === 'lost' ||
+    state.cameraDragging ||
+    state.inputDragging ||
+    state.spacePanning
+  )
 }
 
 export function isViewerSelectionInputSuppressed() {
   const state = useViewer.getState()
-  return state.cameraDragging || state.inputDragging || state.spacePanning
+  return (
+    state.rendererHealth === 'lost' ||
+    state.cameraDragging ||
+    state.inputDragging ||
+    state.spacePanning
+  )
 }
 
 export function shouldLatchViewerPointerSuppression() {

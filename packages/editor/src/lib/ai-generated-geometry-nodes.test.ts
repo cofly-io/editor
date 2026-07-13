@@ -5,6 +5,10 @@ import {
   buildGeneratedGeometryNodes,
 } from './ai-generated-geometry-nodes'
 
+type EquipmentContractMetadata = {
+  equipmentContract?: unknown
+}
+
 function artifact(overrides: Partial<GeneratedGeometryArtifact> = {}): GeneratedGeometryArtifact {
   return {
     id: 'ai_geometry_patch_test',
@@ -68,11 +72,69 @@ describe('ai generated geometry nodes', () => {
     expect(plan.nodeIds).toEqual(plan.patches.map((patch) => patch.node.id))
   })
 
+  test('strips undefined values from generated metadata before node validation', () => {
+    const plan = buildGeneratedGeometryCreatePatches(artifact(), {
+      parentId: 'level_factory',
+      generatedBy: 'factory-agent',
+      metadata: {
+        equipmentContract: {
+          profileId: 'refinery.crude_storage_tank',
+          profileParts: [
+            {
+              id: 'access_ladder',
+              semanticRole: 'access_ladder',
+              rungCount: undefined,
+              nested: { keep: 'value', drop: undefined },
+            },
+          ],
+        },
+      },
+    })
+
+    expect(
+      (plan.rootNode?.metadata as EquipmentContractMetadata | undefined)?.equipmentContract,
+    ).toEqual({
+      profileId: 'refinery.crude_storage_tank',
+      profileParts: [
+        {
+          id: 'access_ladder',
+          semanticRole: 'access_ladder',
+          nested: { keep: 'value' },
+        },
+      ],
+    })
+  })
+
   test('keeps assembly child nodes local to the artifact assembly position', () => {
     const { createdNodes } = buildGeneratedGeometryNodes(artifact())
 
     expect(createdNodes[0]).toMatchObject({ type: 'box', position: [0, 0.25, 0] })
     expect(createdNodes[1]).toMatchObject({ type: 'cylinder', position: [1, 0.8, 0] })
+  })
+
+  test('preserves tall industrial cylinder height', () => {
+    const { createdNodes } = buildGeneratedGeometryNodes(
+      artifact({
+        shapes: [
+          {
+            kind: 'cylinder',
+            name: 'process chimney shell',
+            position: [10, 14.26, 20],
+            rotation: [0, 0, 0],
+            radius: 0.72,
+            height: 28,
+          },
+        ],
+        transforms: [{ position: [10, 14.26, 20], rotation: [0, 0, 0] }],
+        createdNames: ['process chimney shell'],
+      }),
+    )
+
+    expect(createdNodes[0]).toMatchObject({
+      type: 'cylinder',
+      position: [0, 14.26, 0],
+      height: 28,
+    })
   })
 
   test('preserves generated shape selectors on child node metadata', () => {
@@ -212,7 +274,7 @@ describe('ai generated geometry nodes', () => {
     expect(contract?.pattern?.instances?.[1]?.position?.[0]).toBeCloseTo(0.4, 6)
   })
 
-  test('wraps a single generated shape so placement moves the ground origin', () => {
+  test('creates a single generated shape without an assembly while preserving placement origin', () => {
     const single = artifact({
       assemblyName: null,
       shapes: [
@@ -238,10 +300,13 @@ describe('ai generated geometry nodes', () => {
       metadata: { equipmentRole: 'control' },
     })
 
-    expect(plan.patches).toHaveLength(2)
-    expect(plan.rootNode).toMatchObject({
-      type: 'assembly',
-      position: [4, 0, 5],
+    expect(plan.patches).toHaveLength(1)
+    expect(plan.rootNode).toBeDefined()
+    const rootNode = plan.rootNode!
+    expect(rootNode).toMatchObject({
+      type: 'box',
+      position: [4, 1, 5],
+      height: 2,
       metadata: {
         generatedBy: 'factory-agent',
         artifactId: 'ai_geometry_patch_test',
@@ -250,15 +315,12 @@ describe('ai generated geometry nodes', () => {
       },
     })
     expect(plan.patches[0]?.parentId).toBe('level_factory')
-    expect(plan.patches[1]?.parentId).toBe(plan.rootNode?.id)
-    expect(plan.childNodes[0]).toMatchObject({
-      type: 'box',
-      position: [0, 1, 0],
-      height: 2,
-    })
+    expect(plan.patches[0]?.node.type).toBe('box')
+    expect(plan.childNodes).toEqual([rootNode])
+    expect(plan.nodeIds).toEqual([rootNode.id])
   })
 
-  test('adds dynamic level geometry metadata for generated cylindrical tanks', () => {
+  test('adds dynamic level geometry metadata for generated storage tank shells', () => {
     const plan = buildGeneratedGeometryCreatePatches(
       artifact({
         title: 'Generated storage tank',
@@ -268,7 +330,7 @@ describe('ai generated geometry nodes', () => {
             kind: 'hollow-cylinder',
             name: 'storage tank shell',
             semanticRole: 'vessel_shell',
-            sourcePartKind: 'cylindrical_tank',
+            sourcePartKind: 'storage_tank_shell',
             position: [10, 3, 20],
             rotation: [0, 0, 0],
             axis: 'y',
@@ -344,15 +406,20 @@ describe('ai generated geometry nodes', () => {
     const { childNodes, rootNode } = buildGeneratedGeometryCreatePatches(single)
 
     expect(rootNode).toMatchObject({
-      type: 'assembly',
+      type: 'rounded-panel',
       position: [0, 0.01, 0],
+      length: 1,
+      width: 2,
+      thickness: 0.012,
+      cornerRadius: 0.15,
+      cornerSegments: 8,
       metadata: {
         partCount: 1,
       },
     })
     expect(childNodes[0]).toMatchObject({
       type: 'rounded-panel',
-      position: [0, 0, 0],
+      position: [0, 0.01, 0],
       length: 1,
       width: 2,
       thickness: 0.012,

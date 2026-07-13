@@ -177,6 +177,13 @@ type ZipEntry = {
   bytes: Buffer
 }
 
+type InstalledProfilePackCache = {
+  fingerprint: string
+  packs: InstalledProfilePack[]
+}
+
+let installedProfilePackCache: InstalledProfilePackCache | undefined
+
 async function ensureProfilePackPluginDependencies(manifest: ProfilePackManifest) {
   if (
     manifest.dependsOnPlugins?.includes('pascal:factory-equipment') &&
@@ -410,6 +417,11 @@ async function writeEnabledPackIndex(repoRoot: string, index: EnabledPackIndex) 
   const tmp = `${file}.tmp`
   await fs.writeFile(tmp, `${JSON.stringify(index, null, 2)}\n`, 'utf8')
   await fs.rename(tmp, file)
+  invalidateInstalledProfilePackCache()
+}
+
+function invalidateInstalledProfilePackCache() {
+  installedProfilePackCache = undefined
 }
 
 function zipEntries(buffer: Buffer): ZipEntry[] {
@@ -1373,24 +1385,34 @@ export async function listInstalledProfilePacks(): Promise<InstalledProfilePack[
   const repoRoot = await findRepoRoot()
   const storeRoot = profilePackStoreRoot(repoRoot)
   if (!(await exists(storeRoot))) return []
+  const fingerprint = await installedProfilePackFingerprint(repoRoot, storeRoot)
+  if (installedProfilePackCache?.fingerprint === fingerprint) {
+    return cloneInstalledProfilePacks(installedProfilePackCache.packs)
+  }
   const index = await readEnabledPackIndex(repoRoot)
   const enabledByPath = new Map(index.enabledPacks.map((entry) => [entry.path, entry]))
   const entries = await fs.readdir(storeRoot, { withFileTypes: true })
-  const packs: InstalledProfilePack[] = []
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue
-    const dir = path.join(storeRoot, entry.name)
-    const manifestPath = path.join(dir, 'pack.json')
-    if (!(await exists(manifestPath))) continue
-    try {
-      const manifest = normalizeProfilePackManifest(
-        parseProfileJson(await fs.readFile(manifestPath), `${entry.name}/pack.json`),
-      )
-      const enabledEntry = enabledByPath.get(entry.name)
-      const counts = await countInstalledPackRecords(dir, manifest)
-      packs.push(installedPackFromManifest(manifest, entry.name, enabledEntry, counts))
-    } catch {}
-  }
+  const packs = (
+    await Promise.all(
+      entries
+        .filter((entry) => entry.isDirectory())
+        .map(async (entry) => {
+          const dir = path.join(storeRoot, entry.name)
+          const manifestPath = path.join(dir, 'pack.json')
+          if (!(await exists(manifestPath))) return undefined
+          try {
+            const manifest = normalizeProfilePackManifest(
+              parseProfileJson(await fs.readFile(manifestPath), `${entry.name}/pack.json`),
+            )
+            const enabledEntry = enabledByPath.get(entry.name)
+            const counts = await countInstalledPackRecords(dir, manifest)
+            return installedPackFromManifest(manifest, entry.name, enabledEntry, counts)
+          } catch {
+            return undefined
+          }
+        }),
+    )
+  ).filter((pack): pack is InstalledProfilePack => Boolean(pack))
   for (const pack of packs) {
     pack.dependedOnBy = packs
       .filter((candidate) =>
@@ -1405,7 +1427,49 @@ export async function listInstalledProfilePacks(): Promise<InstalledProfilePack[
         path: candidate.path,
       }))
   }
-  return packs.sort((left, right) => left.name.localeCompare(right.name))
+  const sorted = packs.sort((left, right) => left.name.localeCompare(right.name))
+  installedProfilePackCache = {
+    fingerprint,
+    packs: cloneInstalledProfilePacks(sorted),
+  }
+  return sorted
+}
+
+async function installedProfilePackFingerprint(repoRoot: string, storeRoot: string) {
+  const parts: string[] = []
+  try {
+    const indexStat = await fs.stat(profilePackIndexPath(repoRoot))
+    parts.push(`index:${indexStat.mtimeMs}:${indexStat.size}`)
+  } catch {
+    parts.push('index:missing')
+  }
+  try {
+    const entries = await fs.readdir(storeRoot, { withFileTypes: true })
+    const dirStats = await Promise.all(
+      entries
+        .filter((entry) => entry.isDirectory())
+        .map(async (entry) => {
+          try {
+            const manifestStat = await fs.stat(path.join(storeRoot, entry.name, 'pack.json'))
+            return `${entry.name}:${manifestStat.mtimeMs}:${manifestStat.size}`
+          } catch {
+            return `${entry.name}:missing`
+          }
+        }),
+    )
+    parts.push(...dirStats.sort())
+  } catch {
+    parts.push('store:missing')
+  }
+  return parts.join('|')
+}
+
+function cloneInstalledProfilePacks(packs: readonly InstalledProfilePack[]) {
+  return packs.map((pack) => ({
+    ...pack,
+    dependsOn: pack.dependsOn?.map((dependency) => ({ ...dependency })),
+    dependedOnBy: pack.dependedOnBy?.map((dependent) => ({ ...dependent })),
+  }))
 }
 
 export async function enabledProfilePackDirs(): Promise<string[]> {

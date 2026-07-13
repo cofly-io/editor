@@ -375,9 +375,9 @@ const OutlinerSync = () => {
   const selection = useViewer((s) => s.selection)
   const hoveredId = useViewer((s) => s.hoveredId)
   const outliner = useViewer((s) => s.outliner)
-  const nodes = useScene((s) => s.nodes)
 
   useEffect(() => {
+    const nodes = useScene.getState().nodes
     // Sync selected objects
     outliner.selectedObjects.length = 0
     for (const id of selection.selectedIds) {
@@ -395,7 +395,7 @@ const OutlinerSync = () => {
       const obj = sceneRegistry.nodes.get(hoveredId)
       if (obj) outliner.hoveredObjects.push(obj)
     }
-  }, [selection, hoveredId, outliner, nodes])
+  }, [selection.selectedIds, hoveredId, outliner])
 
   return null
 }

@@ -25,9 +25,10 @@ import { type ThreeEvent, useFrame } from '@react-three/fiber'
 import { useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import {
-  primitiveBatchDisabled,
-  primitivePatternInstances,
-} from '../shared/primitive-contract-rendering'
+  createIndustrialMaterial,
+  industrialRenderContractFromMetadata,
+} from '../shared/industrial-render-contract-rendering'
+import { canBatchCylinderBase, primitiveMaterialBatchKey } from '../shared/primitive-batching'
 
 type CylinderBatch = {
   key: string
@@ -38,36 +39,12 @@ type CylinderBatch = {
   nodes: CylinderNode[]
 }
 
-const MIN_BATCH_SIZE = 3
-
 const tempMatrix = new THREE.Matrix4()
 const tempInverse = new THREE.Matrix4()
 const tempLocalPoint = new THREE.Vector3()
 
-function stableStringify(value: unknown): string {
-  if (value == null || typeof value !== 'object') return JSON.stringify(value)
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`
-  const record = value as Record<string, unknown>
-  return `{${Object.keys(record)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
-    .join(',')}}`
-}
-
 function numberKey(value: number | undefined, fallback: number): string {
   return String(Number.isFinite(value) ? value : fallback)
-}
-
-function materialKey(node: CylinderNode): string {
-  return `preset:${node.materialPreset ?? ''}|material:${stableStringify(node.material ?? null)}`
-}
-
-function canBatchCylinder(node: CylinderNode, excludedIds: ReadonlySet<string>): boolean {
-  if (node.visible === false) return false
-  if (excludedIds.has(node.id)) return false
-  if (primitiveBatchDisabled(node.metadata)) return false
-  if (primitivePatternInstances(node.metadata).length > 0) return false
-  return true
 }
 
 function buildCylinderBatches(
@@ -81,7 +58,7 @@ function buildCylinderBatches(
       continue
     }
     const cylinder = node as CylinderNode
-    if (!canBatchCylinder(cylinder, excludedIds)) continue
+    if (excludedIds.has(cylinder.id) || !canBatchCylinderBase(cylinder)) continue
 
     const radius = cylinder.radius ?? 0.5
     const height = cylinder.height ?? 1
@@ -92,7 +69,7 @@ function buildCylinderBatches(
       numberKey(cylinder.height, 1),
       numberKey(cylinder.radialSegments, 32),
       numberKey(cylinder.wallThickness, 0),
-      materialKey(cylinder),
+      primitiveMaterialBatchKey(cylinder),
     ].join('|')
 
     const existing = groups.get(key)
@@ -103,7 +80,7 @@ function buildCylinderBatches(
     }
   }
 
-  return Array.from(groups.values()).filter((batch) => batch.nodes.length >= MIN_BATCH_SIZE)
+  return Array.from(groups.values())
 }
 
 function emitNodeEvent(
@@ -133,36 +110,6 @@ function emitNodeEvent(
   emitter.emit(`cylinder:${suffix}`, payload as never)
 }
 
-function useBatchedOriginalVisibility(batchedIds: ReadonlySet<string>) {
-  const previouslyBatched = useRef<Set<string>>(new Set())
-
-  useLayoutEffect(() => {
-    const previous = previouslyBatched.current
-    for (const id of previous) {
-      if (batchedIds.has(id)) continue
-      const obj = sceneRegistry.nodes.get(id)
-      const node = useScene.getState().nodes[id as AnyNodeId] as CylinderNode | undefined
-      if (obj) obj.visible = node?.visible !== false
-    }
-    previouslyBatched.current = new Set(batchedIds)
-
-    return () => {
-      for (const id of batchedIds) {
-        const obj = sceneRegistry.nodes.get(id)
-        const node = useScene.getState().nodes[id as AnyNodeId] as CylinderNode | undefined
-        if (obj) obj.visible = node?.visible !== false
-      }
-    }
-  }, [batchedIds])
-
-  useFrame(() => {
-    for (const id of batchedIds) {
-      const obj = sceneRegistry.nodes.get(id)
-      if (obj?.visible) obj.visible = false
-    }
-  }, 20)
-}
-
 function CylinderBatchMesh({ batch }: { batch: CylinderBatch }) {
   const meshRef = useRef<THREE.InstancedMesh>(null)
   const lastClickRef = useRef<{ time: number; x: number; y: number; instanceId: number } | null>(
@@ -186,10 +133,13 @@ function CylinderBatchMesh({ batch }: { batch: CylinderBatch }) {
 
   const material = useMemo(() => {
     const exemplar = batch.nodes[0]
+    const contract = industrialRenderContractFromMetadata(exemplar?.metadata)
     const presetMaterial = createMaterialFromPresetRef(exemplar?.materialPreset, shading)
-    if (presetMaterial) return presetMaterial
-    if (exemplar?.material) return createMaterial(exemplar.material, shading)
-    return createDefaultMaterial('#cccccc', 1, shading)
+    if (presetMaterial) return createIndustrialMaterial(contract, presetMaterial)
+    const base = exemplar?.material
+      ? createMaterial(exemplar.material, shading)
+      : createDefaultMaterial('#cccccc', 1, shading)
+    return createIndustrialMaterial(contract, base)
   }, [batch.nodes, shading])
 
   const applyMatrices = useCallback(() => {
@@ -326,7 +276,6 @@ export default function CylinderBatchSystem() {
   const selection = useViewer((state) => state.selection)
   const previewSelectedIds = useViewer((state) => state.previewSelectedIds)
   const hoveredId = useViewer((state) => state.hoveredId)
-  const inputDragging = useViewer((state) => state.inputDragging)
 
   const excludedIds = useMemo(() => {
     const ids = new Set<string>()
@@ -336,20 +285,10 @@ export default function CylinderBatchSystem() {
     return ids
   }, [selection.selectedIds, previewSelectedIds, hoveredId])
 
-  const batches = useMemo(() => {
-    if (inputDragging) return []
-    return buildCylinderBatches(nodes as Record<AnyNodeId, unknown>, excludedIds)
-  }, [nodes, excludedIds, inputDragging])
-
-  const batchedIds = useMemo(() => {
-    const ids = new Set<string>()
-    for (const batch of batches) {
-      for (const node of batch.nodes) ids.add(node.id)
-    }
-    return ids
-  }, [batches])
-
-  useBatchedOriginalVisibility(batchedIds)
+  const batches = useMemo(
+    () => buildCylinderBatches(nodes as Record<AnyNodeId, unknown>, excludedIds),
+    [nodes, excludedIds],
+  )
 
   return (
     <>

@@ -1,6 +1,7 @@
 'use client'
 
 import { Icon as IconifyIcon } from '@iconify/react'
+import { useSidebarStore } from '@pascal-app/editor/components/sidebar/store'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,7 +12,6 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@pascal-app/editor/components/ui/dropdown-menu'
-import { useSidebarStore } from '@pascal-app/editor/components/sidebar/store'
 import useEditor, { type ViewMode } from '@pascal-app/editor/store'
 import type { EdgeMode } from '@pascal-app/viewer/edge-style'
 import type { RenderShading } from '@pascal-app/viewer/materials'
@@ -368,6 +368,8 @@ function WallModeToggle() {
 function DisplayMenu() {
   const showGrid = useViewer((state) => state.showGrid)
   const setShowGrid = useViewer((state) => state.setShowGrid)
+  const showSelectionHints = useViewer((state) => state.showSelectionHints)
+  const setShowSelectionHints = useViewer((state) => state.setShowSelectionHints)
   const showZoneLabels = useViewer((state) => state.showZoneLabels)
   const setShowZoneLabels = useViewer((state) => state.setShowZoneLabels)
   const cameraMode = useViewer((state) => state.cameraMode)
@@ -421,9 +423,18 @@ function DisplayMenu() {
             {showGrid ? t('common.on', 'On') : t('common.off', 'Off')}
           </span>
         </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={(e) => keepOpen(e, () => setShowSelectionHints(!showSelectionHints))}
+        >
+          <Sparkles className="h-4 w-4" />
+          <span>{t('toolbar.selectionHints', '提示')}</span>
+          <span className="ml-auto text-muted-foreground text-xs">
+            {showSelectionHints ? t('common.on', 'On') : t('common.off', 'Off')}
+          </span>
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={(e) => keepOpen(e, () => setShowZoneLabels(!showZoneLabels))}>
           <IconifyIcon height={16} icon="mdi:tag-text-outline" width={16} />
-          <span>{t('toolbar.zoneNames', '区名')}</span>
+          <span>{t('toolbar.zoneNames', '区域')}</span>
           <span className="ml-auto text-muted-foreground text-xs">
             {showZoneLabels ? t('common.on', 'On') : t('common.off', 'Off')}
           </span>

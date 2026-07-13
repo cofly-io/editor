@@ -111,6 +111,63 @@ describe('semantic equipment editing', () => {
     })
   })
 
+  test('updates horizontal tank liquid level from bottom to top', () => {
+    const assembly = AssemblyNode.parse({
+      id: ASSEMBLY_ID,
+      type: 'assembly',
+      children: ['cylinder_liquid'],
+      metadata: {
+        dynamicLevelGeometry: {
+          kind: 'horizontal',
+          diameter: 1.4,
+          length: 4,
+          position: [0, 0.7, 0],
+        },
+      },
+    })
+    const liquid = CylinderNode.parse({
+      id: 'cylinder_liquid',
+      type: 'cylinder',
+      parentId: ASSEMBLY_ID,
+      height: 4,
+      radius: 0.1,
+      position: [0, 0.1, 0],
+      metadata: { semanticRole: 'liquid_volume' },
+    })
+    const updates = buildSemanticEquipmentEditableParamUpdates({
+      nodes: {
+        [ASSEMBLY_ID]: assembly,
+        [liquid.id]: liquid,
+      } as Record<string, AnyNode>,
+      assemblyId: ASSEMBLY_ID,
+      param: {
+        key: 'liquidLevel',
+        kind: 'number',
+        effects: [
+          {
+            kind: 'set-part-dynamic-level',
+            partRole: 'liquid_volume',
+            geometryRef: 'dynamicLevelGeometry',
+            minSize: 0.02,
+          },
+        ],
+      },
+      value: 0.5,
+    })
+
+    expect(updates[0]?.id).toBe('cylinder_liquid')
+    const data = updates[0]?.data as {
+      height?: number
+      position?: [number, number, number]
+      radius?: number
+    }
+    expect(data.height).toBeCloseTo(3.84)
+    expect(data.position?.[0]).toBeCloseTo(0)
+    expect(data.position?.[1]).toBeCloseTo(0.385)
+    expect(data.position?.[2]).toBeCloseTo(0)
+    expect(data.radius).toBeCloseTo(0.315)
+  })
+
   test('updates semantic part opacity and transparent flag', () => {
     const updates = updateFor(
       {

@@ -11,7 +11,7 @@ export const CylinderNode = BaseNode.extend({
     z.tuple([z.number(), z.number(), z.number()]).default([0, 0, 0]),
   ),
   radius: z.number().min(0.01).max(10).default(0.5),
-  height: z.number().min(0.01).max(20).default(1.0),
+  height: z.number().min(0.01).max(200).default(1.0),
   radialSegments: z.number().int().min(8).max(64).default(32),
   wallThickness: z.number().min(0.001).max(10).optional(),
   material: MaterialSchema.optional(),

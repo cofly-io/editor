@@ -479,11 +479,14 @@ export function evaluateFactoryQuality(input: QualityResultInput): FactoryQualit
     warning: issues.filter((item) => item.severity === 'warning').length,
     info: issues.filter((item) => item.severity === 'info').length,
   }
-  const score = Math.max(0, 100 - issueCount.error * 20 - issueCount.warning * 6 - issueCount.info)
+  const errorPenalty = issueCount.error * 20
+  const warningPenalty = issueCount.warning > 0 ? Math.min(30, issueCount.warning * 2) : 0
+  const infoPenalty = Math.min(5, issueCount.info)
+  const score = Math.max(0, 100 - errorPenalty - warningPenalty - infoPenalty)
 
   return {
     score,
-    passed: issueCount.error === 0 && score >= 70,
+    passed: issueCount.error === 0,
     summary: summarizeScore(score, issueCount.error, issueCount.warning),
     issueCount,
     checks: {

@@ -61,3 +61,8 @@ export function isPlanDragMovableNode(node: AnyNode): boolean {
   if (BESPOKE_PLAN_DRAG_3D_KIND_SET.has(node.type)) return true
   return hasPlanAxes(resolveMovable(node)?.axes)
 }
+
+export function shouldUseGenericPlanDrag3DMoveTool(node: AnyNode): boolean {
+  if (node.type === 'assembly') return true
+  return hasPlanAxes(resolveMovable(node)?.axes)
+}

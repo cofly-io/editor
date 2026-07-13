@@ -145,7 +145,7 @@ describe('evaluateFactoryQuality', () => {
     )
   })
 
-  test('marks warning-heavy results as needing review below the score threshold', () => {
+  test('allows warning-heavy results to pass with capped quality score', () => {
     const report = evaluateFactoryQuality({
       patches: [],
       missingAssets: [
@@ -158,9 +158,24 @@ describe('evaluateFactoryQuality', () => {
       ],
     })
 
-    expect(report.score).toBe(64)
-    expect(report.passed).toBe(false)
-    expect(report.summary).toBe('Factory quality needs review (64/100).')
+    expect(report.score).toBe(88)
+    expect(report.passed).toBe(true)
+    expect(report.summary).toBe('Factory quality passed with warnings (88/100).')
+  })
+
+  test('caps warning penalties so optional placeholders do not block apply', () => {
+    const report = evaluateFactoryQuality({
+      patches: [],
+      missingAssets: Array.from({ length: 46 }, (_, index) => ({
+        name: `optional ${index + 1}`,
+        reason: 'not generated',
+        required: false,
+      })),
+    })
+
+    expect(report.score).toBe(70)
+    expect(report.passed).toBe(true)
+    expect(report.summary).toBe('Factory quality passed with warnings (70/100).')
   })
 
   test('counts routed process connections with aligned port ids', () => {

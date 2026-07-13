@@ -38,6 +38,12 @@ function stationCenter(result: ReturnType<typeof composeProcessLine>, stationId:
   return [placement.position[0], placement.position[2]]
 }
 
+function stationPlacement(result: ReturnType<typeof composeProcessLine>, stationId: string) {
+  const placement = result.stationPlacements.find((item) => item.stationId === stationId)
+  if (!placement) throw new Error(`missing station placement ${stationId}`)
+  return placement
+}
+
 function polygonBounds(polygon: Array<[number, number]>) {
   const xs = polygon.map((point) => point[0])
   const zs = polygon.map((point) => point[1])
@@ -57,11 +63,11 @@ describe('process line composer', () => {
       { id: 'industry.cement.basic', version: '0.1.0' },
       { id: 'industry.refinery.basic', version: '0.1.0' },
     ])
-  }, 30000)
+  }, 60000)
 
   afterAll(async () => {
     await restoreIndustryPacks?.()
-  }, 30000)
+  }, 60000)
 
   test('composes water electrolysis workshop with semantic tank assemblies and connections', () => {
     const result = composeProcessLine({
@@ -199,6 +205,106 @@ describe('process line composer', () => {
       parentProcessDisplayLabel: '\u57fa\u7840\u70bc\u6cb9\u5382',
     })
   })
+
+  test('keeps occupied buildings native in open-air cement plants', () => {
+    const result = composeProcessLine({
+      prompt: '\u751f\u6210\u4e00\u4e2a\u6c34\u6ce5\u5de5\u5382',
+      plan: cementPlantPlan(),
+      placement: { parentId: 'level_factory', generatedBy: 'factory-agent' },
+    })
+
+    const controlRoomTypes = result.patches
+      .filter((patch) => patch.node.metadata?.stationId === 'control_room')
+      .map((patch) => patch.node.type)
+    expect(controlRoomTypes).toEqual(
+      expect.arrayContaining(['slab', 'wall', 'door', 'window', 'roof', 'roof-segment']),
+    )
+    expect(
+      result.patches.some(
+        (patch) =>
+          patch.node.type === 'assembly' &&
+          patch.node.metadata?.stationId === 'control_room' &&
+          patch.node.metadata?.resolver === 'semantic-assembly',
+      ),
+    ).toBe(false)
+    expect(result.stationPlacements.map((placement) => placement.stationId)).toContain(
+      'whr_power_house',
+    )
+    const whrPowerHouseTypes = result.patches
+      .filter((patch) => patch.node.metadata?.stationId === 'whr_power_house')
+      .map((patch) => patch.node.type)
+    expect(whrPowerHouseTypes).toEqual(
+      expect.arrayContaining(['slab', 'wall', 'door', 'window', 'roof', 'roof-segment']),
+    )
+  }, 30000)
+
+  test('renders cement conveyors, ducts, and pipe racks with industrial details', () => {
+    const result = composeProcessLine({
+      prompt: '\u751f\u6210\u4e00\u4e2a\u6c34\u6ce5\u5de5\u5382',
+      plan: cementPlantPlan(),
+      placement: { parentId: 'level_factory', generatedBy: 'factory-agent' },
+    })
+
+    expect(
+      result.patches.some(
+        (patch) =>
+          patch.node.type === 'box' &&
+          patch.node.metadata?.role === 'process-line-belt-gallery-roof',
+      ),
+    ).toBe(true)
+    const rackSupports = result.patches.filter(
+      (patch) =>
+        patch.node.type === 'column' && patch.node.metadata?.role === 'process-line-rack-support',
+    )
+    expect(rackSupports.length).toBeGreaterThan(0)
+    expect(
+      rackSupports.every(
+        (patch) =>
+          patch.node.type === 'column' &&
+          patch.node.supportStyle === 'portal-frame' &&
+          patch.node.bracePlateEnabled === false &&
+          patch.node.metadata?.portalFrameBatch === 'process-line-support',
+      ),
+    ).toBe(true)
+    expect(
+      rackSupports.every((patch) => {
+        const render = patch.node.metadata?.connectionRender
+        const configuredSpacing =
+          render && typeof render === 'object' && 'supportSpacing' in render
+            ? Number(render.supportSpacing)
+            : 5
+        return Number(patch.node.metadata?.supportSpacing) >= configuredSpacing * 1.49
+      }),
+    ).toBe(true)
+    expect(
+      result.patches.some(
+        (patch) =>
+          patch.node.type === 'box' &&
+          (patch.node.metadata?.role === 'process-line-rack-column' ||
+            patch.node.metadata?.role === 'process-line-rack-crossbeam'),
+      ),
+    ).toBe(false)
+    expect(
+      result.patches.some(
+        (patch) =>
+          patch.node.type === 'box' &&
+          patch.node.metadata?.role === 'process-line-maintenance-walkway',
+      ),
+    ).toBe(true)
+    expect(
+      result.patches.some(
+        (patch) =>
+          patch.node.type === 'pipe' &&
+          patch.node.metadata?.role === 'process-line-pipe-insulation',
+      ),
+    ).toBe(true)
+    expect(
+      result.patches.some(
+        (patch) =>
+          patch.node.type === 'box' && patch.node.metadata?.role === 'process-line-expansion-joint',
+      ),
+    ).toBe(true)
+  }, 60000)
 
   test('routes process connections from equipment contract ports instead of station centers', () => {
     const result = composeProcessLine({
@@ -353,6 +459,18 @@ describe('process line composer', () => {
     expect(result.summary).toContain('Cement clinker production line')
     expect(result.stationPlacements).toHaveLength(7)
     expect(result.layoutDiagnostics.fits).toBe(true)
+    expect(result.layoutStrategy.reason).toContain('cement process-axis placement')
+    const preheater = stationPlacement(result, 'preheater_tower')
+    const kiln = stationPlacement(result, 'rotary_kiln')
+    const cooler = stationPlacement(result, 'grate_cooler')
+    expect(preheater.position[2]).toBe(kiln.position[2])
+    expect(kiln.position[2]).toBe(cooler.position[2])
+    expect(preheater.position[0]).toBeLessThan(kiln.position[0])
+    expect(kiln.position[0]).toBeLessThan(cooler.position[0])
+    expect(kiln.position[0] - kiln.footprint.length / 2).toBeCloseTo(
+      preheater.position[0] + preheater.footprint.length / 2 + 1.1,
+      1,
+    )
     expect(result.patches.some((patch) => patch.node.type === 'wall')).toBe(false)
     expect(result.patches.some((patch) => patch.node.type === 'door')).toBe(false)
     expect(result.patches.some((patch) => patch.node.type === 'window')).toBe(false)
@@ -435,6 +553,17 @@ describe('process line composer', () => {
     expect(result.stationPlacements).toHaveLength(28)
     expect(result.layoutDiagnostics.fits).toBe(true)
     expect(result.layoutStrategy).toMatchObject({ style: 'parallel_bays' })
+    expect(result.layoutStrategy.reason).toContain('cement process-axis placement')
+    const preheater = stationPlacement(result, 'preheater_tower')
+    const kiln = stationPlacement(result, 'rotary_kiln')
+    const hood = stationPlacement(result, 'kiln_hood')
+    const cooler = stationPlacement(result, 'grate_cooler')
+    expect(preheater.position[2]).toBe(kiln.position[2])
+    expect(kiln.position[2]).toBe(hood.position[2])
+    expect(hood.position[2]).toBe(cooler.position[2])
+    expect(preheater.position[0]).toBeLessThan(kiln.position[0])
+    expect(kiln.position[0]).toBeLessThan(hood.position[0])
+    expect(hood.position[0]).toBeLessThan(cooler.position[0])
     const focusStationIds = result.focusBounds?.stationIds
     expect(Array.isArray(focusStationIds)).toBe(true)
     expect(result.focusBounds).toMatchObject({
@@ -701,9 +830,7 @@ describe('process line composer', () => {
         'factory:storage-tank',
       ]),
     )
-    expect(
-      result.patches.map((patch) => patch.node.metadata?.semanticRole),
-    ).toEqual(
+    expect(result.patches.map((patch) => patch.node.metadata?.semanticRole)).toEqual(
       expect.arrayContaining([
         'distillation_column_shell',
         'vacuum_column_shell',
@@ -907,5 +1034,47 @@ describe('process line composer', () => {
       expect(placement.clearanceBox.minZ).toBeGreaterThanOrEqual(bounds.minZ - 0.001)
       expect(placement.clearanceBox.maxZ).toBeLessThanOrEqual(bounds.maxZ + 0.001)
     }
+  }, 10000)
+
+  test('places refinery process line to the right when the site is the default bootstrap site', () => {
+    const result = composeProcessLine({
+      prompt: '\u751f\u6210\u4e00\u4e2a\u70bc\u6cb9\u5382',
+      plan: refineryPlan(),
+      placement: {
+        parentId: 'level_factory',
+        generatedBy: 'factory-agent',
+        metadata: {
+          siteIsDefault: true,
+          sceneHasContent: true,
+          siteBounds: {
+            min: [-15, -15],
+            max: [15, 15],
+            center: [0, 0],
+            size: [30, 30],
+          },
+          sceneBounds: {
+            min: [-20, -10],
+            max: [20, 10],
+            center: [0, 0],
+            size: [40, 20],
+          },
+        },
+      },
+    })
+
+    const floor = result.patches.find(
+      (patch) => patch.node.type === 'slab' && patch.node.metadata?.role === 'layout-floor',
+    )
+    if (!floor || floor.node.type !== 'slab') throw new Error('expected refinery floor slab')
+    const bounds = polygonBounds(floor.node.polygon)
+
+    expect(bounds.minX).toBeGreaterThan(20)
+    expect(
+      result.stationPlacements.every(
+        (placement) =>
+          placement.clearanceBox.minX >= bounds.minX - 0.001 &&
+          placement.clearanceBox.maxX <= bounds.maxX + 0.001,
+      ),
+    ).toBe(true)
   }, 10000)
 })

@@ -11,14 +11,15 @@ import type {
 } from '@pascal-app/core'
 import { isPlanDragMovableItem, nodeRegistry } from '@pascal-app/core'
 import { Suspense } from 'react'
+import { shouldUseGenericPlanDrag3DMoveTool } from '../../../lib/plan-drag'
 import useEditor from '../../../store/use-editor'
 import { MoveBuildingContent } from '../building/move-building-tool'
 import { MoveElevatorTool } from '../elevator/move-elevator-tool'
 import { MovePlanItemTool } from '../item/move-plan-item-tool'
 import { MoveRegistryNodeTool } from '../registry/move-registry-node-tool'
 import { MoveRoofTool } from '../roof/move-roof-tool'
-import { MovePlanStairTool } from '../shared/move-plan-position-tool'
 import { getRegistryAffordanceTool } from '../shared/affordance-dispatch'
+import { MovePlanStairTool } from '../shared/move-plan-position-tool'
 
 /**
  * MoveTool dispatcher. Routes to (in order):
@@ -56,11 +57,11 @@ export const MoveTool: React.FC<{
     return <MovePlanStairTool node={movingNode as StairNode} />
   }
 
-  const def = nodeRegistry.get(movingNode.type)
-  if (def?.capabilities?.movable) {
+  if (shouldUseGenericPlanDrag3DMoveTool(movingNode)) {
     return <MoveRegistryNodeTool node={movingNode} />
   }
 
+  const def = nodeRegistry.get(movingNode.type)
   const RegistryMove = getRegistryAffordanceTool(movingNode.type, 'move')
   if (RegistryMove) {
     return (

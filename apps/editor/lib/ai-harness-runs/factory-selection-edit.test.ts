@@ -122,6 +122,254 @@ describe('factory selection edit composer', () => {
     ])
   })
 
+  test('deletes a named semantic part group without deleting the equipment assembly', () => {
+    const result = composeSelectionDeleteEdit({
+      prompt: 'delete the access stair',
+      context: {
+        selection: {
+          selectedIds: ['tank_assembly'],
+          nodes: [
+            {
+              id: 'tank_assembly',
+              type: 'assembly',
+              name: 'Storage tank',
+              children: ['shell_1', 'stair_1', 'stair_2'],
+              metadata: {
+                equipmentAssembly: {
+                  kind: 'semantic-assembly',
+                  params: { hasAccessStair: true },
+                  partGroups: [
+                    { id: 'shell', roles: ['vessel_shell'], editable: ['opacity'] },
+                    {
+                      id: 'access_stair',
+                      label: 'Access stair',
+                      roles: ['helical_ladder_tread'],
+                      editable: ['delete'],
+                      deleteParamPatch: { hasAccessStair: false },
+                    },
+                  ],
+                },
+              },
+            },
+            {
+              id: 'shell_1',
+              type: 'cylinder',
+              metadata: {
+                equipmentRootId: 'tank_assembly',
+                partGroupId: 'shell',
+                semanticRole: 'vessel_shell',
+              },
+            },
+            {
+              id: 'stair_1',
+              type: 'box',
+              name: 'stair tread 1',
+              metadata: {
+                equipmentRootId: 'tank_assembly',
+                partGroupId: 'access_stair',
+                semanticRole: 'helical_ladder_tread',
+              },
+            },
+            {
+              id: 'stair_2',
+              type: 'box',
+              name: 'stair tread 2',
+              metadata: {
+                equipmentRootId: 'tank_assembly',
+                partGroupId: 'access_stair',
+                semanticRole: 'helical_ladder_tread',
+              },
+            },
+          ],
+        },
+      },
+    })
+
+    expect(result?.patches.map((patch) => (patch.op === 'create' ? patch.node.id : patch.id))).toEqual(
+      ['stair_1', 'stair_2', 'tank_assembly'],
+    )
+    expect(result?.patches[2]).toMatchObject({
+      op: 'update',
+      id: 'tank_assembly',
+      data: {
+        metadata: {
+          equipmentAssembly: {
+            params: { hasAccessStair: false },
+            deletedPartGroups: ['access_stair'],
+          },
+        },
+      },
+    })
+  })
+
+  test('applies opacity edits only to a named semantic part group', () => {
+    const result = composeSelectionEdit({
+      prompt: 'set shell opacity to 40%',
+      context: {
+        selection: {
+          selectedIds: ['tank_assembly'],
+          nodes: [
+            {
+              id: 'tank_assembly',
+              type: 'assembly',
+              children: ['shell_1', 'liquid_1'],
+              metadata: {
+                equipmentAssembly: {
+                  kind: 'semantic-assembly',
+                  partGroups: [
+                    { id: 'shell', roles: ['vessel_shell'], editable: ['opacity'] },
+                    { id: 'liquid', roles: ['liquid_volume'], editable: ['opacity'] },
+                  ],
+                },
+              },
+            },
+            {
+              id: 'shell_1',
+              type: 'cylinder',
+              material: { properties: { color: '#cbd5e1', opacity: 1 } },
+              metadata: {
+                equipmentRootId: 'tank_assembly',
+                partGroupId: 'shell',
+                semanticRole: 'vessel_shell',
+              },
+            },
+            {
+              id: 'liquid_1',
+              type: 'cylinder',
+              material: { properties: { color: '#38bdf8', opacity: 0.6 } },
+              metadata: {
+                equipmentRootId: 'tank_assembly',
+                partGroupId: 'liquid',
+                semanticRole: 'liquid_volume',
+              },
+            },
+          ],
+        },
+      },
+    })
+
+    expect(result?.nodeIds).toEqual(['shell_1'])
+    expect(result?.patches[0]).toMatchObject({
+      op: 'update',
+      id: 'shell_1',
+      data: {
+        material: {
+          properties: {
+            opacity: 0.4,
+            transparent: true,
+          },
+        },
+      },
+    })
+  })
+
+  test('updates semantic tank liquid level and records the equipment param', () => {
+    const result = composeSelectionEdit({
+      prompt: 'set liquid level to 70%',
+      context: {
+        selection: {
+          selectedIds: ['tank_assembly'],
+          nodes: [
+            {
+              id: 'tank_assembly',
+              type: 'assembly',
+              children: ['liquid_1'],
+              metadata: {
+                dynamicLevelGeometry: {
+                  kind: 'vertical',
+                  height: 4,
+                  position: [0, 0, 0],
+                },
+                equipmentAssembly: {
+                  kind: 'semantic-assembly',
+                  params: { liquidLevel: 0.3 },
+                  partGroups: [{ id: 'liquid', roles: ['liquid_volume'], editable: ['level'] }],
+                },
+              },
+            },
+            {
+              id: 'liquid_1',
+              type: 'cylinder',
+              height: 1.2,
+              position: [0, 0.6, 0],
+              metadata: {
+                equipmentRootId: 'tank_assembly',
+                partGroupId: 'liquid',
+                semanticRole: 'liquid_volume',
+              },
+            },
+          ],
+        },
+      },
+    })
+
+    expect(result?.patches[0]).toMatchObject({
+      op: 'update',
+      id: 'liquid_1',
+      data: {
+        height: 2.8,
+        position: [0, 1.4, 0],
+      },
+    })
+    expect(result?.patches[1]).toMatchObject({
+      op: 'update',
+      id: 'tank_assembly',
+      data: {
+        metadata: {
+          equipmentAssembly: {
+            params: { liquidLevel: 0.7 },
+          },
+        },
+      },
+    })
+  })
+
+  test('uses equipment envelope height when liquid metadata has no dynamic geometry', () => {
+    const result = composeSelectionEdit({
+      prompt: 'set liquid level to 70%',
+      context: {
+        selection: {
+          selectedIds: ['tank_assembly'],
+          nodes: [
+            {
+              id: 'tank_assembly',
+              type: 'assembly',
+              children: ['liquid_1'],
+              metadata: {
+                equipmentAssembly: {
+                  kind: 'semantic-assembly',
+                  params: { liquidLevel: 0.3 },
+                  envelope: { length: 4, width: 4, height: 4 },
+                  partGroups: [{ id: 'liquid', roles: ['liquid_volume'], editable: ['level'] }],
+                },
+              },
+            },
+            {
+              id: 'liquid_1',
+              type: 'cylinder',
+              height: 1.2,
+              position: [0, 0.6, 0],
+              metadata: {
+                equipmentRootId: 'tank_assembly',
+                partGroupId: 'liquid',
+                semanticRole: 'liquid_volume',
+              },
+            },
+          ],
+        },
+      },
+    })
+
+    expect(result?.patches[0]).toMatchObject({
+      op: 'update',
+      id: 'liquid_1',
+      data: {
+        height: 2.8,
+        position: [0, 1.4, 0],
+      },
+    })
+  })
+
   test('returns a required missing reason when nothing is selected', () => {
     const result = composeSelectionColorEdit({
       prompt: 'change this object to a different color',

@@ -646,6 +646,39 @@ describe('composePartPrimitives', () => {
     expect(liquid?.material?.properties?.opacity).toBe(0.58)
   })
 
+  test('composes vertical storage tank shells as flat-roof atmospheric tanks', () => {
+    const shapes = composePartPrimitives({
+      name: 'Crude storage tank',
+      parts: [
+        {
+          kind: 'storage_tank_shell',
+          semanticRole: 'vessel_shell',
+          height: 3.4,
+          radius: 0.9,
+          axis: 'y',
+          position: [0, 1.9, 0],
+          material: { properties: { color: '#cbd5e1', opacity: 0.34, transparent: true } },
+        },
+      ],
+    })
+
+    const shell = shapes.find((shape) => shape.semanticRole === 'vessel_shell')
+    const roof = shapes.find((shape) => shape.semanticRole === 'vessel_roof')
+    expect(shell?.kind).toBe('hollow-cylinder')
+    expect(shell?.height).toBe(3.4)
+    expect(shell?.radius).toBe(0.9)
+    expect(roof?.kind).toBe('cylinder')
+    expect(roof?.material?.properties?.opacity).toBeGreaterThan(
+      shell?.material?.properties?.opacity ?? 1,
+    )
+    expect(shapes.some((shape) => shape.semanticRole === 'tank_bottom')).toBe(true)
+    expect(shapes.some((shape) => shape.semanticRole === 'top_rim')).toBe(true)
+    expect(shapes.some((shape) => shape.semanticRole === 'foundation_ring')).toBe(true)
+    expect(shapes.filter((shape) => shape.semanticRole === 'vessel_head')).toHaveLength(0)
+    expect(shapes.filter((shape) => shape.semanticRole === 'support_leg')).toHaveLength(0)
+    expect(shapes.every((shape) => shape.sourcePartKind === 'storage_tank_shell')).toBe(true)
+  })
+
   test('composes agitator tank parts with vessel shell, heads, mixer, nozzles, and legs', () => {
     const shapes = composePartPrimitives({
       name: 'Stirred reactor',
@@ -799,9 +832,7 @@ describe('composePartPrimitives', () => {
     expect(shapes.filter((shape) => shape.semanticRole === 'helical_stair_stringer')).toHaveLength(
       2,
     )
-    expect(shapes.filter((shape) => shape.semanticRole === 'helical_stair_landing')).toHaveLength(
-      2,
-    )
+    expect(shapes.filter((shape) => shape.semanticRole === 'helical_stair_landing')).toHaveLength(2)
     expect(shapes.some((shape) => shape.semanticRole === 'helical_stair_post')).toBe(true)
     expect(shapes.every((shape) => shape.sourcePartKind === 'helical_stair')).toBe(true)
   })
@@ -823,10 +854,18 @@ describe('composePartPrimitives', () => {
       ],
     })
 
-    expect(shapes.filter((shape) => shape.semanticRole === 'helical_ladder_tread').length).toBeGreaterThan(14)
-    expect(shapes.filter((shape) => shape.semanticRole === 'helical_ladder_guard_rail')).toHaveLength(1)
-    expect(shapes.filter((shape) => shape.semanticRole === 'helical_ladder_stringer')).toHaveLength(2)
-    expect(shapes.filter((shape) => shape.semanticRole === 'helical_ladder_landing')).toHaveLength(2)
+    expect(
+      shapes.filter((shape) => shape.semanticRole === 'helical_ladder_tread').length,
+    ).toBeGreaterThan(14)
+    expect(
+      shapes.filter((shape) => shape.semanticRole === 'helical_ladder_guard_rail'),
+    ).toHaveLength(1)
+    expect(shapes.filter((shape) => shape.semanticRole === 'helical_ladder_stringer')).toHaveLength(
+      2,
+    )
+    expect(shapes.filter((shape) => shape.semanticRole === 'helical_ladder_landing')).toHaveLength(
+      2,
+    )
     expect(shapes.some((shape) => shape.semanticRole === 'helical_ladder_post')).toBe(true)
     expect(shapes.every((shape) => shape.sourcePartKind === 'helical_ladder')).toBe(true)
   })
@@ -860,8 +899,8 @@ describe('composePartPrimitives', () => {
     expect(roles.has('tower_column')).toBe(true)
     expect(roles.has('tower_beam')).toBe(true)
     expect(roles.has('tower_diagonal_brace')).toBe(true)
-    expect(roles.has('external_stair_flight')).toBe(true)
-    expect(roles.has('external_stair_landing')).toBe(true)
+    expect(roles.has('internal_stair_flight')).toBe(true)
+    expect(roles.has('internal_stair_landing')).toBe(true)
     expect(roles.has('preheater_cyclone')).toBe(true)
     expect(roles.has('cyclone_cone')).toBe(true)
     expect(roles.has('preheater_gas_duct')).toBe(true)

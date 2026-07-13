@@ -1,11 +1,11 @@
 import type { AnyNodeDefinition, Plugin } from '@pascal-app/core'
 import { pumpDefinition } from './pump/definition'
-import { tankDefinition } from './tank/definition'
-import { centrifugalPumpRecipe } from './recipes/pump-recipe'
-import { storageTankRecipe } from './recipes/tank-recipe'
 import { distillationUnitRecipe } from './recipes/distillation-recipe'
+import { centrifugalPumpRecipe } from './recipes/pump-recipe'
 import { refineryAuxiliaryUnitRecipe } from './recipes/refinery-auxiliary-recipe'
 import { refineryReactorUnitRecipe } from './recipes/refinery-reactor-recipe'
+import { storageTankRecipe } from './recipes/tank-recipe'
+import { tankDefinition } from './tank/definition'
 
 export const FACTORY_EQUIPMENT_PLUGIN_ID = 'pascal:factory-equipment'
 
@@ -25,12 +25,33 @@ export const factoryEquipmentPlugin: Plugin = {
   ],
 }
 
+export type {
+  IndustrialRenderContract,
+  IndustrialRenderKernel,
+  IndustrialRenderMaterial,
+} from '@pascal-app/core/registry'
+export {
+  applyIndustrialRenderContractsToShapes,
+  attachIndustrialRenderContracts,
+  type IndustrialRenderContractSummary,
+  resolveIndustrialRenderContract,
+  summarizeIndustrialRenderContracts,
+} from './industrial-render-contract'
 export { pumpDefinition } from './pump/definition'
 export { buildPumpFloorplan } from './pump/floorplan'
 export { buildPumpGeometry } from './pump/geometry'
 export { pumpParametrics } from './pump/parametrics'
 export { factoryPumpPorts } from './pump/ports'
 export { FactoryPumpNode, PumpType } from './pump/schema'
+export {
+  buildDistillationUnitPorts,
+  buildDistillationUnitProfileParts,
+  DISTILLATION_UNIT_CORE_PART_ROLES,
+  DISTILLATION_UNIT_EDITABLE_PARAMS,
+  DISTILLATION_UNIT_EDITABLE_PART_ROLES,
+  DISTILLATION_UNIT_RECIPE_ID,
+  distillationUnitRecipe,
+} from './recipes/distillation-recipe'
 export {
   buildCentrifugalPumpPorts,
   buildCentrifugalPumpProfileParts,
@@ -41,15 +62,6 @@ export {
   CENTRIFUGAL_PUMP_RECIPE_ID,
   centrifugalPumpRecipe,
 } from './recipes/pump-recipe'
-export {
-  buildDistillationUnitPorts,
-  buildDistillationUnitProfileParts,
-  DISTILLATION_UNIT_CORE_PART_ROLES,
-  DISTILLATION_UNIT_EDITABLE_PARAMS,
-  DISTILLATION_UNIT_EDITABLE_PART_ROLES,
-  DISTILLATION_UNIT_RECIPE_ID,
-  distillationUnitRecipe,
-} from './recipes/distillation-recipe'
 export {
   buildRefineryAuxiliaryUnitPorts,
   buildRefineryAuxiliaryUnitProfileParts,
@@ -74,6 +86,7 @@ export {
   STORAGE_TANK_CORE_PART_ROLES,
   STORAGE_TANK_EDITABLE_PARAMS,
   STORAGE_TANK_EDITABLE_PART_ROLES,
+  STORAGE_TANK_PART_GROUPS,
   STORAGE_TANK_RECIPE_ID,
   storageTankRecipe,
 } from './recipes/tank-recipe'

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { listAssetCloudCatalog } from '@/lib/asset-packs'
 import { loadDeviceProfiles } from '@/lib/device-profiles'
 import { installProfilePackZip, listInstalledProfilePacks } from '@/lib/profile-packs'
 
@@ -29,9 +30,10 @@ export async function GET() {
 }
 
 async function buildProfilePackResponse() {
-  const [packs, loadedProfiles] = await Promise.all([
+  const [packs, loadedProfiles, assetCloudCatalog] = await Promise.all([
     listInstalledProfilePacks(),
     loadDeviceProfiles(),
+    listAssetCloudCatalog(),
   ])
   const profileDebug = loadedProfiles.profiles.map((profile) => ({
     id: profile.id,
@@ -66,6 +68,9 @@ async function buildProfilePackResponse() {
         .reduce((sum, pack) => sum + pack.profileCount, 0),
       loadedProfileCount: profileDebug.length,
       conflictCount: conflicts.length,
+      cloudIndustryPackCount: assetCloudCatalog.summary.industryPackCount,
+      cloudComponentPackCount: assetCloudCatalog.summary.componentPackCount,
+      cloudInstalledIndustryPackCount: assetCloudCatalog.summary.installedIndustryPackCount,
     },
   }
 }

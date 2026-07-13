@@ -1,0 +1,1 @@
+export const FLOORPLAN_VIEW_ROTATION_DEG = 90

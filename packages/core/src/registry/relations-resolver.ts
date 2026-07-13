@@ -26,6 +26,57 @@ export type CascadeContext = {
   maxDepth?: number
 }
 
+type EndpointLinkedNode = AnyNode & {
+  start: readonly [number, number]
+  end: readonly [number, number]
+}
+
+/**
+ * Resolves the nodes related to `node` by its registry `linkedBy` rule.
+ * This is a pure lookup used by preview and dirty-cascade consumers so
+ * framework packages do not need kind-specific endpoint matching.
+ */
+export function getLinkedNodeIds(
+  node: AnyNode,
+  nodes: Readonly<Record<string, AnyNode>>,
+): AnyNodeId[] {
+  const linkedBy = nodeRegistry.get(node.type)?.relations?.linkedBy
+  if (!linkedBy) {
+    return []
+  }
+
+  if (typeof linkedBy === 'object') {
+    return linkedBy.custom(node).filter((id) => id !== node.id && nodes[id] !== undefined)
+  }
+
+  if (linkedBy !== 'endpoint-match' || !hasPlanEndpoints(node)) {
+    return []
+  }
+
+  const result: AnyNodeId[] = []
+  for (const candidate of Object.values(nodes)) {
+    if (
+      candidate.id === node.id ||
+      candidate.type !== node.type ||
+      candidate.parentId !== node.parentId ||
+      !hasPlanEndpoints(candidate)
+    ) {
+      continue
+    }
+
+    if (
+      pointsEqual(candidate.start, node.start) ||
+      pointsEqual(candidate.start, node.end) ||
+      pointsEqual(candidate.end, node.start) ||
+      pointsEqual(candidate.end, node.end)
+    ) {
+      result.push(candidate.id)
+    }
+  }
+
+  return result
+}
+
 const DEFAULT_MAX_DEPTH = 16
 
 /**
@@ -89,6 +140,27 @@ function walk(
 function defaultChildIds(node: AnyNode, _scene: SceneApi): AnyNodeId[] {
   const maybeChildren = (node as unknown as { children?: AnyNodeId[] }).children
   return Array.isArray(maybeChildren) ? maybeChildren : []
+}
+
+function hasPlanEndpoints(node: AnyNode): node is EndpointLinkedNode {
+  const candidate = node as unknown as {
+    start?: unknown
+    end?: unknown
+  }
+  return isPlanPoint(candidate.start) && isPlanPoint(candidate.end)
+}
+
+function isPlanPoint(value: unknown): value is readonly [number, number] {
+  return (
+    Array.isArray(value) &&
+    value.length >= 2 &&
+    typeof value[0] === 'number' &&
+    typeof value[1] === 'number'
+  )
+}
+
+function pointsEqual(a: readonly [number, number], b: readonly [number, number]): boolean {
+  return a[0] === b[0] && a[1] === b[1]
 }
 
 /**

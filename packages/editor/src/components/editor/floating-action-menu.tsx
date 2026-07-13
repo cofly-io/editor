@@ -35,7 +35,7 @@ import { sfxEmitter } from '../../lib/sfx-bus'
 import { duplicateStairSubtree } from '../../lib/stair-duplication'
 import { duplicateNodeSubtree } from '../../lib/subtree-duplication'
 import useEditor from '../../store/use-editor'
-import { ACTION_MENU_DISTANCE_FACTOR, getActionMenuAnchor } from './action-menu-placement'
+import { getActionMenuAnchor } from './action-menu-placement'
 import { NodeActionMenu } from './node-action-menu'
 
 const ALLOWED_TYPES = [
@@ -62,6 +62,7 @@ const ENDPOINT_BUTTON_WALL_CLASS =
   'border-violet-400/60 bg-violet-500/10 text-violet-400 hover:border-violet-300/80 hover:bg-violet-500/20 hover:text-violet-200'
 const ENDPOINT_BUTTON_DETACH_CLASS =
   'border-amber-500/80 bg-amber-500/15 text-amber-100 hover:bg-amber-500/20 hover:text-white'
+const ACTION_MENU_VISIBLE_MS = 2000
 
 function getEndpointMoveLabel(
   actionMenu: NonNullable<NonNullable<ReturnType<typeof nodeRegistry.get>>['actionMenu']>,
@@ -107,6 +108,8 @@ export function FloatingActionMenu() {
   const projectedAnchorRef = useRef(new THREE.Vector3())
   const [altPressed, setAltPressed] = useState(false)
   const [menuVisible, setMenuVisible] = useState(false)
+  const [menuFaded, setMenuFaded] = useState(false)
+  const [menuHovered, setMenuHovered] = useState(false)
 
   // Only show for single selection of specific types
   const selectedId = selectedIds.length === 1 ? selectedIds[0] : null
@@ -160,6 +163,21 @@ export function FloatingActionMenu() {
       window.removeEventListener('blur', handleBlur)
     }
   }, [])
+
+  useEffect(() => {
+    if (selectedIds.length !== 1 || !selectedId || !isValidType) return
+    if (menuHovered) {
+      setMenuFaded(false)
+      return
+    }
+
+    setMenuFaded(false)
+    const timeout = window.setTimeout(() => {
+      setMenuFaded(true)
+    }, ACTION_MENU_VISIBLE_MS)
+
+    return () => window.clearTimeout(timeout)
+  }, [selectedIds, selectedId, isValidType, menuHovered])
 
   useFrame(() => {
     if (!(selectedId && isValidType)) {
@@ -495,37 +513,39 @@ export function FloatingActionMenu() {
   return (
     <group>
       <group ref={menuGroupRef} visible={menuVisible}>
-        <Html
-          center
-          distanceFactor={ACTION_MENU_DISTANCE_FACTOR}
-          style={{ pointerEvents: 'auto', touchAction: 'none' }}
-          zIndexRange={[100, 0]}
-        >
-          <NodeActionMenu
-            onAddHole={addHoleAction ? handleAddHole : undefined}
-            onCurve={actionMenu?.curve && canCurveSelectedNode ? handleCurve : undefined}
-            onDelete={handleDelete}
-            onDuplicate={
-              node &&
-              node.type !== 'spawn' &&
-              !DELETE_ONLY_TYPES.includes(node.type) &&
-              !addHoleAction
-                ? handleDuplicate
-                : undefined
-            }
-            onMove={
-              node &&
-              !isDirectPlanDraggable &&
-              node.type !== 'wall' &&
-              node.type !== 'fence' &&
-              node.type !== 'pipe' &&
-              !DELETE_ONLY_TYPES.includes(node.type)
-                ? handleMove
-                : undefined
-            }
-            onPointerDown={(e) => e.stopPropagation()}
-            onPointerUp={(e) => e.stopPropagation()}
-          />
+        <Html center style={{ pointerEvents: 'auto', touchAction: 'none' }} zIndexRange={[100, 0]}>
+          <div
+            className="transition-opacity duration-700 ease-out"
+            onPointerEnter={() => setMenuHovered(true)}
+            onPointerLeave={() => setMenuHovered(false)}
+            style={{ opacity: menuFaded ? 0 : 1, pointerEvents: menuFaded ? 'none' : 'auto' }}
+          >
+            <NodeActionMenu
+              onAddHole={addHoleAction ? handleAddHole : undefined}
+              onCurve={actionMenu?.curve && canCurveSelectedNode ? handleCurve : undefined}
+              onDelete={handleDelete}
+              onDuplicate={
+                node &&
+                node.type !== 'spawn' &&
+                !DELETE_ONLY_TYPES.includes(node.type) &&
+                !addHoleAction
+                  ? handleDuplicate
+                  : undefined
+              }
+              onMove={
+                node &&
+                !isDirectPlanDraggable &&
+                node.type !== 'wall' &&
+                node.type !== 'fence' &&
+                node.type !== 'pipe' &&
+                !DELETE_ONLY_TYPES.includes(node.type)
+                  ? handleMove
+                  : undefined
+              }
+              onPointerDown={(e) => e.stopPropagation()}
+              onPointerUp={(e) => e.stopPropagation()}
+            />
+          </div>
         </Html>
       </group>
       {actionMenu?.endpointMove && (
@@ -533,7 +553,6 @@ export function FloatingActionMenu() {
           <group ref={startEndpointGroupRef}>
             <Html
               center
-              distanceFactor={ACTION_MENU_DISTANCE_FACTOR}
               style={{ pointerEvents: 'auto', touchAction: 'none' }}
               zIndexRange={[100, 0]}
             >
@@ -552,7 +571,6 @@ export function FloatingActionMenu() {
           <group ref={endEndpointGroupRef}>
             <Html
               center
-              distanceFactor={ACTION_MENU_DISTANCE_FACTOR}
               style={{ pointerEvents: 'auto', touchAction: 'none' }}
               zIndexRange={[100, 0]}
             >

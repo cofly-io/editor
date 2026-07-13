@@ -1,36 +1,11 @@
 import type { EquipmentParamValue } from '@pascal-app/core'
-import { composePartPrimitives, type PartComposeInput } from '@pascal-app/core/lib/part-compose'
-import {
-  type PrimitiveShapeInput,
-  resolvePrimitiveWorldTransforms,
-} from '@pascal-app/core/lib/primitive-compose'
-import {
-  computeGeneratedAssemblyPosition,
-  createGeneratedGeometryId,
-  formatGeneratedShapeDetails,
-  type GeneratedGeometryArtifact,
-  inferGeneratedAssemblyName,
-} from '../../../../packages/editor/src/lib/ai-generated-geometry-core'
-import {
-  buildGeneratedGeometryCreatePatches,
-  type GeneratedGeometryPatchPlan,
+import type {
+  GeneratedGeometryPatchPlan,
+  GeneratedGeometryPlacementSpec,
 } from '../../../../packages/editor/src/lib/ai-generated-geometry-nodes'
-import {
-  buildCentrifugalPumpPorts,
-  buildCentrifugalPumpProfileParts,
-  buildStorageTankPorts,
-  buildStorageTankProfileParts,
-  CENTRIFUGAL_PUMP_CORE_PART_ROLES,
-  CENTRIFUGAL_PUMP_EDITABLE_PARAMS,
-  CENTRIFUGAL_PUMP_EDITABLE_PART_ROLES,
-  STORAGE_TANK_CORE_PART_ROLES,
-  STORAGE_TANK_EDITABLE_PARAMS,
-  STORAGE_TANK_EDITABLE_PART_ROLES,
-} from '@pascal-app/plugin-factory-equipment'
-import type { FactorySceneEditPatch } from './factory-selection-edit'
-import type { GeneratedGeometryPlacementSpec } from '../../../../packages/editor/src/lib/ai-generated-geometry-nodes'
-import { createSemanticAssemblyPatchPlan as createRecipeSemanticAssemblyPatchPlan } from '../equipment-semantic-assembly-patches'
 import type { SemanticEquipmentSpec } from '../equipment-binding-resolver'
+import { createSemanticAssemblyPatchPlan as createRecipeSemanticAssemblyPatchPlan } from '../equipment-semantic-assembly-patches'
+import type { FactorySceneEditPatch } from './factory-selection-edit'
 import { ensureFactorySemanticRecipesRegistered } from './factory-semantic-recipe-registry'
 
 type FactoryEquipmentNodeKind = 'factory:pump' | 'factory:tank'
@@ -170,156 +145,6 @@ function createRecipePatchPlan(input: {
   })
 }
 
-function createSemanticAssemblyPatchPlan(input: {
-  intent: Extract<SingleEquipmentIntent, { kind: 'equipment' }>
-  prompt: string
-  placement: GeneratedGeometryPlacementSpec
-}): GeneratedGeometryPatchPlan | null {
-  const isPump = input.intent.nodeKind === 'factory:pump'
-  const isTank = input.intent.nodeKind === 'factory:tank'
-  if (!isPump && !isTank) return null
-  const length = numberParam(input.intent.params, 'length', isPump ? 2.6 : 2.4)
-  const width = numberParam(input.intent.params, 'width', isPump ? 1.1 : 2.4)
-  const height = numberParam(input.intent.params, 'height', isPump ? 1.4 : 3.2)
-  const orientation =
-    input.intent.params.orientation === 'horizontal' ? 'horizontal' : 'vertical'
-  const family = isPump ? 'pump' : 'tank.storage'
-  const primarySemanticRole = isPump ? 'pump' : 'vessel_shell'
-  const coreRoles = isPump ? CENTRIFUGAL_PUMP_CORE_PART_ROLES : STORAGE_TANK_CORE_PART_ROLES
-  const editableRoles = isPump
-    ? CENTRIFUGAL_PUMP_EDITABLE_PART_ROLES
-    : STORAGE_TANK_EDITABLE_PART_ROLES
-  const editableParams = isPump
-    ? CENTRIFUGAL_PUMP_EDITABLE_PARAMS
-    : STORAGE_TANK_EDITABLE_PARAMS
-  const ports = isPump
-    ? buildCentrifugalPumpPorts({ height, medium: 'material' })
-    : buildStorageTankPorts({ height, medium: 'material' })
-  const sourceArgs: PartComposeInput = {
-    name:
-      typeof input.intent.params.name === 'string'
-        ? input.intent.params.name
-        : isPump
-          ? 'Factory pump'
-          : 'Factory tank',
-    family,
-    category: isPump ? 'industrial pump' : 'industrial storage tank',
-    detail: 'high',
-    length,
-    width,
-    depth: width,
-    height,
-    parts: isPump
-      ? buildCentrifugalPumpProfileParts({ params: input.intent.params })
-      : buildStorageTankProfileParts({
-          length,
-          width,
-          height,
-          orientation,
-          params: input.intent.params,
-        }),
-    autoComplete: false,
-    enhanceVisualDetails: false,
-    registryPartPlan: true,
-    primaryColor:
-      typeof input.intent.params.casingColor === 'string'
-        ? input.intent.params.casingColor
-        : typeof input.intent.params.shellColor === 'string'
-          ? input.intent.params.shellColor
-          : isPump
-            ? '#4f7f93'
-            : '#cbd5e1',
-    metalColor: '#cbd5e1',
-    darkColor: '#1f2937',
-    accentColor: '#f59e0b',
-  } as PartComposeInput
-  const shapes = composePartPrimitives(sourceArgs) as PrimitiveShapeInput[]
-  if (!shapes.length) return null
-  const artifactShapes: GeneratedGeometryArtifact['shapes'] = shapes.map((shape) => ({
-    ...shape,
-    position: shape.position ?? [0, 0, 0],
-    rotation: shape.rotation ?? [0, 0, 0],
-  }))
-  const transforms = resolvePrimitiveWorldTransforms(artifactShapes, {
-    positionMode: 'world-center',
-  })
-  const assemblyPosition = computeGeneratedAssemblyPosition(transforms)
-  const artifact: GeneratedGeometryArtifact = {
-    id: createGeneratedGeometryId(),
-    title: sourceArgs.name ?? (isPump ? 'Factory pump' : 'Factory tank'),
-    sourceTool: 'semantic_assembly',
-    sourceArgs: {
-      profileId: input.intent.profileId,
-      family,
-      length,
-      width,
-      height,
-      primarySemanticRole,
-    },
-    userPrompt: input.prompt,
-    version: 1,
-    createdAt: new Date().toISOString(),
-    shapes: artifactShapes,
-    transforms,
-    assemblyName: inferGeneratedAssemblyName(
-      'semantic_assembly',
-      sourceArgs as Record<string, unknown>,
-      artifactShapes,
-    ),
-    assemblyPosition,
-    createdNames: artifactShapes.map((shape) => shape.name ?? shape.kind),
-    shapeDetails: formatGeneratedShapeDetails(artifactShapes, transforms),
-    geometryBrief: {
-      category: family,
-      units: 'meters',
-      expectedDimensions: { length, width, height },
-      requiredRoles: [...coreRoles],
-      semanticRoles: [...coreRoles],
-    },
-  }
-  const position = input.placement.position ?? [0, 0, 0]
-  return buildGeneratedGeometryCreatePatches(artifact, {
-    ...input.placement,
-    metadata: {
-      generatedBy: 'single-equipment-compiler',
-      equipmentIntentConfidence: input.intent.confidence,
-      sourcePrompt: input.prompt,
-      resolver: 'semantic-assembly',
-      resolverReason: 'single equipment prompt compiled to editable semantic assembly',
-      factoryRouteObstacle: {
-        stationId: 'single_equipment',
-        source: 'profile-parts',
-        minHeight: position[1],
-        maxHeight: position[1] + height,
-        box: {
-          minX: position[0] - length / 2,
-          maxX: position[0] + length / 2,
-          minZ: position[2] - width / 2,
-          maxZ: position[2] + width / 2,
-        },
-      },
-      equipmentAssembly: {
-        kind: 'semantic-assembly',
-        profileId: input.intent.profileId,
-        equipmentFamily: family,
-        primarySemanticRole,
-        envelope: { length, width, height, origin: 'prompt' },
-        ports,
-        editableParams: [...editableParams],
-        editablePartRoles: [...editableRoles],
-        recipeSource: 'single-equipment-profile-parts',
-      },
-      equipmentContract: {
-        profileId: input.intent.profileId,
-        equipmentFamily: family,
-        scaleClass: 'single-equipment',
-        envelope: { length, width, height, origin: 'prompt' },
-        ports,
-      },
-    },
-  })
-}
-
 export function classifySingleEquipmentIntent(prompt: string): SingleEquipmentIntent {
   const text = normalized(prompt)
   const dimensions = dimensionsFromPrompt(prompt)
@@ -362,7 +187,8 @@ export function classifySingleEquipmentIntent(prompt: string): SingleEquipmentIn
     const shellOpacity = opacityFromPrompt(prompt)
     const liquidOpacity = percentageParamFromPrompt(prompt, '液体透明度|液相透明度|liquid opacity')
     const profileIdMatch = /\b([a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)+)\b/i.exec(prompt)
-    const profileId = profileIdMatch?.[1] ?? (vertical ? 'generic.vertical_tank' : 'generic.horizontal_tank')
+    const profileId =
+      profileIdMatch?.[1] ?? (vertical ? 'generic.vertical_tank' : 'generic.horizontal_tank')
     return {
       kind: 'equipment',
       nodeKind: 'factory:tank',
@@ -394,7 +220,8 @@ export function classifySingleEquipmentIntent(prompt: string): SingleEquipmentIn
 }
 
 function selectedFactoryNode(context: unknown): SelectionNodeSnapshot | null {
-  const record = typeof context === 'object' && context !== null ? (context as Record<string, unknown>) : {}
+  const record =
+    typeof context === 'object' && context !== null ? (context as Record<string, unknown>) : {}
   const selection =
     typeof record.selection === 'object' && record.selection !== null
       ? (record.selection as Record<string, unknown>)
@@ -477,17 +304,8 @@ export function compileSingleEquipmentPrompt(input: {
       patchPlan: recipeAssembly,
     }
   }
-  const semanticAssembly = createSemanticAssemblyPatchPlan({
-    intent,
-    prompt: input.prompt,
-    placement: input.placement,
-  })
-  if (semanticAssembly?.patches.length) {
-    return {
-      kind: 'create-semantic-assembly',
-      intent,
-      patchPlan: semanticAssembly,
-    }
+  return {
+    kind: 'generic-equipment-draft',
+    reason: 'No registered semantic recipe produced patches.',
   }
-  return { kind: 'generic-equipment-draft', reason: 'No semantic assembly recipe produced patches.' }
 }

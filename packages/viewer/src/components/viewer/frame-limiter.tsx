@@ -33,6 +33,10 @@ const FrameLimiter: React.FC<FrameLimiterProps> = ({ fps = 50, idleFps = 4, acti
     const mountedAt = performance.now()
     function tick(t: DOMHighResTimeStamp) {
       raf = requestAnimationFrame(tick)
+      if (useViewer.getState().rendererHealth === 'lost') {
+        then = t
+        return
+      }
       elapsed = t - then
       const interval = 1000 / getTargetFps(t, mountedAt, fps, idleFps, active)
       if (elapsed > interval) {

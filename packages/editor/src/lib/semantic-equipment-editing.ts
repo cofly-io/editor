@@ -9,6 +9,7 @@ import type {
 
 type DynamicLevelGeometry = {
   kind?: string
+  diameter?: number
   height?: number
   length?: number
   position?: [number, number, number]
@@ -46,11 +47,16 @@ function materialWithProperties(
   } as MaterialSchema
 }
 
-function paramEffects(param: SemanticRecipeEditableParam): readonly SemanticRecipeEditableParamEffect[] {
+function paramEffects(
+  param: SemanticRecipeEditableParam,
+): readonly SemanticRecipeEditableParamEffect[] {
   return param.effects?.length ? param.effects : [{ kind: 'set-param' as const }]
 }
 
-function effectParamKey(param: SemanticRecipeEditableParam, effect: SemanticRecipeEditableParamEffect) {
+function effectParamKey(
+  param: SemanticRecipeEditableParam,
+  effect: SemanticRecipeEditableParamEffect,
+) {
   return effect.kind === 'set-param' && effect.param ? effect.param : param.key
 }
 
@@ -68,7 +74,9 @@ export function findSemanticEquipmentChild(
 ): AnyNode | null {
   const assembly = nodes[assemblyId]
   const explicitChildren =
-    assembly && 'children' in assembly && Array.isArray((assembly as { children?: unknown }).children)
+    assembly &&
+    'children' in assembly &&
+    Array.isArray((assembly as { children?: unknown }).children)
       ? ((assembly as { children?: unknown[] }).children ?? []).map(String)
       : []
   const parentedChildren = Object.values(nodes)
@@ -136,11 +144,23 @@ function buildDynamicLevelUpdate(input: {
   const level = clamp01(input.value)
   const height = Math.max(input.effect.minSize ?? 0.02, span * level)
   const currentPosition = Array.isArray((input.target as { position?: unknown }).position)
-    ? ([...(input.target as { position: [number, number, number] }).position] as [number, number, number])
+    ? ([...(input.target as { position: [number, number, number] }).position] as [
+        number,
+        number,
+        number,
+      ])
     : ([0, 0, 0] as [number, number, number])
   const base = dynamicLevelGeometry?.position
   if (dynamicLevelGeometry?.kind === 'horizontal') {
-    currentPosition[0] = (base?.[0] ?? 0) - (span - height) / 2
+    const shellRadius = Math.max(0.02, (dynamicLevelGeometry.diameter ?? 1) / 2)
+    const fillRadius = Math.max(input.effect.minSize ?? 0.02, shellRadius * 0.9 * level)
+    currentPosition[0] = base?.[0] ?? 0
+    currentPosition[1] = (base?.[1] ?? 0) - shellRadius * 0.9 + fillRadius
+    return {
+      height: span * 0.96,
+      position: currentPosition,
+      radius: fillRadius,
+    } as Partial<AnyNode>
   } else {
     currentPosition[1] = (base?.[1] ?? 0) + height / 2
   }

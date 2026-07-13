@@ -10,8 +10,8 @@ import { ColumnNode } from './schema'
 
 /**
  * Column — Stage A registration. Wrap-export of the legacy
- * `ColumnRenderer` (no system — column geometry is computed inline in
- * the renderer). Inspector / move / floorplan still go through legacy
+ * `ColumnRenderer`; marked generated portal frames are rendered by an
+ * instancing system. Inspector / move / floorplan still go through legacy
  * paths via panel-manager.tsx / item-move-tool.tsx / floorplan-panel.tsx
  * (their hardcoded `case 'column':` entries fire before the registry
  * fallback).
@@ -61,6 +61,10 @@ export const columnDefinition: NodeDefinition<typeof ColumnNode> = {
   renderer: {
     kind: 'parametric',
     module: () => import('./renderer'),
+  },
+  system: {
+    module: () => import('./batch-system'),
+    priority: 7,
   },
   // Stage D — 3D move-tool (registry-driven). Replaces the legacy
   // `MoveColumnTool` in editor's dispatcher. Same 0.5m grid snap +

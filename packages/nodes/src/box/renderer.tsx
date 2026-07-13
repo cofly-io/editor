@@ -21,6 +21,12 @@ import { useLayoutEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import {
+  createIndustrialMaterial,
+  industrialDetailKind,
+  industrialRenderContractFromMetadata,
+} from '../shared/industrial-render-contract-rendering'
+import { canBatchBoxBase } from '../shared/primitive-batching'
+import {
   applyInstanceMatrices,
   primitiveContractFromMetadata,
   primitivePatternInstances,
@@ -106,26 +112,58 @@ function applyBoxCutouts(baseGeometry: THREE.BufferGeometry, node: BoxNode) {
   return resultGeometry
 }
 
-export const BoxRenderer = ({ node }: { node: BoxNode }) => {
-  const ref = useRef<THREE.Group>(null!)
+function IndustrialBoxDetail({
+  contract,
+  height,
+  length,
+  width,
+}: {
+  contract: ReturnType<typeof industrialRenderContractFromMetadata>
+  height: number
+  length: number
+  width: number
+}) {
+  const detail = industrialDetailKind(contract)
+  const geometry = useMemo(() => {
+    const base = new THREE.BoxGeometry(length * 1.006, height * 1.006, width * 1.006)
+    const edges = new THREE.EdgesGeometry(base, 24)
+    base.dispose()
+    return edges
+  }, [height, length, width])
+  const material = useMemo(
+    () =>
+      new THREE.LineBasicMaterial({
+        color: detail === 'frame-box' ? '#d1d5db' : '#9ca3af',
+        transparent: true,
+        opacity: detail === 'frame-box' ? 0.72 : 0.38,
+      }),
+    [detail],
+  )
+
+  if (detail !== 'frame-box') return null
+  return <lineSegments geometry={geometry} material={material} />
+}
+
+function BoxSolid({
+  node,
+  renderContract,
+}: {
+  node: BoxNode
+  renderContract: ReturnType<typeof industrialRenderContractFromMetadata>
+}) {
   const instancedRef = useRef<THREE.InstancedMesh>(null)
-
-  useRegistry(node.id, 'box', ref)
-
-  useLayoutEffect(() => {
-    useScene.getState().markDirty(node.id)
-  }, [node.id])
-
-  const handlers = useNodeEvents(node, 'box')
   const shading = useViewer((state) => state.shading)
 
   const material = useMemo(() => {
     const presetMaterial = createMaterialFromPresetRef(node.materialPreset, shading)
-    if (presetMaterial) return presetMaterial
+    if (presetMaterial) return createIndustrialMaterial(renderContract, presetMaterial)
     const mat = node.material
-    if (!mat) return createDefaultMaterial('#cccccc', 1, shading)
-    return createMaterial(mat, shading)
+    const baseMaterial = mat
+      ? createMaterial(mat, shading)
+      : createDefaultMaterial('#cccccc', 1, shading)
+    return createIndustrialMaterial(renderContract, baseMaterial)
   }, [
+    renderContract,
     node.materialPreset,
     node.material,
     node.material?.preset,
@@ -161,6 +199,42 @@ export const BoxRenderer = ({ node }: { node: BoxNode }) => {
     applyInstanceMatrices(instancedRef.current, instances)
   }, [instances])
 
+  return instances.length > 1 ? (
+    <instancedMesh
+      args={[geometry, material, instances.length]}
+      castShadow
+      name="box-solid-instances"
+      receiveShadow
+      ref={instancedRef}
+    />
+  ) : (
+    <mesh castShadow geometry={geometry} material={material} name="box-solid" receiveShadow />
+  )
+}
+
+export const BoxRenderer = ({ node }: { node: BoxNode }) => {
+  const ref = useRef<THREE.Group>(null!)
+  const handlers = useNodeEvents(node, 'box')
+  const selectedIds = useViewer((state) => state.selection.selectedIds)
+  const previewSelectedIds = useViewer((state) => state.previewSelectedIds)
+  const hoveredId = useViewer((state) => state.hoveredId)
+  const renderContract = useMemo(
+    () => industrialRenderContractFromMetadata(node.metadata),
+    [node.metadata],
+  )
+  const instances = primitivePatternInstances(node.metadata)
+  const renderBaseIndividually =
+    !canBatchBoxBase(node) ||
+    selectedIds.includes(node.id) ||
+    previewSelectedIds.includes(node.id) ||
+    hoveredId === node.id
+
+  useRegistry(node.id, 'box', ref)
+
+  useLayoutEffect(() => {
+    useScene.getState().markDirty(node.id)
+  }, [node.id])
+
   return (
     <group
       position-x={node.position[0]}
@@ -171,17 +245,15 @@ export const BoxRenderer = ({ node }: { node: BoxNode }) => {
       visible={node.visible}
       {...handlers}
     >
-      {instances.length > 1 ? (
-        <instancedMesh
-          args={[geometry, material, instances.length]}
-          castShadow
-          name="box-solid-instances"
-          receiveShadow
-          ref={instancedRef}
+      {renderBaseIndividually ? <BoxSolid node={node} renderContract={renderContract} /> : null}
+      {instances.length <= 1 && industrialDetailKind(renderContract) === 'frame-box' ? (
+        <IndustrialBoxDetail
+          contract={renderContract}
+          height={node.height ?? 1}
+          length={node.length ?? 1}
+          width={node.width ?? 1}
         />
-      ) : (
-        <mesh castShadow geometry={geometry} material={material} name="box-solid" receiveShadow />
-      )}
+      ) : null}
     </group>
   )
 }

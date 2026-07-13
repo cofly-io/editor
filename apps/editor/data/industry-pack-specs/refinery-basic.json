@@ -455,13 +455,13 @@
       "defaultDimensions": {
         "length": 5.6,
         "width": 5.6,
-        "height": 4.2
+        "height": 6.4
       },
       "parts": [
         {
-          "kind": "cylindrical_tank",
+          "kind": "storage_tank_shell",
           "semanticRole": "vessel_shell",
-          "height": 4.2,
+          "height": 6.4,
           "radius": 2.4,
           "axis": "y",
           "primaryColor": "#cbd5e1"
@@ -508,13 +508,13 @@
       "defaultDimensions": {
         "length": 5.2,
         "width": 5.2,
-        "height": 3.8
+        "height": 5.8
       },
       "parts": [
         {
-          "kind": "cylindrical_tank",
+          "kind": "storage_tank_shell",
           "semanticRole": "vessel_shell",
-          "height": 3.8,
+          "height": 5.8,
           "radius": 2.2,
           "axis": "y",
           "primaryColor": "#e5e7eb"
@@ -601,21 +601,23 @@
       "recipeId": "factory:distillation-unit",
       "recipeParams": {
         "columnRole": "distillation_column_shell",
+        "columnHeight": 13.2,
+        "columnRadius": 0.78,
         "exchangerRole": "heat_exchanger_shell",
         "heaterRole": "fired_heater",
         "manifoldRole": "side_draw_manifold"
       },
       "defaultDimensions": {
-        "length": 6.4,
-        "width": 3.4,
-        "height": 9.5
+        "length": 10.5,
+        "width": 6,
+        "height": 13.5
       },
       "parts": [
         {
           "kind": "cylindrical_tank",
           "semanticRole": "distillation_column_shell",
-          "height": 9,
-          "radius": 0.72,
+          "height": 13.2,
+          "radius": 0.78,
           "axis": "y",
           "primaryColor": "#d1d5db"
         },
@@ -695,21 +697,23 @@
       "recipeParams": {
         "columnKind": "vacuum",
         "columnRole": "vacuum_column_shell",
+        "columnHeight": 11.4,
+        "columnRadius": 1.05,
         "exchangerRole": "heat_exchanger_shell",
         "heaterRole": "vacuum_heater",
         "manifoldRole": "vacuum_line"
       },
       "defaultDimensions": {
-        "length": 5.8,
-        "width": 3.2,
-        "height": 8.2
+        "length": 6.8,
+        "width": 4.4,
+        "height": 11.8
       },
       "parts": [
         {
           "kind": "cylindrical_tank",
           "semanticRole": "vacuum_column_shell",
-          "height": 7.8,
-          "radius": 0.82,
+          "height": 11.4,
+          "radius": 1.05,
           "axis": "y",
           "primaryColor": "#cbd5e1"
         },

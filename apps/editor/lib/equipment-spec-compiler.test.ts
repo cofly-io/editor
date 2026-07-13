@@ -1,14 +1,14 @@
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { loadPlugin, nodeRegistry, semanticRecipeRegistry } from '@pascal-app/core'
 import { factoryEquipmentPlugin } from '@pascal-app/plugin-factory-equipment'
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import {
   compileManualEquipmentPreset,
   compileProcessStationEquipment,
   compileSingleEquipmentPrompt,
 } from './equipment-spec-compiler'
 import {
-  normalizeIndustryPackV2Manifest,
   type IndustryPackV2ValidationProfile,
+  normalizeIndustryPackV2Manifest,
 } from './industry-pack-v2'
 
 const pumpProfile: IndustryPackV2ValidationProfile = {
@@ -37,9 +37,9 @@ const manifest = normalizeIndustryPackV2Manifest({
   dependsOnPlugins: ['pascal:factory-equipment'],
   profiles: ['profiles/pumps.json'],
   equipmentBindings: [
-      {
-        profileId: 'chemical.centrifugal_pump',
-        recipeId: 'factory:centrifugal-pump',
+    {
+      profileId: 'chemical.centrifugal_pump',
+      recipeId: 'factory:centrifugal-pump',
       paramMap: {
         'equipmentDefaults.pumpType': 'pumpType',
         'equipmentDefaults.flowRate': 'flowRate',
@@ -106,6 +106,19 @@ describe('equipment spec compiler', () => {
         },
       },
     })
+    expect(result.patchPlan.patches[0]?.node.metadata?.equipmentAssembly).toMatchObject({
+      renderContracts: {
+        kernels: expect.objectContaining({
+          'volute-pump-casing': 1,
+          'ribbed-motor': 1,
+        }),
+      },
+    })
+    expect(
+      result.patchPlan.patches.find(
+        (patch) => patch.node.metadata?.semanticRole === 'volute_casing',
+      )?.node.metadata?.renderContract,
+    ).toMatchObject({ kernel: 'volute-pump-casing' })
   })
 
   test('compiles a process station centrifugal pump into semantic assembly', () => {

@@ -64,6 +64,7 @@ export function createBinding(type: DynamicType, path: string): DynamicBinding {
       speedRange: [0, 1.2],
       color: '#35c8ff',
       arrowColor: '#7dd3fc',
+      arrowScale: 0.72,
       direction: 'forward',
       flowMedium: 'liquid',
     }

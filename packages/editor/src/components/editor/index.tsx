@@ -37,13 +37,13 @@ import {
   writePersistedSelection,
 } from '../../lib/scene'
 import { computeSceneBoundsXZ, pickSceneCameraFocusBounds } from '../../lib/scene-bounds'
+import type { SceneGraphPatch } from '../../lib/scene-patch'
 import { initSFXBus } from '../../lib/sfx-bus'
 import useEditor from '../../store/use-editor'
 import { CeilingSelectionAffordanceSystem } from '../systems/ceiling/ceiling-selection-affordance-system'
 import { CeilingSystem } from '../systems/ceiling/ceiling-system'
 import { DynamicPreviewRuntime } from '../systems/live-data/dynamic-preview-runtime'
 import { LiveDataBindingRuntime } from '../systems/live-data/live-data-binding-runtime'
-import { LiveDataSourceConnector } from '../systems/live-data/live-data-source-connector'
 import { RoofEditSystem } from '../systems/roof/roof-edit-system'
 import { StairEditSystem } from '../systems/stair/stair-edit-system'
 import { ZoneLabelEditorSystem } from '../systems/zone/zone-label-editor-system'
@@ -66,7 +66,6 @@ import {
 } from '../ui/primitives/dialog'
 import { ErrorBoundary } from '../ui/primitives/error-boundary'
 import { useSidebarStore } from '../ui/primitives/sidebar'
-import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/primitives/tooltip'
 import { SceneLoader } from '../ui/scene-loader'
 import { AppSidebar } from '../ui/sidebar/app-sidebar'
 import type { ExtraPanel } from '../ui/sidebar/icon-rail'
@@ -81,6 +80,12 @@ import { FirstPersonControls, FirstPersonOverlay } from './first-person-controls
 import { FloatingActionMenu } from './floating-action-menu'
 import { FloatingBuildingActionMenu } from './floating-building-action-menu'
 import { FloorplanPanel } from './floorplan-panel'
+import { FloorplanCompassButton } from './floorplan-panel/floorplan-compass-button'
+import {
+  cameraAzimuthFromFloorplanRotation,
+  floorplanRotationFromCameraAzimuth,
+  nearestEquivalentDegrees,
+} from './floorplan-panel/navigation'
 import { Grid } from './grid'
 import { NodeArrowHandles } from './node-arrow-handles'
 import { PresetThumbnailGenerator } from './preset-thumbnail-generator'
@@ -90,7 +95,6 @@ import { SnapshotCaptureOverlay } from './snapshot-capture-overlay'
 import { type SnapshotCameraData, ThumbnailGenerator } from './thumbnail-generator'
 import { WallMoveSideHandles } from './wall-move-side-handles'
 
-const CAMERA_CONTROLS_HINT_DISMISSED_STORAGE_KEY = 'editor-camera-controls-hint-dismissed:v1'
 const CAMERA_CONTROLS_HINT_ICON_COLOR = '#bfbfbf'
 const DELETE_CURSOR_BADGE_COLOR = '#ef4444'
 const DELETE_CURSOR_BADGE_OFFSET_X = 14
@@ -214,6 +218,7 @@ export interface EditorProps {
   // Persistence — defaults to localStorage when omitted
   onLoad?: () => Promise<SceneGraph | null>
   onSave?: (scene: SceneGraph) => Promise<void>
+  onPatchSave?: (patch: SceneGraphPatch) => Promise<void>
   onDirty?: () => void
   onSaveStatusChange?: (status: SaveStatus) => void
 
@@ -452,33 +457,6 @@ const CAMERA_SHORTCUT_KEY_META: Record<string, { icon?: string; label: string; t
   },
 }
 
-function readCameraControlsHintDismissed(): boolean {
-  if (typeof window === 'undefined') {
-    return false
-  }
-
-  try {
-    return window.localStorage.getItem(CAMERA_CONTROLS_HINT_DISMISSED_STORAGE_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-
-function writeCameraControlsHintDismissed(dismissed: boolean) {
-  if (typeof window === 'undefined') {
-    return
-  }
-
-  try {
-    if (dismissed) {
-      window.localStorage.setItem(CAMERA_CONTROLS_HINT_DISMISSED_STORAGE_KEY, '1')
-      return
-    }
-
-    window.localStorage.removeItem(CAMERA_CONTROLS_HINT_DISMISSED_STORAGE_KEY)
-  } catch {}
-}
-
 function InlineShortcutKey({ shortcutKey }: { shortcutKey: ShortcutKey }) {
   const meta = CAMERA_SHORTCUT_KEY_META[shortcutKey.value]
 
@@ -541,20 +519,14 @@ function CameraControlHintItem({ hint }: { hint: CameraControlHint }) {
   )
 }
 
-function ViewerCanvasControlsHint({
-  isPreviewMode,
-  onDismiss,
-}: {
-  isPreviewMode: boolean
-  onDismiss: () => void
-}) {
+function ViewerCanvasControlsHint({ isPreviewMode }: { isPreviewMode: boolean }) {
   const hints = isPreviewMode ? PREVIEW_CAMERA_CONTROL_HINTS : EDITOR_CAMERA_CONTROL_HINTS
 
   return (
     <div className="pointer-events-none absolute top-14 left-1/2 z-40 max-w-[calc(100%-2rem)] -translate-x-1/2">
       <section
         aria-label="Camera controls hint"
-        className="pointer-events-auto flex items-start gap-3 rounded-2xl border border-border/35 bg-background/90 px-3.5 py-2.5 shadow-elevation-4 backdrop-blur-xl"
+        className="flex items-start gap-3 rounded-2xl border border-border/35 bg-background/90 px-3.5 py-2.5 shadow-elevation-4 backdrop-blur-xl"
       >
         <div
           className={`grid min-w-0 flex-1 items-start divide-x divide-border/18 ${
@@ -565,29 +537,32 @@ function ViewerCanvasControlsHint({
             <CameraControlHintItem hint={hint} key={hint.action} />
           ))}
         </div>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              aria-label="Dismiss camera controls hint"
-              className="flex h-5 shrink-0 items-center justify-center self-center border-border/18 border-l pl-3 text-muted-foreground/70 transition-colors hover:text-foreground"
-              onClick={onDismiss}
-              type="button"
-            >
-              <Icon
-                aria-hidden="true"
-                color={CAMERA_CONTROLS_HINT_ICON_COLOR}
-                height={14}
-                icon="lucide:x"
-                width={14}
-              />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" sideOffset={8}>
-            关闭提示
-          </TooltipContent>
-        </Tooltip>
       </section>
     </div>
+  )
+}
+
+function ViewerCompassOverlay() {
+  const navigationSyncPose = useEditor((state) => state.navigationSyncPose)
+  if (!navigationSyncPose) {
+    return null
+  }
+
+  const northRotationDeg = floorplanRotationFromCameraAzimuth(navigationSyncPose.azimuth, 0)
+  return (
+    <FloorplanCompassButton
+      northRotationDeg={northRotationDeg}
+      onAlignNorth={() => {
+        useEditor.getState().publishNavigationSyncPose({
+          source: '2d',
+          target: [...navigationSyncPose.target],
+          azimuth: cameraAzimuthFromFloorplanRotation(
+            nearestEquivalentDegrees(0, northRotationDeg),
+          ),
+          viewWidth: navigationSyncPose.viewWidth,
+        })
+      }}
+    />
   )
 }
 
@@ -908,10 +883,7 @@ const ViewerCanvas = memo(function ViewerCanvas({
   const tool = useEditor((s) => s.tool)
   const selectedItem = useEditor((s) => s.selectedItem)
   const movingNode = useEditor((s) => s.movingNode)
-
-  const [isCameraControlsHintVisible, setIsCameraControlsHintVisible] = useState<boolean | null>(
-    null,
-  )
+  const showSelectionHints = useViewer((s) => s.showSelectionHints)
 
   const viewerAreaRef = useRef<HTMLDivElement>(null)
   const viewer3dRef = useRef<HTMLDivElement>(null)
@@ -944,15 +916,6 @@ const ViewerCanvas = memo(function ViewerCanvas({
       window.removeEventListener('pointerup', handlePointerUp)
     }
   }, [setFloorplanPaneRatio])
-
-  useEffect(() => {
-    setIsCameraControlsHintVisible(!readCameraControlsHintDismissed())
-  }, [])
-
-  const dismissCameraControlsHint = useCallback(() => {
-    setIsCameraControlsHintVisible(false)
-    writeCameraControlsHintDismissed(true)
-  }, [])
 
   const show2d = viewMode === '2d' || viewMode === 'split'
   const show3d = viewMode === '3d' || viewMode === 'split'
@@ -1001,11 +964,11 @@ const ViewerCanvas = memo(function ViewerCanvas({
             containerRef={viewer3dRef}
             isVersionPreviewMode={isVersionPreviewMode}
           />
-          {!showLoader && isCameraControlsHintVisible && !isFirstPersonMode ? (
-            <ViewerCanvasControlsHint
-              isPreviewMode={isPreviewMode}
-              onDismiss={dismissCameraControlsHint}
-            />
+          {!showLoader && showSelectionHints && !isFirstPersonMode ? (
+            <ViewerCanvasControlsHint isPreviewMode={isPreviewMode} />
+          ) : null}
+          {viewMode === '3d' && !isPreviewMode && !isFirstPersonMode ? (
+            <ViewerCompassOverlay />
           ) : null}
           <SelectionPersistenceManager enabled={hasLoadedInitialScene && !showLoader} />
           <Viewer
@@ -1039,6 +1002,7 @@ export default function Editor({
   projectId,
   onLoad,
   onSave,
+  onPatchSave,
   onDirty,
   onSaveStatusChange,
   previewScene,
@@ -1078,6 +1042,7 @@ export default function Editor({
 
   const { isLoadingSceneRef } = useAutoSave({
     onSave,
+    onPatchSave,
     onDirty,
     onSaveStatusChange,
     isVersionPreviewMode,
@@ -1280,7 +1245,6 @@ export default function Editor({
 
     return (
       <PresetsProvider adapter={presetsAdapter}>
-        <LiveDataSourceConnector />
         <DeleteSelectionConfirmDialog
           onCancel={handleCancelDeleteSelection}
           onConfirm={handleConfirmDeleteSelection}
@@ -1347,7 +1311,6 @@ export default function Editor({
 
   return (
     <PresetsProvider adapter={presetsAdapter}>
-      <LiveDataSourceConnector />
       <div
         className={`dark flex h-full w-full bg-neutral-100 text-foreground ${
           isActivePreviewMode ? '' : 'gap-3 p-3'

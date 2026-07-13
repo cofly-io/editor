@@ -1,0 +1,210 @@
+{
+  "id": "cement.plant.modular_outdoor",
+  "label": "Cement plant modular architecture",
+  "industry": "cement",
+  "processId": "cement_plant_full",
+  "layoutStyle": "parallel_bays",
+  "defaultDimensions": {
+    "length": 120,
+    "width": 40
+  },
+  "scopes": [
+    {
+      "id": "pyro_line",
+      "label": "Clinker burning line",
+      "includeModules": [
+        "clinker_production",
+        "gas_and_dedusting"
+      ],
+      "aliases": [
+        "pyro line",
+        "clinker burning line",
+        "烧成线",
+        "熟料烧成线"
+      ]
+    },
+    {
+      "id": "clinker_system",
+      "label": "Complete clinker production system",
+      "includeModules": [
+        "raw_material_preparation",
+        "raw_meal_preparation",
+        "fuel_preparation",
+        "clinker_production",
+        "gas_and_dedusting",
+        "clinker_storage"
+      ],
+      "aliases": [
+        "clinker system",
+        "complete clinker system",
+        "clinker production system",
+        "熟料系统",
+        "熟料生产系统",
+        "熟料烧成系统",
+        "完整熟料系统"
+      ]
+    },
+    {
+      "id": "cement_plant",
+      "label": "Full cement plant",
+      "includeModules": [
+        "raw_material_preparation",
+        "raw_meal_preparation",
+        "fuel_preparation",
+        "clinker_production",
+        "gas_and_dedusting",
+        "clinker_storage",
+        "cement_grinding",
+        "packing_and_dispatch",
+        "utilities"
+      ],
+      "aliases": []
+    }
+  ],
+  "modules": [
+    {
+      "id": "raw_material_preparation",
+      "displayLabel": "石灰石破碎与预均化",
+      "order": 10,
+      "stationIds": [
+        "limestone_crusher",
+        "pre_homogenization"
+      ]
+    },
+    {
+      "id": "raw_meal_preparation",
+      "displayLabel": "生料制备",
+      "order": 20,
+      "stationIds": [
+        "raw_mill",
+        "raw_meal_silo",
+        "raw_meal_feed"
+      ]
+    },
+    {
+      "id": "fuel_preparation",
+      "displayLabel": "燃料制备",
+      "order": 30,
+      "stationIds": [
+        "raw_coal_silo",
+        "coal_mill",
+        "coal_powder_bin",
+        "kiln_burner"
+      ]
+    },
+    {
+      "id": "clinker_production",
+      "displayLabel": "熟料烧成",
+      "order": 40,
+      "stationIds": [
+        "preheater_tower",
+        "rotary_kiln",
+        "kiln_hood",
+        "grate_cooler"
+      ]
+    },
+    {
+      "id": "gas_and_dedusting",
+      "displayLabel": "烟气与收尘",
+      "order": 50,
+      "stationIds": [
+        "tertiary_air_duct",
+        "kiln_tail_esp",
+        "sp_boiler",
+        "aqc_boiler",
+        "process_stack"
+      ]
+    },
+    {
+      "id": "clinker_storage",
+      "displayLabel": "熟料储运",
+      "order": 60,
+      "stationIds": [
+        "clinker_crusher",
+        "clinker_conveying",
+        "clinker_silo"
+      ]
+    },
+    {
+      "id": "cement_grinding",
+      "displayLabel": "水泥粉磨",
+      "order": 70,
+      "stationIds": [
+        "gypsum_storage",
+        "additive_silo",
+        "cement_mill",
+        "cement_separator",
+        "cement_silo"
+      ]
+    },
+    {
+      "id": "packing_and_dispatch",
+      "displayLabel": "包装发运",
+      "order": 80,
+      "stationIds": [
+        "cement_packer"
+      ]
+    },
+    {
+      "id": "utilities",
+      "displayLabel": "辅助系统",
+      "order": 90,
+      "stationIds": [
+        "control_room"
+      ]
+    }
+  ],
+  "layoutHints": {
+    "primaryAxis": "x",
+    "secondaryAxis": "z",
+    "outdoorHeavyIndustry": true,
+    "highestStationId": "preheater_tower",
+    "longAxisStationId": "rotary_kiln",
+    "sideBranchStationIds": [
+      "coal_mill",
+      "kiln_tail_esp",
+      "process_stack",
+      "sp_boiler",
+      "aqc_boiler",
+      "control_room"
+    ],
+    "stationPositionHints": {
+      "limestone_crusher": { "x": -54, "z": -15 },
+      "pre_homogenization": { "x": -45, "z": -15 },
+      "raw_mill": { "x": -33, "z": -15 },
+      "raw_meal_silo": { "x": -26, "z": -15 },
+      "raw_meal_feed": { "x": -42, "z": -9 },
+      "raw_coal_silo": { "x": -45, "z": 6 },
+      "coal_mill": { "x": -36, "z": 6 },
+      "coal_powder_bin": { "x": -28, "z": 6 },
+      "preheater_tower": { "x": -42, "z": -4 },
+      "rotary_kiln": { "x": -21.8, "z": -4 },
+      "kiln_burner": { "x": -2.5, "z": -8 },
+      "kiln_hood": { "x": -2.9, "z": -4 },
+      "grate_cooler": { "x": 4.8, "z": -4 },
+      "clinker_crusher": { "x": 11.3, "z": -4 },
+      "clinker_conveying": { "x": 23.6, "z": -4 },
+      "clinker_silo": { "x": 35, "z": -4 },
+      "tertiary_air_duct": { "x": -7, "z": 1.5 },
+      "kiln_tail_esp": { "x": -42, "z": 13 },
+      "sp_boiler": { "x": -49, "z": 13 },
+      "aqc_boiler": { "x": 5, "z": 13 },
+      "process_stack": { "x": -35, "z": 14 },
+      "gypsum_storage": { "x": 26, "z": 14 },
+      "additive_silo": { "x": 31, "z": 14 },
+      "cement_mill": { "x": 39.5, "z": 14 },
+      "cement_separator": { "x": 49.5, "z": 14 },
+      "cement_silo": { "x": 56, "z": 14 },
+      "cement_packer": { "x": 49.5, "z": 18.3 },
+      "control_room": { "x": 0, "z": 17 }
+    },
+    "omitPerimeterWalls": true,
+    "scale": "conceptual",
+    "notes": [
+      "Treat scopes as selections from one factory architecture tree instead of separate hardcoded plants.",
+      "Keep raw material and raw meal preparation upstream of the pyro line.",
+      "Place fuel preparation and gas/dedusting as side modules around the preheater and kiln.",
+      "Place grinding and packing downstream of clinker storage for full cement plant requests."
+    ]
+  }
+}

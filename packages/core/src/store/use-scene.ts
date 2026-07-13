@@ -12,10 +12,12 @@ import { LevelNode } from '../schema/nodes/level'
 import { SiteNode } from '../schema/nodes/site'
 import { StairNode as StairNodeSchema } from '../schema/nodes/stair'
 import { StairSegmentNode as StairSegmentNodeSchema } from '../schema/nodes/stair-segment'
+import { WindowNode as WindowNodeSchema } from '../schema/nodes/window'
 import type { AnyNode, AnyNodeId } from '../schema/types'
 import { healSceneNodes } from '../utils/heal-scene-graph'
 import * as nodeActions from './actions/node-actions'
 import { resetSceneHistoryPauseDepth } from './history-control'
+import { sceneHistoryLimitForNodeCount } from './scene-history-budget'
 
 function getFiniteNumber(value: unknown, fallback: number) {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
@@ -107,6 +109,11 @@ function normalizeStairSegmentNode(node: Record<string, unknown>) {
 
 function normalizeDoorNode(node: Record<string, unknown>) {
   const parsed = DoorNodeSchema.safeParse(node)
+  return parsed.success ? { ...node, ...parsed.data } : null
+}
+
+function normalizeWindowNode(node: Record<string, unknown>) {
+  const parsed = WindowNodeSchema.safeParse(node)
   return parsed.success ? { ...node, ...parsed.data } : null
 }
 
@@ -350,6 +357,13 @@ function migrateNodes(nodes: Record<string, any>): Record<string, AnyNode> {
 
     if (node.type === 'door') {
       const normalized = normalizeDoorNode(node)
+      if (normalized) {
+        patchedNodes[id] = normalized
+      }
+    }
+
+    if (node.type === 'window') {
+      const normalized = normalizeWindowNode(node)
       if (normalized) {
         patchedNodes[id] = normalized
       }
@@ -759,6 +773,16 @@ const useScene: UseSceneStore = create<SceneState>()(
     },
   ),
 )
+
+useScene.subscribe((state, previous) => {
+  if (state.nodes === previous.nodes) return
+  const historyLimit = sceneHistoryLimitForNodeCount(Object.keys(state.nodes).length)
+  const temporal = useScene.temporal.getState()
+  if (temporal.pastStates.length <= historyLimit) return
+  useScene.temporal.setState({
+    pastStates: temporal.pastStates.slice(-historyLimit),
+  })
+})
 
 export default useScene
 

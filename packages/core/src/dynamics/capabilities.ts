@@ -23,6 +23,10 @@ export const SEMANTIC_DYNAMIC_TYPES: Record<string, readonly DynamicType[]> = {
   roller: ['rotate'],
   valve: ['openClose', 'flow'],
   pump: ['running', 'flow'],
+  compressor: ['running', 'speed', 'flow'],
+  tower: ['level', 'flow'],
+  machineTool: ['running', 'speed', 'openClose'],
+  grateCooler: ['running', 'flow', 'speed'],
   light: ['brightness'],
   display: ['valueDisplay'],
 }
@@ -51,6 +55,16 @@ function uniqueDynamicTypes(values: readonly unknown[]): DynamicType[] {
     if (!result.includes(value as DynamicType)) result.push(value as DynamicType)
   }
   return result
+}
+
+function readRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {}
+}
+
+function readMetadata(node: AnyNode | null | undefined): Record<string, unknown> {
+  return readRecord(node?.metadata)
 }
 
 function readDynamicCapabilities(
@@ -97,33 +111,54 @@ const SEMANTIC_INFERENCE_RULES: Array<{ semanticType: string; pattern: RegExp }>
     pattern:
       /conveyor|conveyer|belt|belt_surface|roller_table|roller_array|cargo_platform|输送|传送|皮带线/,
   },
-  { semanticType: 'pipe', pattern: /pipe|duct|hose|tube|manifold|nozzle|inlet|outlet|管|风管/ },
-  { semanticType: 'silo', pattern: /silo|hopper|(^|[_\s-])bin($|[_\s-])|料仓|料斗|仓/ },
-  { semanticType: 'cabinet', pattern: /cabinet|locker|enclosure|rack|柜|机柜|箱柜/ },
-  { semanticType: 'container', pattern: /container|crate|case|storage|箱|盒|容器/ },
+  {
+    semanticType: 'machineTool',
+    pattern:
+      /cnc|machine[_\s-]?tool|lathe|milling|mill(?:ing)?[_\s-]?center|grinder|planer|drill|机床|数控|车床|铣床|磨床|钻床/,
+  },
+  {
+    semanticType: 'grateCooler',
+    pattern: /grate[_\s-]?cooler|clinker[_\s-]?cooler|cooling[_\s-]?grate|篦冷机|熟料冷却机/,
+  },
+  {
+    semanticType: 'compressor',
+    pattern:
+      /compressor|screw[_\s-]?compressor|centrifugal[_\s-]?compressor|reciprocating[_\s-]?compressor|压缩机|空压机/,
+  },
+  {
+    semanticType: 'tower',
+    pattern:
+      /distillation|column|tower|absorber|stripper|fractionator|塔器|蒸馏塔|精馏塔|吸收塔|汽提塔/,
+  },
+  {
+    semanticType: 'pipe',
+    pattern: /pipe|duct|hose|tube|manifold|nozzle|inlet|outlet|管道|风管/,
+  },
+  {
+    semanticType: 'silo',
+    pattern: /silo|hopper|(^|[_\s-])bin($|[_\s-])|料仓|料斗|仓/,
+  },
+  {
+    semanticType: 'cabinet',
+    pattern: /cabinet|locker|enclosure|rack|柜|机柜|箱柜/,
+  },
+  {
+    semanticType: 'container',
+    pattern: /container|crate|case|storage|箱|容器/,
+  },
   { semanticType: 'battery', pattern: /battery|cell|电池|蓄电/ },
   { semanticType: 'tank', pattern: /tank|vessel|reactor|罐|釜|水箱|储罐/ },
   { semanticType: 'fan', pattern: /fan|blower|impeller|vent|风机|风扇|叶轮/ },
   { semanticType: 'motor', pattern: /motor|gearbox|drive_motor|电机|马达/ },
   { semanticType: 'roller', pattern: /roller|drum|wheel|滚筒|托辊/ },
   { semanticType: 'valve', pattern: /valve|damper|gate|ball_valve|阀|闸/ },
-  { semanticType: 'pump', pattern: /pump|compressor|volute|泵|压缩机/ },
+  { semanticType: 'pump', pattern: /pump|volute|泵/ },
   { semanticType: 'light', pattern: /light|lamp|beacon|headlight|status_light|灯|指示灯/ },
   {
     semanticType: 'display',
-    pattern: /display|gauge|meter|screen|indicator|instrument|panel|数显|仪表|屏|表/,
+    pattern: /display|gauge|meter|screen|indicator|instrument|panel|数显|仪表|显示屏/,
   },
 ]
-
-function readRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {}
-}
-
-function readMetadata(node: AnyNode | null | undefined): Record<string, unknown> {
-  return readRecord(node?.metadata)
-}
 
 function normalizeSemanticToken(value: unknown) {
   return typeof value === 'string' ? value.trim().toLowerCase() : ''
@@ -149,6 +184,8 @@ function inferStructuredPartSemanticType(node: AnyNode): string | undefined {
     metadata.family,
     metadata.archetypeFamily,
     metadata.layoutFamily,
+    metadata.deviceProfile,
+    metadata.profileId,
     metadata.category,
     metadata.catalogItemId,
     sourceArgs.family,
@@ -173,7 +210,23 @@ function inferStructuredPartSemanticType(node: AnyNode): string | undefined {
     'factory-barrel',
     'factory barrel',
   ]
+  const towerTokens = [
+    'tower',
+    'distillation_column',
+    'distillation_column_shell',
+    'vacuum_column_shell',
+    'fractionator',
+    'absorber',
+    'stripper',
+  ]
+  const compressorTokens = ['compressor', 'screw_compressor', 'centrifugal_compressor']
+  const machineToolTokens = ['cnc', 'machine_tool', 'lathe', 'milling_center']
+  const grateCoolerTokens = ['grate_cooler', 'clinker_cooler']
 
+  if (hasSemanticToken(equipmentTokens, machineToolTokens)) return 'machineTool'
+  if (hasSemanticToken(equipmentTokens, grateCoolerTokens)) return 'grateCooler'
+  if (hasSemanticToken(equipmentTokens, compressorTokens)) return 'compressor'
+  if (hasSemanticToken(equipmentTokens, towerTokens)) return 'tower'
   if (hasSemanticToken(equipmentTokens, tankTokens)) return 'tank'
 
   const conveyorTokens = [
@@ -208,15 +261,15 @@ function inferStructuredPartSemanticType(node: AnyNode): string | undefined {
     'ribbed_motor_body',
   ]
 
+  if (hasSemanticToken(roleTokens, towerTokens)) return 'tower'
+  if (hasSemanticToken(roleTokens, compressorTokens)) return 'compressor'
   if (hasSemanticToken(roleTokens, conveyorTokens)) return 'conveyor'
   if (hasSemanticToken(roleTokens, rollerTokens)) return 'roller'
   if (hasSemanticToken(roleTokens, motorTokens)) return 'motor'
   if (hasSemanticToken(partTokens, conveyorTokens)) return 'conveyor'
   if (hasSemanticToken(partTokens, rollerTokens)) return 'roller'
   if (hasSemanticToken(partTokens, motorTokens)) return 'motor'
-  if (hasSemanticToken(groupTokens, conveyorTokens)) {
-    return 'conveyor'
-  }
+  if (hasSemanticToken(groupTokens, conveyorTokens)) return 'conveyor'
 
   return undefined
 }

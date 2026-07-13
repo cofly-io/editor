@@ -7,6 +7,7 @@ import {
   sceneRegistry,
   useScene,
 } from '@pascal-app/core'
+import { Html } from '@react-three/drei'
 import { Canvas, extend, type ThreeToJSXElements, useFrame, useThree } from '@react-three/fiber'
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef } from 'react'
 import * as THREE from 'three/webgpu'
@@ -14,8 +15,10 @@ import { PERF_OVERLAY_ENABLED, pushGpuSample } from '../../lib/gpu-perf'
 import { applyIsolation, clearIsolation } from '../../lib/isolation'
 import type { ColorPreset, RenderShading } from '../../lib/materials'
 import { ensureObjectWebGPUCompatibleGeometry } from '../../lib/safe-geometry'
+import { assessSceneComplexity } from '../../lib/scene-complexity'
 import { getSceneTheme } from '../../lib/scene-themes'
 import { installEmptyDrawGuard } from '../../lib/webgpu-draw-guard'
+import { isGpuOutOfMemoryError } from '../../lib/webgpu-health'
 import useViewer, { type RenderContext } from '../../store/use-viewer'
 import { FloorElevationSystem } from '../../systems/floor-elevation/floor-elevation-system'
 import { GeometrySystem } from '../../systems/geometry/geometry-system'
@@ -108,7 +111,12 @@ function GPUDeviceWatcher() {
       features: Array.from(device.features ?? []),
     })
 
+    let active = true
+
     device.lost.then((info: WebGPUDeviceLossInfo) => {
+      if (!active) return
+      const message = info.message || 'WebGPU 设备已丢失，需要重新加载页面。'
+      useViewer.getState().setRendererHealth('lost', message)
       console.error(
         `[viewer] WebGPU device lost: reason="${info.reason ?? 'unknown'}", message="${info.message ?? ''}". ` +
           'The page must be reloaded to recover the GPU context.',
@@ -118,16 +126,100 @@ function GPUDeviceWatcher() {
     // Uncaptured errors are normally silent (only console-warned by Chrome at
     // best). Pipe them to console.error so silent mobile crashes show up.
     const onUncapturedError = (event: any) => {
-      console.error('[viewer] WebGPU uncaptured error:', event?.error?.message, event?.error)
+      const error = event?.error
+      if (isGpuOutOfMemoryError(error)) {
+        useViewer.getState().setRendererHealth('lost', 'GPU 显存不足，渲染和物品放置已停止。')
+      } else {
+        useViewer.getState().setRendererHealth('degraded', error?.message ?? null)
+      }
+      event?.preventDefault?.()
+      console.error('[viewer] WebGPU uncaptured error:', error?.message, error)
     }
     device.addEventListener?.('uncapturederror', onUncapturedError)
 
     return () => {
+      active = false
       device.removeEventListener?.('uncapturederror', onUncapturedError)
     }
   }, [gl])
 
   return null
+}
+
+function SceneComplexityController() {
+  useEffect(() => {
+    let frame: number | null = null
+
+    const sync = () => {
+      frame = null
+      const complexity = assessSceneComplexity(useScene.getState().nodes)
+      useViewer.getState().setSceneComplexity(complexity)
+    }
+    const schedule = () => {
+      if (frame !== null) return
+      frame = requestAnimationFrame(sync)
+    }
+
+    sync()
+    const unsubscribe = useScene.subscribe((state, previous) => {
+      if (state.nodes !== previous.nodes) schedule()
+    })
+    return () => {
+      unsubscribe()
+      if (frame !== null) cancelAnimationFrame(frame)
+    }
+  }, [])
+
+  return null
+}
+
+function RendererRecoveryOverlay() {
+  const health = useViewer((state) => state.rendererHealth)
+  const message = useViewer((state) => state.rendererHealthMessage)
+  if (health !== 'lost') return null
+
+  return (
+    <Html fullscreen zIndexRange={[100_000, 100_000]}>
+      <div
+        style={{
+          alignItems: 'center',
+          background: 'rgba(10, 10, 12, 0.86)',
+          color: '#f8fafc',
+          display: 'flex',
+          inset: 0,
+          justifyContent: 'center',
+          padding: 24,
+          pointerEvents: 'auto',
+          position: 'absolute',
+        }}
+      >
+        <div style={{ maxWidth: 420, textAlign: 'center' }}>
+          <strong style={{ display: 'block', fontSize: 18, marginBottom: 10 }}>
+            GPU 渲染已停止
+          </strong>
+          <p style={{ color: '#cbd5e1', fontSize: 14, lineHeight: 1.6, margin: '0 0 18px' }}>
+            {message || 'WebGPU 设备不可用。重新加载页面后可以继续编辑。'}
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              background: '#f8fafc',
+              border: 0,
+              borderRadius: 6,
+              color: '#111827',
+              cursor: 'pointer',
+              fontSize: 14,
+              fontWeight: 600,
+              padding: '9px 16px',
+            }}
+            type="button"
+          >
+            重新加载
+          </button>
+        </div>
+      </div>
+    </Html>
+  )
 }
 
 function ToneMappingExposure() {
@@ -343,6 +435,7 @@ const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(
 
   const isDark = useViewer((state) => getSceneTheme(state.sceneTheme).appearance === 'dark')
   const transparentBackground = useViewer((state) => state.transparentBackground)
+  const sceneMaxDpr = useViewer((state) => state.sceneComplexity.maxDpr)
   useLayoutEffect(() => {
     if (transparent === undefined) return
 
@@ -391,8 +484,9 @@ const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(
   // Coarse-pointer devices (phones/tablets) get a tighter DPR ceiling to keep
   // fragment-shader cost down — saves another ~30% over 1.5x on high-DPI mobile.
   // Desktops (fine pointer) keep the original 1.5 cap.
-  const maxDpr =
+  const deviceMaxDpr =
     typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches ? 1.25 : 1.5
+  const maxDpr = Math.min(deviceMaxDpr, sceneMaxDpr)
   return (
     <Canvas
       camera={{ position: [50, 50, 50], fov: 50 }}
@@ -425,6 +519,11 @@ const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(
               // mount on the same DOM can retry instead of inheriting the
               // rejection forever.
               if (canvas) WEBGPU_RENDERER_CACHE.delete(canvas)
+              if (isGpuOutOfMemoryError(err)) {
+                useViewer
+                  .getState()
+                  .setRendererHealth('lost', 'GPU 显存不足，渲染和物品放置已停止。')
+              }
               console.error('[viewer] WebGPURenderer init failed', err)
               throw err
             }
@@ -442,8 +541,10 @@ const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(
       }}
     >
       <FrameLimiter active={activeFrameLoop} fps={50} />
+      <SceneComplexityController />
       <ViewerCamera />
       <GPUDeviceWatcher />
+      <RendererRecoveryOverlay />
       <ToneMappingExposure />
       <ShadowMapSync />
       <SceneGeometryWarmup sceneReadyKey={sceneReadyKey} />

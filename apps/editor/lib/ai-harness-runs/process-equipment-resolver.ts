@@ -5,6 +5,10 @@ import {
 } from '@pascal-app/core/lib/primitive-compose'
 import { BoxNode, ItemNode, PipeFittingNode, PipeNode, TankNode } from '@pascal-app/core/schema'
 import {
+  STORAGE_TANK_EDITABLE_PART_ROLES,
+  STORAGE_TANK_RECIPE_ID,
+} from '@pascal-app/plugin-factory-equipment'
+import {
   computeGeneratedAssemblyPosition,
   createGeneratedGeometryId,
   formatGeneratedShapeDetails,
@@ -16,23 +20,20 @@ import type {
   GeneratedGeometryPlacementSpec,
 } from '../../../../packages/editor/src/lib/ai-generated-geometry-nodes'
 import { buildGeneratedGeometryCreatePatches } from '../../../../packages/editor/src/lib/ai-generated-geometry-nodes'
+import { createComponentGeneratorPatches } from './asset-component-generator-runner'
+import { compileEquipmentRecipeContract } from './equipment-recipe-compiler'
+import { resolveFactoryEquipmentNode } from './factory-equipment-node-resolver'
 import {
   type ProcessCatalogEquipmentMatch,
   resolveProcessCatalogEquipment,
 } from './process-catalog-resolver'
 import { resolveProcessEquipmentContract } from './process-equipment-contracts'
-import {
-  STORAGE_TANK_EDITABLE_PART_ROLES,
-  STORAGE_TANK_RECIPE_ID,
-} from '@pascal-app/plugin-factory-equipment'
-import { compileEquipmentRecipeContract } from './equipment-recipe-compiler'
 import { stationDisplayLabel } from './process-line-localization'
-import { resolveFactoryEquipmentNode } from './factory-equipment-node-resolver'
 import type { ProcessRoutePortEndpoint } from './process-line-routing'
 import type {
   FactoryRouteObstacleMetadata,
-  ProcessEquipmentContract,
   ProcessConnectionMedium,
+  ProcessEquipmentContract,
   ProcessLinePlan,
   ProcessPrimitiveRequest,
   ProcessStationPlan,
@@ -80,25 +81,76 @@ function parentPatch(
   return { op: 'create' as const, node, ...(parentId ? { parentId } : {}) }
 }
 
+function compactRecord<T extends Record<string, unknown>>(value: T) {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== undefined),
+  ) as Partial<T>
+}
+
+function equipmentPortMetadata(port: ProcessEquipmentContract['ports'][number]) {
+  return compactRecord({
+    id: port.id,
+    medium: port.medium,
+    side: port.side,
+    height: port.height,
+    offset: port.offset,
+    direction: port.direction,
+  })
+}
+
+function profilePartSummary(parts: ProcessEquipmentContract['profileParts']) {
+  return parts
+    ?.map((part) =>
+      compactRecord({
+        id: typeof part.id === 'string' ? part.id : undefined,
+        kind: typeof part.kind === 'string' ? part.kind : undefined,
+        semanticRole: typeof part.semanticRole === 'string' ? part.semanticRole : undefined,
+        required: typeof part.required === 'boolean' ? part.required : undefined,
+      }),
+    )
+    .filter((part) => Object.keys(part).length > 0)
+}
+
+function equipmentContractMetadataValue(equipmentContract: ProcessEquipmentContract) {
+  const parts = profilePartSummary(equipmentContract.profileParts)
+  return compactRecord({
+    profileId: equipmentContract.profileId,
+    equipmentFamily: equipmentContract.equipmentFamily,
+    scaleClass: equipmentContract.scaleClass,
+    envelope: equipmentContract.envelope,
+    ports: equipmentContract.ports.map(equipmentPortMetadata),
+    requiredRoles: equipmentContract.requiredRoles,
+    recipeId: equipmentContract.recipeId,
+    recipeParams: equipmentContract.recipeParams,
+    editableParams: equipmentContract.editableParams,
+    recipeSource: equipmentContract.recipeSource,
+    preferredTool: equipmentContract.preferredTool,
+    preferredResolver: equipmentContract.preferredResolver,
+    primarySemanticRole: equipmentContract.primarySemanticRole,
+    profilePartSummary: parts?.length ? parts : undefined,
+  })
+}
+
 function equipmentContractMetadata(equipmentContract: ProcessEquipmentContract | undefined) {
-  return equipmentContract ? { equipmentContract } : {}
+  return equipmentContract
+    ? { equipmentContract: equipmentContractMetadataValue(equipmentContract) }
+    : {}
 }
 
 function semanticAssemblyMetadata(equipmentContract: ProcessEquipmentContract) {
   return {
-    equipmentAssembly: {
+    equipmentAssembly: compactRecord({
       kind: 'semantic-assembly',
       profileId: equipmentContract.profileId,
-      ...(equipmentContract.recipeId ? { recipeId: equipmentContract.recipeId } : {}),
-      ...(equipmentContract.recipeSource ? { recipeSource: equipmentContract.recipeSource } : {}),
+      recipeId: equipmentContract.recipeId,
+      recipeSource: 'profile-parts',
       equipmentFamily: equipmentContract.equipmentFamily,
       primarySemanticRole: equipmentContract.primarySemanticRole,
       envelope: equipmentContract.envelope,
-      ports: equipmentContract.ports,
+      ports: equipmentContract.ports.map(equipmentPortMetadata),
       editableParams: equipmentContract.editableParams ?? [],
       editablePartRoles: equipmentContract.requiredRoles ?? [],
-      recipeSource: 'profile-parts',
-    },
+    }),
   }
 }
 
@@ -771,6 +823,22 @@ export function resolveProcessStationEquipment(input: {
     station: input.station,
   })
   const withContract = { ...input, equipmentContract }
+  if (equipmentContract?.generatorRef) {
+    const componentGenerated = createComponentGeneratorPatches({
+      ...input,
+      equipmentContract,
+    })
+    if (componentGenerated?.patches.length) {
+      return {
+        patches: componentGenerated.patches,
+        primitiveRequest: null,
+        routeObstacle: componentGenerated.routeObstacle,
+        resolved: true,
+        resolver: 'profile-parts',
+        reason: `station equipment contract selected component generator ${equipmentContract.generatorRef.componentPack}/${equipmentContract.generatorRef.generator}`,
+      }
+    }
+  }
   if (equipmentContract?.preferredResolver === 'native-tank') {
     const tankContract = storageTankContractForStation({
       station: input.station,

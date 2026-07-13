@@ -129,6 +129,36 @@ describe('factory planner', () => {
     }
   })
 
+  test('does not turn automotive factory requests into an empty generic shell when the pack is missing', async () => {
+    const restoreDiscrete = await withIndustryPackDisabledForTests({
+      id: 'industry.discrete-manufacturing.basic',
+      version: '0.1.0',
+    })
+    try {
+      const plan = fallbackFactoryPlan(
+        '\u521b\u5efa\u4e00\u4e2a\u6c7d\u8f66\u52a0\u5de5\u7684\u5de5\u5382',
+      )
+
+      expect(plan).toMatchObject({
+        kind: 'missing',
+        missingName: expect.stringContaining('industry.discrete-manufacturing.basic@0.1.0'),
+      })
+    } finally {
+      await restoreDiscrete()
+    }
+  })
+
+  test('routes PCB factory requests to a missing industry pack instead of generic layout', () => {
+    const plan = fallbackFactoryPlan(
+      '\u521b\u5efa\u4e00\u4e2a\u7535\u8def\u677fPCB\u5236\u4f5c\u5382',
+    )
+
+    expect(plan).toMatchObject({
+      kind: 'missing',
+      missingName: expect.stringContaining('industry.pcb-fabrication.basic@0.1.0'),
+    })
+  })
+
   test('routes cement clinker requests through the industry pack process template', () => {
     const plan = fallbackFactoryPlan('\u751f\u6210\u4e00\u4e2a\u6c34\u6ce5\u719f\u6599\u4ea7\u7ebf')
 

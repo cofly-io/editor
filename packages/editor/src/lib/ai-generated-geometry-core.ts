@@ -21,6 +21,7 @@ export interface GeneratedGeometryShapeSpec {
   sourcePartKind?: string
   sourcePartId?: string
   editableHints?: PrimitiveEditableHints
+  renderContract?: unknown
   length?: number
   width?: number
   height?: number

@@ -256,6 +256,86 @@ describe('factory layout patches', () => {
     })
   })
 
+  test('places default-site factory layout to the right of existing scene bounds', () => {
+    const plan = buildFactoryLayoutCreatePatches({
+      prompt: 'generate a refinery',
+      plan: {
+        kind: 'layout',
+        reason: 'factory workshop',
+        layoutType: 'factory',
+        suggestedOperations: ['create_room'],
+      },
+      placement: {
+        generatedBy: 'factory-agent',
+        metadata: {
+          siteIsDefault: true,
+          sceneHasContent: true,
+          siteBounds: {
+            min: [-15, -15],
+            max: [15, 15],
+            center: [0, 0],
+            size: [30, 30],
+          },
+          sceneBounds: {
+            min: [-20, -10],
+            max: [20, 10],
+            center: [0, 0],
+            size: [40, 20],
+          },
+        },
+      },
+      params: { length: 60, width: 42, omitPerimeterWalls: true },
+    })
+
+    expect(plan.patches[0]?.node).toMatchObject({
+      type: 'zone',
+      metadata: {
+        layoutPlacementIntent: 'avoid-existing-right',
+      },
+    })
+    const polygon = plan.patches[0]?.node.type === 'zone' ? plan.patches[0].node.polygon : []
+    expect(polygon[0]?.[0]).toBeGreaterThan(20)
+  })
+
+  test('centers default-site factory layout when the scene has no real content', () => {
+    const plan = buildFactoryLayoutCreatePatches({
+      prompt: 'generate a refinery',
+      plan: {
+        kind: 'layout',
+        reason: 'factory workshop',
+        layoutType: 'factory',
+        suggestedOperations: ['create_room'],
+      },
+      placement: {
+        generatedBy: 'factory-agent',
+        metadata: {
+          siteIsDefault: true,
+          sceneHasContent: false,
+          siteBounds: {
+            min: [-15, -15],
+            max: [15, 15],
+            center: [0, 0],
+            size: [30, 30],
+          },
+        },
+      },
+      params: { length: 60, width: 42, omitPerimeterWalls: true },
+    })
+
+    expect(plan.patches[0]?.node).toMatchObject({
+      type: 'zone',
+      polygon: [
+        [-30, -21],
+        [30, -21],
+        [30, 21],
+        [-30, 21],
+      ],
+      metadata: {
+        layoutPlacementIntent: 'center-in-site',
+      },
+    })
+  })
+
   test('places requested top-left layout inside provided scene bounds', () => {
     const plan = buildFactoryLayoutCreatePatches({
       prompt: '\u5728\u5de6\u4e0a\u89d2\u653e\u4e00\u4e2a3\u7c73\u4e583\u7c73\u7684\u623f\u5b50',

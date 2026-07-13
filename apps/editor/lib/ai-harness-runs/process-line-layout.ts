@@ -314,6 +314,106 @@ function buildArchitectureHintPlacements(input: {
     : undefined
 }
 
+function isCementProcessLine(plan: ProcessLinePlan) {
+  return (
+    plan.processId === 'cement_clinker_production_line' ||
+    plan.processId === 'cement_plant_full' ||
+    plan.sourcePack?.industry === 'cement'
+  )
+}
+
+function buildMappedPlacements(input: {
+  plan: ProcessLinePlan
+  boundary: LayoutBoundary
+  positions: Record<string, { x: number; z: number; rotationY?: number }>
+}): StationPlacement[] | undefined {
+  const centerX = input.boundary.centerX ?? 0
+  const centerZ = input.boundary.centerZ ?? 0
+  const placements = input.plan.stations.map((station) => {
+    const position = input.positions[station.id]
+    if (!position) return undefined
+    return buildStationPlacement({
+      station,
+      plan: input.plan,
+      position: [centerX + position.x, 0, centerZ + position.z],
+      rotation: [0, position.rotationY ?? 0, 0],
+    })
+  })
+  return placements.every(Boolean)
+    ? placements.filter((placement): placement is StationPlacement => Boolean(placement))
+    : undefined
+}
+
+function buildCementProcessPlacements(input: {
+  plan: ProcessLinePlan
+  boundary: LayoutBoundary
+}): StationPlacement[] | undefined {
+  const stationIds = new Set(input.plan.stations.map((station) => station.id))
+  const hasCementKilnAxis =
+    stationIds.has('preheater_tower') &&
+    stationIds.has('rotary_kiln') &&
+    stationIds.has('grate_cooler')
+  if (!isCementProcessLine(input.plan) && !hasCementKilnAxis) return undefined
+
+  if (
+    input.plan.processId === 'cement_plant_full' ||
+    (hasCementKilnAxis && stationIds.has('kiln_hood') && stationIds.has('cement_mill'))
+  ) {
+    return buildMappedPlacements({
+      plan: input.plan,
+      boundary: input.boundary,
+      positions: {
+        limestone_crusher: { x: -54, z: -15 },
+        pre_homogenization: { x: -45, z: -15 },
+        raw_mill: { x: -33, z: -15 },
+        raw_meal_silo: { x: -26, z: -15 },
+        raw_meal_feed: { x: -42, z: -9 },
+        raw_coal_silo: { x: -45, z: 6 },
+        coal_mill: { x: -36, z: 6 },
+        coal_powder_bin: { x: -28, z: 6 },
+        preheater_tower: { x: -42, z: -4 },
+        rotary_kiln: { x: -21.8, z: -4 },
+        kiln_burner: { x: -2.5, z: -8 },
+        kiln_hood: { x: -2.9, z: -4 },
+        grate_cooler: { x: 4.8, z: -4 },
+        clinker_crusher: { x: 11.3, z: -4 },
+        clinker_conveying: { x: 23.6, z: -4 },
+        clinker_silo: { x: 35, z: -4 },
+        tertiary_air_duct: { x: -7, z: 1.5 },
+        kiln_tail_esp: { x: -42, z: 13 },
+        sp_boiler: { x: -49, z: 13 },
+        aqc_boiler: { x: 5, z: 13 },
+        process_stack: { x: -35, z: 14 },
+        gypsum_storage: { x: 26, z: 14 },
+        additive_silo: { x: 31, z: 14 },
+        cement_mill: { x: 39.5, z: 14 },
+        cement_separator: { x: 49.5, z: 14 },
+        cement_silo: { x: 56, z: 14 },
+        cement_packer: { x: 49.5, z: 18.3 },
+        control_room: { x: 0, z: 17 },
+      },
+    })
+  }
+
+  if (input.plan.processId === 'cement_clinker_production_line' || hasCementKilnAxis) {
+    return buildMappedPlacements({
+      plan: input.plan,
+      boundary: input.boundary,
+      positions: {
+        raw_meal_feed: { x: -32, z: -4.5 },
+        preheater_tower: { x: -28, z: 0 },
+        rotary_kiln: { x: -7.8, z: 0 },
+        grate_cooler: { x: 13.6, z: 0 },
+        clinker_conveying: { x: 26.8, z: 0 },
+        clinker_silo: { x: 33, z: 4.5 },
+        bag_filter: { x: -28, z: 5.5 },
+      },
+    })
+  }
+
+  return undefined
+}
+
 function validateCandidate(input: {
   candidate: LayoutCandidate
   plan: ProcessLinePlan
@@ -340,6 +440,20 @@ export function resolveProcessLineLayout(input: {
   boundary: LayoutBoundary
 } {
   const preferredStyle = preferredLayoutStyle(input.plan.layoutStyle)
+  const cementProcessPlacements = buildCementProcessPlacements(input)
+  const cementProcessCandidates: LayoutCandidate[] = cementProcessPlacements
+    ? [
+        {
+          stationPlacements: cementProcessPlacements,
+          strategy: {
+            style: preferredStyle,
+            repaired: false,
+            reason:
+              'Used cement process-axis placement for preheater, rotary kiln, cooler, and downstream storage.',
+          },
+        },
+      ]
+    : []
   const architectureHintPlacements = buildArchitectureHintPlacements(input)
   const architectureHintCandidates: LayoutCandidate[] = architectureHintPlacements
     ? [
@@ -402,7 +516,11 @@ export function resolveProcessLineLayout(input: {
             },
           },
         ]
-  const candidates = [...architectureHintCandidates, ...fallbackCandidates]
+  const candidates = [
+    ...cementProcessCandidates,
+    ...architectureHintCandidates,
+    ...fallbackCandidates,
+  ]
 
   const firstCandidate = candidates[0]
   if (!firstCandidate) {
@@ -442,14 +560,19 @@ export function resolveProcessLineLayout(input: {
     style: input.plan.layoutStyle,
   })
   if (expandedBoundary) {
+    const expandedArchitectureHintPlacements = buildArchitectureHintPlacements({
+      plan: input.plan,
+      boundary: expandedBoundary,
+    })
     const stationPlacements =
-      preferredStyle === 'parallel_bays'
+      expandedArchitectureHintPlacements ??
+      (preferredStyle === 'parallel_bays'
         ? buildParallelBayPlacements({ plan: input.plan, boundary: expandedBoundary })
         : buildPackedLinearPlacements({
             stations: input.plan.stations,
             plan: input.plan,
             boundary: expandedBoundary,
-          })
+          }))
     const layoutDiagnostics = validateProcessLineLayout({
       plan: input.plan,
       stationPlacements,
@@ -462,7 +585,9 @@ export function resolveProcessLineLayout(input: {
         layoutStrategy: {
           style: preferredStyle,
           repaired: true,
-          reason: 'Expanded process shell boundary to fit station clearance boxes.',
+          reason: expandedArchitectureHintPlacements
+            ? 'Expanded process shell boundary to fit factory architecture station position hints.'
+            : 'Expanded process shell boundary to fit station clearance boxes.',
         },
         boundary: expandedBoundary,
       }

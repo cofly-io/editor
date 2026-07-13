@@ -3,6 +3,7 @@
 import { type AnyNode, type AnyNodeId, nodeRegistry, type ToolHint } from '@pascal-app/core'
 import useScene from '@pascal-app/core/store'
 import useViewer from '@pascal-app/viewer/store'
+import { useShallow } from 'zustand/react/shallow'
 import { useIsMobile } from '../../../hooks/use-mobile'
 import { getManualAssemblySelectionState } from '../../../lib/manual-assembly'
 import { isPlanDragMovableNode } from '../../../lib/plan-drag'
@@ -29,7 +30,17 @@ const NESTED_ASSEMBLY_HINTS: ToolHint[] = [
   CANCEL_HINT,
 ]
 const PLAN_NUDGE_HINT: ToolHint = { key: 'ArrowKeys', label: '\u524d\u540e\u5de6\u53f3' }
+const PLAN_NUDGE_COARSE_HINT: ToolHint = { key: 'Shift+ArrowKeys', label: '\u5927\u6b65\u79fb\u52a8' }
+const PLAN_NUDGE_FINE_HINT: ToolHint = { key: 'Alt+ArrowKeys', label: '\u7cbe\u7ec6\u79fb\u52a8' }
 const VERTICAL_NUDGE_HINT: ToolHint = { key: 'Ctrl+Up/Down', label: '\u4e0a\u4e0b\u79fb\u52a8' }
+const VERTICAL_NUDGE_COARSE_HINT: ToolHint = {
+  key: 'Ctrl+Shift+Up/Down',
+  label: '\u5927\u6b65\u4e0a\u4e0b',
+}
+const VERTICAL_NUDGE_FINE_HINT: ToolHint = {
+  key: 'Ctrl+Alt+Up/Down',
+  label: '\u7cbe\u7ec6\u4e0a\u4e0b',
+}
 
 function hasPlanNudgeSelection(nodes: Record<string, AnyNode>, selectedIds: AnyNodeId[]) {
   return selectedIds.some((id) => {
@@ -54,8 +65,10 @@ function withSelectionNudgeHints(
   options: { plan: boolean; vertical: boolean },
 ) {
   return [
-    ...(options.plan ? [PLAN_NUDGE_HINT] : []),
-    ...(options.vertical ? [VERTICAL_NUDGE_HINT] : []),
+    ...(options.plan ? [PLAN_NUDGE_HINT, PLAN_NUDGE_COARSE_HINT, PLAN_NUDGE_FINE_HINT] : []),
+    ...(options.vertical
+      ? [VERTICAL_NUDGE_HINT, VERTICAL_NUDGE_COARSE_HINT, VERTICAL_NUDGE_FINE_HINT]
+      : []),
     ...hints,
   ]
 }
@@ -95,11 +108,27 @@ export function HelperManager() {
   const tool = useEditor((s) => s.tool)
   const movingNode = useEditor((state) => state.movingNode)
   const selectedIds = useViewer((state) => state.selection.selectedIds)
-  const nodes = useScene((state) => state.nodes)
+  const showSelectionHints = useViewer((state) => state.showSelectionHints)
+  const nodes = useScene(
+    useShallow((state) => {
+      const selectedNodes: Record<string, AnyNode> = {}
+      for (const id of selectedIds as AnyNodeId[]) {
+        const node = state.nodes[id]
+        if (!node) continue
+        selectedNodes[id] = node
+        if (node.parentId) {
+          const parent = state.nodes[node.parentId as AnyNodeId]
+          if (parent) selectedNodes[parent.id] = parent
+        }
+      }
+      return selectedNodes
+    }),
+  )
   const isMobile = useIsMobile()
 
   // Helpers are keyboard-driven hints (Esc, R, etc.) and are irrelevant on touch.
   if (isMobile) return null
+  if (!showSelectionHints) return null
 
   if (movingNode) {
     return <RegisteredToolHelper hints={movingNodeHints(movingNode)} />

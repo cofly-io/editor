@@ -11,26 +11,27 @@ import { ensureWebGPUCompatibleGeometry } from '@pascal-app/viewer/safe-geometry
 import useViewer from '@pascal-app/viewer/store'
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
+import {
+  createIndustrialMaterial,
+  industrialRenderContractFromMetadata,
+} from '../shared/industrial-render-contract-rendering'
+import { canBatchTorusBase } from '../shared/primitive-batching'
 
-export const TorusRenderer = ({ node }: { node: TorusNode }) => {
-  const ref = useRef<THREE.Group>(null!)
-
-  useRegistry(node.id, 'torus', ref)
-
-  useLayoutEffect(() => {
-    useScene.getState().markDirty(node.id)
-  }, [node.id])
-
-  const handlers = useNodeEvents(node, 'torus')
+function TorusSolid({ node }: { node: TorusNode }) {
   const shading = useViewer((state) => state.shading)
+  const renderContract = useMemo(
+    () => industrialRenderContractFromMetadata(node.metadata),
+    [node.metadata],
+  )
 
   const material = useMemo(() => {
     const presetMaterial = createMaterialFromPresetRef(node.materialPreset, shading)
-    if (presetMaterial) return presetMaterial
+    if (presetMaterial) return createIndustrialMaterial(renderContract, presetMaterial)
     const mat = node.material
-    if (!mat) return createDefaultMaterial('#cccccc', 1, shading)
-    return createMaterial(mat, shading)
+    const base = mat ? createMaterial(mat, shading) : createDefaultMaterial('#cccccc', 1, shading)
+    return createIndustrialMaterial(renderContract, base)
   }, [
+    renderContract,
     node.materialPreset,
     node.material,
     node.material?.preset,
@@ -54,6 +55,29 @@ export const TorusRenderer = ({ node }: { node: TorusNode }) => {
   )
 
   return (
+    <mesh castShadow geometry={geometry} material={material} name="primitive-solid" receiveShadow />
+  )
+}
+
+export const TorusRenderer = ({ node }: { node: TorusNode }) => {
+  const ref = useRef<THREE.Group>(null!)
+  const handlers = useNodeEvents(node, 'torus')
+  const selectedIds = useViewer((state) => state.selection.selectedIds)
+  const previewSelectedIds = useViewer((state) => state.previewSelectedIds)
+  const hoveredId = useViewer((state) => state.hoveredId)
+  const renderBaseIndividually =
+    !canBatchTorusBase(node) ||
+    selectedIds.includes(node.id) ||
+    previewSelectedIds.includes(node.id) ||
+    hoveredId === node.id
+
+  useRegistry(node.id, 'torus', ref)
+
+  useLayoutEffect(() => {
+    useScene.getState().markDirty(node.id)
+  }, [node.id])
+
+  return (
     <group
       position-x={node.position[0]}
       position-y={node.position[1]}
@@ -63,13 +87,7 @@ export const TorusRenderer = ({ node }: { node: TorusNode }) => {
       visible={node.visible}
       {...handlers}
     >
-      <mesh
-        castShadow
-        geometry={geometry}
-        material={material}
-        name="primitive-solid"
-        receiveShadow
-      />
+      {renderBaseIndividually ? <TorusSolid node={node} /> : null}
     </group>
   )
 }

@@ -69,6 +69,45 @@ describe('dynamic capability semantic inference', () => {
     ).toContain('flow')
   })
 
+  test('infers specialized equipment dynamics from component and profile metadata', () => {
+    const tower = node({
+      equipmentContract: {
+        equipmentFamily: 'distillation_unit',
+        profileId: 'refinery.atmospheric_distillation_unit',
+        primarySemanticRole: 'distillation_column_shell',
+      },
+    })
+    const compressor = node({
+      equipmentContract: {
+        equipmentFamily: 'compressor',
+        profileId: 'utility.screw_compressor',
+      },
+    })
+    const cnc = node({
+      sourceArgs: { family: 'machine_tool', object: 'cnc_milling_center' },
+    })
+    const grateCooler = node({
+      sourceArgs: { family: 'cement', object: 'grate_cooler' },
+    })
+
+    expect(getNodeSemanticType(tower)).toBe('tower')
+    expect(getDynamicTypesForNode(tower)).toEqual(expect.arrayContaining(['level', 'flow']))
+    expect(getRecommendedDynamicTypeForNode(tower)).toBe('level')
+
+    expect(getNodeSemanticType(compressor)).toBe('compressor')
+    expect(getDynamicTypesForNode(compressor)).toEqual(
+      expect.arrayContaining(['running', 'speed', 'flow']),
+    )
+
+    expect(getNodeSemanticType(cnc)).toBe('machineTool')
+    expect(getDynamicTypesForNode(cnc)).toEqual(expect.arrayContaining(['running', 'speed']))
+
+    expect(getNodeSemanticType(grateCooler)).toBe('grateCooler')
+    expect(getDynamicTypesForNode(grateCooler)).toEqual(
+      expect.arrayContaining(['running', 'flow', 'speed']),
+    )
+  })
+
   test('classifies catalog tank items as tanks even when geometry mentions pipe ports', () => {
     const tankItem = {
       ...node(

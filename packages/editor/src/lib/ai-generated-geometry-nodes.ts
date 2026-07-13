@@ -26,6 +26,13 @@ import type {
 } from './ai-generated-geometry-core'
 
 type ShapeSpec = GeneratedGeometryShapeSpec
+type JsonMetadataValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonMetadataValue[]
+  | { [key: string]: JsonMetadataValue }
 
 type DynamicLevelGeometrySpec = {
   kind: 'vertical' | 'horizontal' | 'spherical'
@@ -65,6 +72,29 @@ function compactRecord(value: Record<string, unknown>) {
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined))
 }
 
+function jsonMetadataValue(value: unknown): JsonMetadataValue | undefined {
+  if (value === null) return null
+  if (typeof value === 'string' || typeof value === 'boolean') return value
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined
+  if (Array.isArray(value)) {
+    return value
+      .map(jsonMetadataValue)
+      .filter((entry): entry is JsonMetadataValue => entry !== undefined)
+  }
+  if (typeof value !== 'object' || value === undefined) return undefined
+  const entries = Object.entries(value as Record<string, unknown>)
+    .map(([key, entry]) => [key, jsonMetadataValue(entry)] as const)
+    .filter((entry): entry is readonly [string, JsonMetadataValue] => entry[1] !== undefined)
+  return Object.fromEntries(entries)
+}
+
+function jsonMetadataRecord(value: Record<string, unknown>): Record<string, JsonMetadataValue> {
+  const parsed = jsonMetadataValue(value)
+  return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+    ? (parsed as Record<string, JsonMetadataValue>)
+    : {}
+}
+
 function subtractVec3(left: Vec3 | undefined, right: Vec3 | undefined): Vec3 | undefined {
   if (!left || !right) return left
   return [left[0] - right[0], left[1] - right[1], left[2] - right[2]]
@@ -93,6 +123,7 @@ function isTankShellShape(shape: ShapeSpec) {
   const tankSource =
     sourcePartKind === 'cylindrical_tank' ||
     sourcePartKind === 'agitator_tank' ||
+    sourcePartKind === 'storage_tank_shell' ||
     sourcePartKind === 'vertical_storage_tank'
   const shellRole =
     semanticRole === 'vessel_shell' ||
@@ -238,6 +269,7 @@ function generatedShapeMetadata(input: {
   patternInstances?: Array<{ position?: Vec3; rotation?: Vec3; scale?: Vec3; name?: string }>
 }) {
   const primitiveContract = localPrimitiveContract(input)
+  const renderContract = (input.shape as unknown as Record<string, unknown>).renderContract
   const selector = compactRecord({
     index: input.shapeIndex,
     semanticRole: input.shape.semanticRole,
@@ -260,6 +292,7 @@ function generatedShapeMetadata(input: {
     sourcePartId: input.shape.sourcePartId,
     editableHints: input.shape.editableHints,
     primitiveContract,
+    renderContract,
     generatedShape: compactRecord({
       assemblyName: input.artifact.assemblyName,
       selector,
@@ -327,7 +360,7 @@ export function buildGeneratedGeometryNodes(artifact: GeneratedGeometryArtifact)
             position,
             rotation,
             radius: clampR(shape.radius, 0.5),
-            height: clampD(shape.height, 1.0, 0.01, 20),
+            height: clampD(shape.height, 1.0, 0.01, 200),
             radialSegments:
               shape.radialSegments != null
                 ? Math.round(clampD(shape.radialSegments, 32, 8, 64))
@@ -652,10 +685,10 @@ function nodeMetadata(node: AnyNode): Record<string, unknown> {
 function withNodeMetadata<T extends AnyNode>(node: T, metadata: Record<string, unknown>): T {
   return {
     ...node,
-    metadata: {
+    metadata: jsonMetadataRecord({
       ...nodeMetadata(node),
       ...metadata,
-    },
+    }),
   }
 }
 
@@ -682,6 +715,82 @@ function generatedRootMetadata(
   }
 }
 
+function stringList(value: unknown): readonly string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
+    : []
+}
+
+function equipmentPartGroups(metadata: Record<string, unknown>) {
+  const equipmentAssembly = metadata.equipmentAssembly
+  if (
+    typeof equipmentAssembly !== 'object' ||
+    equipmentAssembly === null ||
+    Array.isArray(equipmentAssembly)
+  ) {
+    return []
+  }
+  const partGroups = (equipmentAssembly as Record<string, unknown>).partGroups
+  return Array.isArray(partGroups)
+    ? partGroups.filter(
+        (entry): entry is Record<string, unknown> =>
+          typeof entry === 'object' && entry !== null && !Array.isArray(entry),
+      )
+    : []
+}
+
+function partGroupForNode(node: AnyNode, partGroups: readonly Record<string, unknown>[]) {
+  const metadata = nodeMetadata(node)
+  const role = typeof metadata.semanticRole === 'string' ? metadata.semanticRole : undefined
+  const sourcePartKind =
+    typeof metadata.sourcePartKind === 'string' ? metadata.sourcePartKind : undefined
+  const sourcePartId = typeof metadata.sourcePartId === 'string' ? metadata.sourcePartId : undefined
+  return partGroups.find((group) => {
+    if (sourcePartId && stringList(group.sourcePartIds).includes(sourcePartId)) return true
+    if (sourcePartKind && stringList(group.sourcePartKinds).includes(sourcePartKind)) return true
+    return Boolean(role && stringList(group.roles).includes(role))
+  })
+}
+
+function withEquipmentChildMetadata(
+  node: AnyNode,
+  input: { rootId: AnyNodeId; partGroups: readonly Record<string, unknown>[] },
+) {
+  const partGroup = partGroupForNode(node, input.partGroups)
+  const partGroupId = typeof partGroup?.id === 'string' ? partGroup.id : undefined
+  const partGroupLabel = typeof partGroup?.label === 'string' ? partGroup.label : undefined
+  return withNodeMetadata(
+    node,
+    compactRecord({
+      equipmentRootId: input.rootId,
+      partGroupId,
+      partGroupLabel,
+    }),
+  )
+}
+
+function placedSingleGeneratedNode(
+  node: AnyNode,
+  artifact: GeneratedGeometryArtifact,
+  options: GeneratedGeometryPlacementSpec,
+): AnyNode {
+  const transformNode = node as AnyNode & { position?: Vec3; rotation?: Vec3 }
+  const localOffset = transformNode.position ?? [0, 0, 0]
+  const rootPosition = options.position ?? artifact.assemblyPosition
+  const rotation = options.rotation ?? transformNode.rotation
+  const placedNode = {
+    ...node,
+    position: [
+      rootPosition[0] + localOffset[0],
+      rootPosition[1] + localOffset[1],
+      rootPosition[2] + localOffset[2],
+    ],
+    ...(rotation ? { rotation } : {}),
+  } as AnyNode
+
+  return withNodeMetadata(placedNode, generatedRootMetadata(artifact, options, 1))
+}
+
 export function buildGeneratedGeometryCreatePatches(
   artifact: GeneratedGeometryArtifact,
   options: GeneratedGeometryPlacementSpec = {},
@@ -690,15 +799,35 @@ export function buildGeneratedGeometryCreatePatches(
   if (!createdNodes.length) return { created, nodeIds: [], childNodes: [], patches: [] }
 
   const parentId = options.parentId == null ? undefined : (options.parentId as AnyNodeId)
+
+  if (createdNodes.length === 1) {
+    const rootNode = placedSingleGeneratedNode(createdNodes[0]!, artifact, options)
+    const patches: GeneratedGeometryCreatePatch[] = [
+      { op: 'create', node: rootNode, ...(parentId ? { parentId } : {}) },
+    ]
+    return {
+      created,
+      nodeIds: [rootNode.id],
+      rootNode,
+      childNodes: [rootNode],
+      patches,
+    }
+  }
+
   const rootNode = AssemblyNode.parse({
     name: artifact.assemblyName ?? artifact.title,
     position: options.position ?? artifact.assemblyPosition,
     rotation: options.rotation,
-    metadata: generatedRootMetadata(artifact, options, createdNodes.length),
+    metadata: jsonMetadataRecord(generatedRootMetadata(artifact, options, createdNodes.length)),
   })
+  const rootMetadata = nodeMetadata(rootNode)
+  const partGroups = equipmentPartGroups(rootMetadata)
+  const childNodes = createdNodes.map((node) =>
+    withEquipmentChildMetadata(node, { rootId: rootNode.id as AnyNodeId, partGroups }),
+  )
   const patches: GeneratedGeometryCreatePatch[] = [
     { op: 'create', node: rootNode, ...(parentId ? { parentId } : {}) },
-    ...createdNodes.map((node) => ({
+    ...childNodes.map((node) => ({
       op: 'create' as const,
       node,
       parentId: rootNode.id as AnyNodeId,
@@ -708,7 +837,7 @@ export function buildGeneratedGeometryCreatePatches(
     created,
     nodeIds: [rootNode.id, ...createdNodes.map((node) => node.id)],
     rootNode,
-    childNodes: createdNodes,
+    childNodes,
     patches,
   }
 }

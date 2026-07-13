@@ -5,6 +5,7 @@ import {
   loadConversation,
   saveConversation,
 } from '@/lib/ai-harness-runs/run-store'
+import { parseJsonRequestBody } from '@/lib/request-json'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -19,6 +20,10 @@ function conversationPurpose(value: unknown) {
   return value === 'factory' || value === 'asset' ? value : undefined
 }
 
+function sceneId(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
 export async function GET(_request: Request, { params }: RouteParams) {
   const { id } = await params
   const conversation = await loadConversation(id)
@@ -30,7 +35,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   const { id } = await params
   let body: unknown
   try {
-    body = await request.json()
+    body = await parseJsonRequestBody(request)
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
@@ -40,6 +45,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   const conversation = await loadConversation(id)
   await saveConversation({
     ...conversation,
+    sceneId: sceneId(body.sceneId) ?? conversation.sceneId,
     messages: Array.isArray(body.messages) ? body.messages : conversation.messages,
     activeRunIds: Array.isArray(body.activeRunIds)
       ? body.activeRunIds.filter((value): value is string => typeof value === 'string')

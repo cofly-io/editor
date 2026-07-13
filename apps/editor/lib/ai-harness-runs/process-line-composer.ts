@@ -1,6 +1,7 @@
 import {
   BoxNode,
   CableTrayNode,
+  ColumnNode,
   PipeFittingNode,
   PipeNode,
   SweepNode,
@@ -101,6 +102,14 @@ function processLineOmitPerimeterWalls(plan: ProcessLinePlan) {
   return plan.architecture?.omitPerimeterWalls ?? (isCementProcessLine(plan) ? true : undefined)
 }
 
+function processLineOmitCeiling(plan: ProcessLinePlan) {
+  return plan.architecture?.omitCeiling ?? (isCementProcessLine(plan) ? true : undefined)
+}
+
+function processLineOmitRoof(plan: ProcessLinePlan) {
+  return plan.architecture?.omitRoof ?? (isCementProcessLine(plan) ? true : undefined)
+}
+
 type ConnectionRenderSpec = {
   nodeKind: 'pipe' | 'cable_tray'
   label: string
@@ -121,7 +130,29 @@ type ConnectionRenderSpec = {
 
 const ROUTE_SUPPORT_MIN_ELEVATION = 1.2
 const ROUTE_SUPPORT_MAX_SPACING = 5
+const PORTAL_FRAME_SUPPORT_SPACING_FACTOR = 1.5
 const ROUTE_SUPPORT_SECTION = 0.08
+const ROUTE_RACK_COLUMN_SECTION = 0.1
+
+function connectionSupportSpacing(
+  connection: ProcessConnectionPlan,
+  reducePortalFrameDensity: boolean,
+) {
+  const spacing = connection.render?.supportSpacing
+  const configuredSpacing =
+    typeof spacing === 'number' && Number.isFinite(spacing) && spacing > 0
+      ? spacing
+      : ROUTE_SUPPORT_MAX_SPACING
+  return configuredSpacing * (reducePortalFrameDensity ? PORTAL_FRAME_SUPPORT_SPACING_FACTOR : 1)
+}
+
+function connectionSupportStyle(connection: ProcessConnectionPlan, spec: ConnectionRenderSpec) {
+  if (connection.render?.supportStyle) return connection.render.supportStyle
+  if (connection.visualKind === 'material_conveyor') return 'belt_gallery'
+  if (connection.visualKind === 'hot_gas_duct' || connection.visualKind === 'air_duct')
+    return 'pipe_rack'
+  return spec.nodeKind === 'pipe' ? 'single_support' : 'pipe_rack'
+}
 
 function connectionRenderSpec(
   visualKind: ProcessConnectionVisualKind,
@@ -203,6 +234,18 @@ function connectionRenderSpec(
     insulated: normalizedMedium === 'cooling',
     temperatureC: 20,
   }
+}
+
+function connectionColor(connection: ProcessConnectionPlan, spec: ConnectionRenderSpec) {
+  const color = connection.render?.color
+  return typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color) ? color : spec.color
+}
+
+function connectionDiameter(connection: ProcessConnectionPlan, fallback: number | undefined) {
+  const diameter = connection.render?.diameter
+  return typeof diameter === 'number' && Number.isFinite(diameter) && diameter > 0
+    ? diameter
+    : fallback
 }
 
 function patchParentId(placement: GeneratedGeometryPlacementSpec) {
@@ -386,6 +429,11 @@ function connectionMetadata(input: {
       : {}),
     ...(input.segmentIndex != null ? { routeSegmentIndex: input.segmentIndex } : {}),
     ...(input.segmentCount != null ? { routeSegmentCount: input.segmentCount } : {}),
+    ...(input.connection.render
+      ? {
+          connectionRender: input.connection.render,
+        }
+      : {}),
     resolver: connectionRenderSpec(input.connection.visualKind, medium).resolver,
   }
 }
@@ -404,6 +452,7 @@ function createConnectionPatch(input: {
   const metadata = connectionMetadata(input)
   const medium = normalizeConnectionMedium(input.connection.medium)
   const spec = connectionRenderSpec(input.connection.visualKind, medium)
+  const color = connectionColor(input.connection, spec)
   if (spec.nodeKind === 'cable_tray') {
     const node = CableTrayNode.parse({
       name: connectionSegmentName(input),
@@ -411,7 +460,7 @@ function createConnectionPatch(input: {
       end: input.segment.end,
       elevation: input.route.elevation ?? spec.elevation,
       ...(spec.tray ?? {}),
-      color: spec.color,
+      color,
       metadata,
     })
     return parentPatch(node, input.placement)
@@ -422,12 +471,12 @@ function createConnectionPatch(input: {
     start: input.segment.start,
     end: input.segment.end,
     elevation: input.route.elevation ?? spec.elevation,
-    diameter: spec.diameter ?? pipeDiameter(medium),
+    diameter: connectionDiameter(input.connection, spec.diameter ?? pipeDiameter(medium)),
     insulated: spec.insulated ?? medium === 'cooling',
     pressureKpa: 0,
     temperatureC: spec.temperatureC ?? 20,
     medium: pipeMedium(medium),
-    color: spec.color,
+    color,
     metadata,
   })
   return parentPatch(node, input.placement)
@@ -471,6 +520,103 @@ function createRouteSupportPatch(input: {
   return parentPatch(node, input.placement)
 }
 
+function segmentAngle(segment: ProcessRouteSegment) {
+  return Math.atan2(segment.end[1] - segment.start[1], segment.end[0] - segment.start[0])
+}
+
+function segmentMidpoint(segment: ProcessRouteSegment): [number, number] {
+  return [(segment.start[0] + segment.end[0]) / 2, (segment.start[1] + segment.end[1]) / 2]
+}
+
+function segmentNormal(segment: ProcessRouteSegment): [number, number] {
+  const angle = segmentAngle(segment)
+  return [-Math.sin(angle), Math.cos(angle)]
+}
+
+function createDetailBoxPatch(input: {
+  name: string
+  role: string
+  position: [number, number, number]
+  rotationY?: number
+  length: number
+  width: number
+  height: number
+  color: string
+  metadata: Record<string, unknown>
+  placement: GeneratedGeometryPlacementSpec
+}): GeneratedGeometryCreatePatch {
+  const node = BoxNode.parse({
+    name: input.name,
+    position: input.position,
+    rotation: [0, input.rotationY ?? 0, 0],
+    length: Math.min(20, Math.max(0.05, input.length)),
+    width: Math.min(20, Math.max(0.05, input.width)),
+    height: Math.min(20, Math.max(0.05, input.height)),
+    material: {
+      preset: 'metal',
+      properties: {
+        color: input.color,
+        roughness: 0.48,
+        metalness: 0.42,
+      },
+    },
+    metadata: {
+      ...input.metadata,
+      role: input.role,
+    },
+  })
+  return parentPatch(node, input.placement)
+}
+
+function createRouteBentSupportPatches(input: {
+  name: string
+  segment: ProcessRouteSegment
+  position2d: [number, number]
+  elevation: number
+  width: number
+  metadata: Record<string, unknown>
+  placement: GeneratedGeometryPlacementSpec
+}) {
+  const angle = segmentAngle(input.segment)
+  const height = Math.max(0.05, input.elevation - ROUTE_RACK_COLUMN_SECTION / 2)
+  const node = ColumnNode.parse({
+    name: input.name,
+    position: [input.position2d[0], 0, input.position2d[1]],
+    rotation: angle + Math.PI / 2,
+    style: 'faceted',
+    crossSection: 'rectangular',
+    supportStyle: 'portal-frame',
+    height,
+    width: ROUTE_RACK_COLUMN_SECTION,
+    depth: ROUTE_RACK_COLUMN_SECTION,
+    edgeSoftness: 0,
+    baseHeight: 0,
+    capitalHeight: 0,
+    baseStyle: 'none',
+    capitalStyle: 'none',
+    shaftSegmentCount: 1,
+    braceWidth: ROUTE_RACK_COLUMN_SECTION,
+    braceDepth: ROUTE_RACK_COLUMN_SECTION,
+    braceBottomSpread: input.width,
+    braceTopSpread: input.width,
+    bracePlateEnabled: false,
+    material: {
+      preset: 'metal',
+      properties: {
+        color: '#475569',
+        roughness: 0.48,
+        metalness: 0.42,
+      },
+    },
+    metadata: {
+      ...input.metadata,
+      role: 'process-line-rack-support',
+      portalFrameBatch: 'process-line-support',
+    },
+  })
+  return [parentPatch(node, input.placement)]
+}
+
 function createConnectionSupportPatches(input: {
   plan: ProcessLinePlan
   connection: ProcessConnectionPlan
@@ -483,15 +629,58 @@ function createConnectionSupportPatches(input: {
   const spec = connectionRenderSpec(input.connection.visualKind, medium)
   const elevation = input.route.elevation ?? spec.elevation
   if (elevation < ROUTE_SUPPORT_MIN_ELEVATION) return []
+  const style = connectionSupportStyle(input.connection, spec)
+  const spacing = connectionSupportSpacing(
+    input.connection,
+    style === 'pipe_rack' || style === 'belt_gallery',
+  )
+  const supportWidth =
+    input.connection.render?.supportWidth ??
+    (style === 'belt_gallery' ? (input.connection.render?.galleryWidth ?? 1.25) : 1.2)
 
   const patches: GeneratedGeometryCreatePatch[] = []
   input.route.segments.forEach((segment, segmentIndex) => {
     const length = segmentLength(segment)
     if (length < 0.35) return
-    const supportCount = Math.max(1, Math.floor(length / ROUTE_SUPPORT_MAX_SPACING))
+    const supportCount = Math.max(1, Math.floor(length / spacing))
     for (let supportIndex = 1; supportIndex <= supportCount; supportIndex += 1) {
       const [x, z] = interpolatedSegmentPoint(segment, supportIndex / (supportCount + 1))
       const supportHeight = Math.max(0.05, elevation - ROUTE_SUPPORT_SECTION / 2)
+      const metadata = {
+        ...connectionMetadata({
+          ...input,
+          segmentIndex,
+          segmentCount: input.route.segments.length,
+        }),
+        supportIndex,
+        supportElevation: elevation,
+        supportSpacing: spacing,
+      }
+      if (style === 'pipe_rack' || style === 'belt_gallery') {
+        patches.push(
+          ...createRouteBentSupportPatches({
+            name: `${connectionSegmentName({
+              connection: input.connection,
+              connectionIndex: input.connectionIndex,
+              segmentIndex,
+              segmentCount: input.route.segments.length,
+            })} support ${supportIndex}`,
+            segment,
+            position2d: [x, z],
+            elevation,
+            width: supportWidth,
+            metadata: {
+              ...metadata,
+              resolver:
+                style === 'belt_gallery'
+                  ? 'native-belt-gallery-support'
+                  : 'native-pipe-rack-support',
+            },
+            placement: input.placement,
+          }),
+        )
+        continue
+      }
       patches.push(
         createRouteSupportPatch({
           name: `${connectionSegmentName({
@@ -503,14 +692,8 @@ function createConnectionSupportPatches(input: {
           position: [x, supportHeight / 2, z],
           height: supportHeight,
           metadata: {
-            ...connectionMetadata({
-              ...input,
-              segmentIndex,
-              segmentCount: input.route.segments.length,
-            }),
+            ...metadata,
             role: 'process-line-connection-support',
-            supportIndex,
-            supportElevation: elevation,
             resolver: 'native-route-support',
           },
           placement: input.placement,
@@ -518,6 +701,172 @@ function createConnectionSupportPatches(input: {
       )
     }
   })
+  return patches
+}
+
+function createConnectionDetailPatches(input: {
+  plan: ProcessLinePlan
+  connection: ProcessConnectionPlan
+  connectionIndex: number
+  route: ProcessConnectionRoute
+  sourcePrompt: string
+  placement: GeneratedGeometryPlacementSpec
+}) {
+  const medium = normalizeConnectionMedium(input.connection.medium)
+  const spec = connectionRenderSpec(input.connection.visualKind, medium)
+  const style = connectionSupportStyle(input.connection, spec)
+  const elevation = input.route.elevation ?? spec.elevation
+  const patches: GeneratedGeometryCreatePatch[] = []
+
+  input.route.segments.forEach((segment, segmentIndex) => {
+    const length = segmentLength(segment)
+    if (length < 0.35) return
+    const angle = segmentAngle(segment)
+    const [mx, mz] = segmentMidpoint(segment)
+    const [nx, nz] = segmentNormal(segment)
+    const metadata = connectionMetadata({
+      ...input,
+      segmentIndex,
+      segmentCount: input.route.segments.length,
+    })
+
+    if (style === 'belt_gallery' || input.connection.render?.enclosed) {
+      const width = input.connection.render?.galleryWidth ?? 1.05
+      const galleryHeight = input.connection.render?.galleryHeight ?? 0.8
+      patches.push(
+        createDetailBoxPatch({
+          name: `${connectionSegmentName({
+            connection: input.connection,
+            connectionIndex: input.connectionIndex,
+            segmentIndex,
+            segmentCount: input.route.segments.length,
+          })} gallery roof`,
+          role: 'process-line-belt-gallery-roof',
+          position: [mx, elevation + galleryHeight * 0.5, mz],
+          rotationY: angle,
+          length,
+          width,
+          height: 0.08,
+          color: '#94a3b8',
+          metadata: { ...metadata, resolver: 'native-belt-gallery' },
+          placement: input.placement,
+        }),
+      )
+      for (const side of [-1, 1]) {
+        patches.push(
+          createDetailBoxPatch({
+            name: `${connectionSegmentName({
+              connection: input.connection,
+              connectionIndex: input.connectionIndex,
+              segmentIndex,
+              segmentCount: input.route.segments.length,
+            })} side guard ${side < 0 ? 'A' : 'B'}`,
+            role: 'process-line-belt-gallery-side-guard',
+            position: [
+              mx + nx * width * 0.5 * side,
+              elevation + 0.18,
+              mz + nz * width * 0.5 * side,
+            ],
+            rotationY: angle,
+            length,
+            width: 0.05,
+            height: 0.36,
+            color: '#64748b',
+            metadata: { ...metadata, resolver: 'native-belt-gallery' },
+            placement: input.placement,
+          }),
+        )
+      }
+    }
+
+    if (input.connection.render?.walkway) {
+      const width = input.connection.render?.supportWidth ?? 1.3
+      patches.push(
+        createDetailBoxPatch({
+          name: `${connectionSegmentName({
+            connection: input.connection,
+            connectionIndex: input.connectionIndex,
+            segmentIndex,
+            segmentCount: input.route.segments.length,
+          })} maintenance walkway`,
+          role: 'process-line-maintenance-walkway',
+          position: [mx + nx * width * 0.62, elevation - 0.22, mz + nz * width * 0.62],
+          rotationY: angle,
+          length,
+          width: 0.5,
+          height: 0.08,
+          color: '#334155',
+          metadata: { ...metadata, resolver: 'native-maintenance-walkway' },
+          placement: input.placement,
+        }),
+      )
+    }
+
+    if (input.connection.render?.insulationThickness && spec.nodeKind === 'pipe') {
+      const diameter =
+        connectionDiameter(input.connection, spec.diameter ?? pipeDiameter(medium)) +
+        input.connection.render.insulationThickness * 2
+      const node = PipeNode.parse({
+        name: `${connectionSegmentName({
+          connection: input.connection,
+          connectionIndex: input.connectionIndex,
+          segmentIndex,
+          segmentCount: input.route.segments.length,
+        })} insulation jacket`,
+        start: segment.start,
+        end: segment.end,
+        elevation,
+        diameter,
+        insulated: true,
+        pressureKpa: 0,
+        temperatureC: spec.temperatureC ?? 20,
+        medium: pipeMedium(medium),
+        color: '#d6d3d1',
+        metadata: {
+          ...metadata,
+          role: 'process-line-pipe-insulation',
+          resolver: 'native-pipe-insulation',
+        },
+      })
+      patches.push(parentPatch(node, input.placement))
+    }
+
+    if (input.connection.render?.valves || input.connection.render?.expansionJoints) {
+      const fittingPoints = input.connection.render.expansionJoints ? [0.34, 0.66] : [0.5]
+      fittingPoints.forEach((t, fittingIndex) => {
+        const [x, z] = interpolatedSegmentPoint(segment, t)
+        patches.push(
+          createDetailBoxPatch({
+            name: `${connectionSegmentName({
+              connection: input.connection,
+              connectionIndex: input.connectionIndex,
+              segmentIndex,
+              segmentCount: input.route.segments.length,
+            })} ${input.connection.render?.expansionJoints ? 'expansion joint' : 'valve'} ${fittingIndex + 1}`,
+            role: input.connection.render?.expansionJoints
+              ? 'process-line-expansion-joint'
+              : 'process-line-valve',
+            position: [x, elevation, z],
+            rotationY: angle,
+            length: 0.34,
+            width:
+              connectionDiameter(input.connection, spec.diameter ?? pipeDiameter(medium)) * 1.8,
+            height:
+              connectionDiameter(input.connection, spec.diameter ?? pipeDiameter(medium)) * 1.8,
+            color: input.connection.render?.expansionJoints ? '#a16207' : '#334155',
+            metadata: {
+              ...metadata,
+              resolver: input.connection.render?.expansionJoints
+                ? 'native-expansion-joint'
+                : 'native-inline-valve',
+            },
+            placement: input.placement,
+          }),
+        )
+      })
+    }
+  })
+
   return patches
 }
 
@@ -538,7 +887,11 @@ function createConnectionPatches(input: {
       segmentCount,
     }),
   )
-  return [...segments, ...createConnectionSupportPatches(input)]
+  return [
+    ...segments,
+    ...createConnectionSupportPatches(input),
+    ...createConnectionDetailPatches(input),
+  ]
 }
 
 function createRouteElbowFittings(input: {
@@ -552,6 +905,7 @@ function createRouteElbowFittings(input: {
   const medium = normalizeConnectionMedium(input.connection.medium)
   const spec = connectionRenderSpec(input.connection.visualKind, medium)
   if (spec.nodeKind !== 'pipe' || input.route.points.length < 3) return []
+  const color = connectionColor(input.connection, spec)
 
   const patches: GeneratedGeometryCreatePatch[] = []
   for (let pointIndex = 1; pointIndex < input.route.points.length - 1; pointIndex += 1) {
@@ -561,11 +915,11 @@ function createRouteElbowFittings(input: {
       name: `${medium ?? 'process'} pipe elbow ${input.connectionIndex + 1}.${pointIndex}`,
       fittingKind: 'elbow',
       position: [point[0], input.route.elevation ?? spec.elevation, point[1]],
-      diameter: spec.diameter ?? pipeDiameter(medium),
+      diameter: connectionDiameter(input.connection, spec.diameter ?? pipeDiameter(medium)),
       pressureKpa: 0,
       temperatureC: spec.temperatureC ?? 20,
       medium: pipeMedium(medium),
-      color: spec.color,
+      color,
       metadata: {
         ...connectionMetadata(input),
         role: 'process-line-route-elbow',
@@ -1044,6 +1398,8 @@ export function composeProcessLine(input: {
       : initialLayout
   const resolvedBoundary = resolvedLayout.boundary
   const omitPerimeterWalls = processLineOmitPerimeterWalls(plan)
+  const omitCeiling = processLineOmitCeiling(plan)
+  const omitRoof = processLineOmitRoof(plan)
   const { layoutDiagnostics, layoutStrategy, stationPlacements } = resolvedLayout
   const focusBounds = focusBoundsFromPlacements({ plan, stationPlacements })
   const shellPlacement = {
@@ -1070,6 +1426,8 @@ export function composeProcessLine(input: {
           length: resolvedBoundary.length,
           width: resolvedBoundary.width,
           ...(omitPerimeterWalls != null ? { omitPerimeterWalls } : {}),
+          ...(omitCeiling != null ? { omitCeiling } : {}),
+          ...(omitRoof != null ? { omitRoof } : {}),
         },
       })
     : { patches: [], nodeIds: [], created: [], missingAssets: [] }

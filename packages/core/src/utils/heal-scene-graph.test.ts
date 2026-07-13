@@ -28,7 +28,6 @@ describe('healSceneNodes', () => {
     expect((nodes.level_0 as { children: string[] }).children).toEqual(['wall_real'])
   })
 
-
   test('restores missing child parentId links from parent children arrays', () => {
     const { nodes, restoredParentLinks } = healSceneNodes({
       building_a: { id: 'building_a', type: 'building', children: ['level_0'] },
@@ -39,6 +38,32 @@ describe('healSceneNodes', () => {
     expect(restoredParentLinks).toBe(1)
     expect((nodes.level_0 as { parentId: string }).parentId).toBe('building_a')
     expect((nodes.level_other as { parentId: string }).parentId).toBe('building_other')
+  })
+
+  test('drops a stale child reference left behind by a reparent', () => {
+    const { nodes, strippedStaleChildRefs } = healSceneNodes({
+      wall_a: { id: 'wall_a', type: 'wall', start: [0, 0], end: [2, 0], children: ['window_1'] },
+      wall_b: { id: 'wall_b', type: 'wall', start: [2, 0], end: [4, 0], children: ['window_1'] },
+      window_1: { id: 'window_1', type: 'window', parentId: 'wall_b' },
+    })
+    expect(strippedStaleChildRefs).toBe(1)
+    expect((nodes.wall_a as { children: string[] }).children).toEqual([])
+    expect((nodes.wall_b as { children: string[] }).children).toEqual(['window_1'])
+  })
+
+  test('collapses same-array duplicate child references', () => {
+    const { nodes, strippedStaleChildRefs } = healSceneNodes({
+      wall_a: {
+        id: 'wall_a',
+        type: 'wall',
+        start: [0, 0],
+        end: [2, 0],
+        children: ['door_1', 'door_1'],
+      },
+      door_1: { id: 'door_1', type: 'door', parentId: 'wall_a' },
+    })
+    expect(strippedStaleChildRefs).toBe(1)
+    expect((nodes.wall_a as { children: string[] }).children).toEqual(['door_1'])
   })
 
   test('keeps a zero-length wall that still hosts a door/window', () => {

@@ -10,6 +10,7 @@ import { PanelSectionExpansionContext } from '../controls/panel-section'
 import { DynamicInspector } from './dynamic-inspector/dynamic-inspector'
 
 const INSPECTOR_SECTIONS_PINNED_KEY = 'pascal:inspector-sections-pinned'
+const OPEN_DYNAMIC_INSPECTOR_EVENT = 'pascal:open-dynamic-inspector'
 
 type InspectorTab = 'basic' | 'dynamic'
 
@@ -65,6 +66,14 @@ export function PanelWrapper({
       setInspectorTab('basic')
     }
   }, [inspectorTab, showDynamicTab])
+
+  useEffect(() => {
+    const openDynamicInspector = () => {
+      if (showDynamicTab) setInspectorTab('dynamic')
+    }
+    window.addEventListener(OPEN_DYNAMIC_INSPECTOR_EVENT, openDynamicInspector)
+    return () => window.removeEventListener(OPEN_DYNAMIC_INSPECTOR_EVENT, openDynamicInspector)
+  }, [showDynamicTab])
 
   const toggleInspectorSectionsPinned = () => {
     setInspectorSectionsPinned((current) => {

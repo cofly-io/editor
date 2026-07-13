@@ -22,6 +22,7 @@ import {
   wallLocalXFromT,
 } from './geometry'
 import { publishLiveSceneSnapshot } from './live-sync'
+import { measurement } from './measurement'
 import { NodeIdSchema, Vec2Schema } from './schemas'
 
 const ROOM_TYPES = [
@@ -51,8 +52,14 @@ export const createRoomInput = {
   name: z.string().min(1),
   polygon: z.array(Vec2Schema).min(3),
   color: z.string().optional(),
-  wallHeight: z.number().positive().optional(),
-  wallThickness: z.number().positive().optional(),
+  wallHeight: measurement('length', 'm', {
+    positive: true,
+    description: 'Wall height.',
+  }).optional(),
+  wallThickness: measurement('length', 'm', {
+    positive: true,
+    description: 'Wall thickness.',
+  }).optional(),
 }
 
 export const createRoomOutput = {
@@ -67,8 +74,8 @@ export const addDoorInput = {
   wallId: NodeIdSchema,
   t: z.number().min(0).max(1).optional(),
   position: z.number().min(0).max(1).optional(),
-  width: z.number().positive().optional(),
-  height: z.number().positive().optional(),
+  width: measurement('length', 'm', { positive: true, description: 'Door width.' }).optional(),
+  height: measurement('length', 'm', { positive: true, description: 'Door height.' }).optional(),
   hingesSide: z.enum(['left', 'right']).optional(),
   swingDirection: z.enum(['inward', 'outward']).optional(),
 }
@@ -87,9 +94,12 @@ export const addWindowInput = {
   wallId: NodeIdSchema,
   t: z.number().min(0).max(1).optional(),
   position: z.number().min(0).max(1).optional(),
-  width: z.number().positive().optional(),
-  height: z.number().positive().optional(),
-  sillHeight: z.number().min(0).optional(),
+  width: measurement('length', 'm', { positive: true, description: 'Window width.' }).optional(),
+  height: measurement('length', 'm', { positive: true, description: 'Window height.' }).optional(),
+  sillHeight: measurement('length', 'm', {
+    min: 0,
+    description: 'Sill height above floor.',
+  }).optional(),
 }
 
 export const addWindowOutput = {
@@ -360,6 +370,7 @@ function buildRoomPlacements(
       break
     case 'entry':
     case 'hallway':
+      if (Math.min(bounds.width, bounds.depth) >= 1.4) addSide('coat-rack', 0.35)
       break
     case 'storage':
       addBack('closet', 0.6)
@@ -375,7 +386,7 @@ export function registerSearchAssets(server: McpServer): void {
     {
       title: 'Search assets',
       description:
-        'Search the shared placeable item catalog by keyword. Call before place_item when you need a valid catalogItemId.',
+        'Search the built-in MCP item catalog by keyword. Call before place_item when you need a valid catalogItemId.',
       inputSchema: searchAssetsInput,
       outputSchema: searchAssetsOutput,
     },

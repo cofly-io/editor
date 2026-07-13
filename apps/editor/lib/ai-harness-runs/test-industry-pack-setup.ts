@@ -1,9 +1,15 @@
 import {
+  type InstalledAssetPack,
+  installAssetCloudPack,
+  listInstalledAssetPacks,
+  removeInstalledAssetPack,
+} from '../asset-packs'
+import {
+  type InstalledProfilePack,
   installCloudProfilePack,
   listInstalledProfilePacks,
   removeProfilePack,
   setProfilePackEnabled,
-  type InstalledProfilePack,
 } from '../profile-packs'
 import { resetIndustryProcessTemplateCacheForTests } from './industry-factory-knowledge'
 import { resetProcessEquipmentContractCacheForTests } from './process-equipment-contracts'
@@ -14,6 +20,7 @@ type RequestedPack = {
 }
 
 type PackSnapshot = Pick<InstalledProfilePack, 'id' | 'version' | 'path' | 'enabled'>
+type AssetPackSnapshot = Pick<InstalledAssetPack, 'id' | 'version' | 'kind'>
 
 function packKey(pack: Pick<InstalledProfilePack, 'id' | 'version'>) {
   return `${pack.id}@${pack.version}`
@@ -27,7 +34,12 @@ function resetIndustryCaches() {
 export async function installIndustryPacksForTests(requested: RequestedPack[]) {
   const initial = await listInstalledProfilePacks()
   const initialByKey = new Map(initial.map((pack) => [packKey(pack), pack]))
+  const initialAssets = await listInstalledAssetPacks()
+  const initialAssetKeys = new Set(
+    initialAssets.map((pack) => `${pack.kind}:${pack.id}@${pack.version}`),
+  )
   const installedByTest = new Map<string, PackSnapshot>()
+  const installedAssetByTest = new Map<string, AssetPackSnapshot>()
   const enabledByTest = new Map<string, PackSnapshot>()
 
   for (const request of requested) {
@@ -41,11 +53,23 @@ export async function installIndustryPacksForTests(requested: RequestedPack[]) {
       continue
     }
 
-    const result = await installCloudProfilePack(request.id, request.version)
-    for (const pack of [...result.installedDependencies, result.pack]) {
-      const dependencyKey = packKey(pack)
-      if (!initialByKey.has(dependencyKey)) {
-        installedByTest.set(dependencyKey, pack)
+    try {
+      const result = await installCloudProfilePack(request.id, request.version)
+      for (const pack of [...result.installedDependencies, result.pack]) {
+        const dependencyKey = packKey(pack)
+        if (!initialByKey.has(dependencyKey)) {
+          installedByTest.set(dependencyKey, pack)
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (!/Cloud profile pack not found|ENOENT|no such file/i.test(message)) throw error
+      const result = await installAssetCloudPack('industry', request.id, request.version)
+      for (const pack of result.installed) {
+        const dependencyKey = `${pack.kind}:${pack.id}@${pack.version}`
+        if (!initialAssetKeys.has(dependencyKey)) {
+          installedAssetByTest.set(dependencyKey, pack)
+        }
       }
     }
   }
@@ -55,6 +79,9 @@ export async function installIndustryPacksForTests(requested: RequestedPack[]) {
   return async () => {
     for (const pack of [...installedByTest.values()].reverse()) {
       await removeProfilePack(pack.path).catch(() => {})
+    }
+    for (const pack of [...installedAssetByTest.values()].reverse()) {
+      await removeInstalledAssetPack(pack.kind, pack.id, pack.version).catch(() => {})
     }
     for (const pack of enabledByTest.values()) {
       await setProfilePackEnabled(pack.path, false).catch(() => {})
@@ -67,14 +94,32 @@ export async function withIndustryPackDisabledForTests(request: RequestedPack) {
   const existing = (await listInstalledProfilePacks()).find(
     (pack) => pack.id === request.id && pack.version === request.version,
   )
+  const existingAsset = (await listInstalledAssetPacks()).find(
+    (pack) =>
+      pack.kind === 'industry' && pack.id === request.id && pack.version === request.version,
+  )
   let installedByTest: PackSnapshot | undefined
   let reenable = false
+  let removedAssetForTest = false
+  let restoreAssetOnCleanup = false
 
-  if (!existing) {
-    const result = await installCloudProfilePack(request.id, request.version)
-    installedByTest = result.pack
-  } else if (existing.enabled) {
+  if (!existing && !existingAsset) {
+    try {
+      const result = await installCloudProfilePack(request.id, request.version)
+      installedByTest = result.pack
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (!/Cloud profile pack not found|ENOENT|no such file/i.test(message)) throw error
+      await installAssetCloudPack('industry', request.id, request.version)
+      await removeInstalledAssetPack('industry', request.id, request.version)
+      removedAssetForTest = true
+    }
+  } else if (existing?.enabled) {
     reenable = true
+  } else if (existingAsset) {
+    await removeInstalledAssetPack('industry', request.id, request.version)
+    removedAssetForTest = true
+    restoreAssetOnCleanup = true
   }
 
   const current = (await listInstalledProfilePacks()).find(
@@ -90,6 +135,9 @@ export async function withIndustryPackDisabledForTests(request: RequestedPack) {
       await removeProfilePack(installedByTest.path).catch(() => {})
     } else if (reenable && current) {
       await setProfilePackEnabled(current.path, true).catch(() => {})
+    }
+    if (removedAssetForTest && restoreAssetOnCleanup) {
+      await installAssetCloudPack('industry', request.id, request.version).catch(() => {})
     }
     resetIndustryCaches()
   }

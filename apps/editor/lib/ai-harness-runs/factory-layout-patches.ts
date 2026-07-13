@@ -243,13 +243,23 @@ function finiteVec2(value: unknown): Vec2 | undefined {
   return undefined
 }
 
-function sceneBoundsFromMetadata(metadata: Record<string, unknown>): SceneBoundsLike | undefined {
-  const candidates = [
-    metadata.siteBounds,
-    isRecord(metadata.site) ? metadata.site.bounds : undefined,
+function sceneBoundsFromMetadata(
+  metadata: Record<string, unknown>,
+  options: { preferSiteBounds?: boolean } = {},
+): SceneBoundsLike | undefined {
+  const sceneBounds = [
     metadata.sceneBounds,
     isRecord(metadata.scene) ? metadata.scene.bounds : undefined,
   ]
+  const siteBounds = [
+    metadata.siteBounds,
+    isRecord(metadata.site) ? metadata.site.bounds : undefined,
+  ]
+  const candidates = options.preferSiteBounds
+    ? [...siteBounds, ...sceneBounds]
+    : metadata.siteIsDefault === true
+      ? [...sceneBounds, ...siteBounds]
+      : [...siteBounds, ...sceneBounds]
   for (const candidate of candidates) {
     if (!isRecord(candidate)) continue
     const min = finiteVec2(candidate.min)
@@ -298,8 +308,14 @@ export function resolveFactoryLayoutCenter(input: {
     }
   }
 
-  const bounds = sceneBoundsFromMetadata(input.metadata)
-  const hasSiteBounds = isRecord(input.metadata.siteBounds)
+  const sceneHasContent = input.metadata.sceneHasContent === true
+  const defaultSiteWithoutContent = input.metadata.siteIsDefault === true && !sceneHasContent
+  const bounds = sceneBoundsFromMetadata(input.metadata, {
+    preferSiteBounds: defaultSiteWithoutContent,
+  })
+  const hasSiteBounds =
+    isRecord(input.metadata.siteBounds) &&
+    (input.metadata.siteIsDefault !== true || defaultSiteWithoutContent)
   const intent = layoutPlacementIntent(input.prompt)
   if (!bounds) {
     return { centerX: 0, centerZ: 0, placementIntent: 'default-origin' }
@@ -407,6 +423,7 @@ function createStoryShellPatches(input: {
   storyHeight: number
   includeDoor: boolean
   omitPerimeterWalls: boolean
+  omitCeiling: boolean
 }) {
   const roomName = storyRoomName(input.labels.roomName, input.storyIndex, input.storyCount)
   const storyMetadata = {
@@ -429,14 +446,15 @@ function createStoryShellPatches(input: {
         metadata: { ...storyMetadata, mcpTool: 'create_room', role: 'layout-floor' },
       })
     : null
-  const ceiling = includeIndependentSurfaces
-    ? CeilingNode.parse({
-        name: input.storyCount <= 1 ? input.labels.ceilingName : `${roomName}\u540a\u9876`,
-        polygon: input.polygon,
-        height: input.storyHeight,
-        metadata: { ...storyMetadata, mcpTool: 'create_room', role: 'layout-ceiling' },
-      })
-    : null
+  const ceiling =
+    includeIndependentSurfaces && !input.omitCeiling
+      ? CeilingNode.parse({
+          name: input.storyCount <= 1 ? input.labels.ceilingName : `${roomName}\u540a\u9876`,
+          polygon: input.polygon,
+          height: input.storyHeight,
+          metadata: { ...storyMetadata, mcpTool: 'create_room', role: 'layout-ceiling' },
+        })
+      : null
   const walls = input.polygon.map((start, index) =>
     WallNode.parse({
       name: input.storyCount <= 1 ? input.labels.wallName(index) : `${roomName}\u5899${index + 1}`,
@@ -594,6 +612,8 @@ export function buildFactoryLayoutCreatePatches(input: {
   })
   const roomName = labels.roomName
   const omitPerimeterWalls = booleanParam(input.params?.omitPerimeterWalls) ?? false
+  const omitCeiling = booleanParam(input.params?.omitCeiling) ?? false
+  const omitRoof = booleanParam(input.params?.omitRoof) ?? false
 
   const shouldCreateBuildingForStories = spec.stories > 1 && !buildingId
   const generatedBuilding = shouldCreateBuildingForStories
@@ -662,11 +682,12 @@ export function buildFactoryLayoutCreatePatches(input: {
         storyHeight: spec.storyHeight,
         includeDoor: storyIndex === 0,
         omitPerimeterWalls,
+        omitCeiling,
       }),
     )
   }
 
-  if (spec.hasRoof) {
+  if (spec.hasRoof && !omitRoof) {
     patches.push(
       ...createRoofPatches({
         parentId: storyParentIds[effectiveStoryCount - 1] ?? parentId,

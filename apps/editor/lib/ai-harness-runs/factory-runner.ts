@@ -20,7 +20,6 @@ import type {
 } from './primitive-generation-service'
 import { composeProcessLine } from './process-line-composer'
 import { stationDisplayLabel } from './process-line-localization'
-import { compileSingleEquipmentPrompt } from './single-equipment-compiler'
 import type {
   ProcessRouteObstacle,
   ProcessRoutePortEndpoint,
@@ -33,6 +32,7 @@ import type {
   ProcessPrimitiveRequest,
 } from './process-line-types'
 import { appendRunEvent, isTerminalStatus, loadRun, updateRun } from './run-store'
+import { compileSingleEquipmentPrompt } from './single-equipment-compiler'
 
 const runningRuns = new Set<string>()
 const activeControllers = new Map<string, AbortController>()
@@ -294,6 +294,11 @@ export function buildFactoryPlacementSpec(input: {
   const equipmentRole = stringValue(params.equipmentRole) ?? stringValue(context.equipmentRole)
   const sceneBounds = sceneBoundsFromContext(context)
   const sitePlacement = sitePlacementFromContext(context)
+  const scene = isRecord(context.scene) ? context.scene : undefined
+  const sceneHasContent =
+    context.hasSceneContent === true ||
+    context.sceneHasContent === true ||
+    scene?.hasSceneContent === true
   return {
     ...(parentId ? { parentId } : {}),
     position: vec3Value(params.position) ?? vec3Value(context.position),
@@ -306,6 +311,7 @@ export function buildFactoryPlacementSpec(input: {
       ...(buildingId ? { buildingId } : {}),
       ...(sceneBounds ? { sceneBounds } : {}),
       ...(sitePlacement ?? {}),
+      sceneHasContent,
     },
   }
 }
@@ -1018,6 +1024,31 @@ async function shouldStopRun(runId: string, signal: AbortSignal) {
   return !run || run.status === 'cancelled'
 }
 
+async function finishFactoryRunWithResult(
+  runId: string,
+  signal: AbortSignal,
+  result: unknown,
+  status: { failed: boolean; error?: string },
+) {
+  if (await shouldStopRun(runId, signal)) return false
+  await appendRunEvent(runId, { type: 'result', data: result })
+  if (await shouldStopRun(runId, signal)) return false
+  const finalStatus = status.failed ? 'failed' : 'succeeded'
+  const updated = await updateRun(runId, {
+    status: finalStatus,
+    completedAt: new Date().toISOString(),
+    ...(status.failed ? { error: status.error } : {}),
+    result,
+  })
+  if (updated.status !== finalStatus) return false
+  await appendRunEvent(runId, {
+    type: 'status',
+    message: finalStatus,
+    data: { status: finalStatus, error: status.error },
+  })
+  return true
+}
+
 export function ensureFactoryRunRunning(runId: string) {
   if (runningRuns.has(runId)) return
   runningRuns.add(runId)
@@ -1073,18 +1104,7 @@ async function runFactoryRun(runId: string) {
           qualityReport: selectionEditResult.qualityReport,
         },
       })
-      await appendRunEvent(runId, { type: 'result', data: selectionEditResult })
-      await updateRun(runId, {
-        status: runStatus.failed ? 'failed' : 'succeeded',
-        completedAt: new Date().toISOString(),
-        ...(runStatus.failed ? { error: runStatus.error } : {}),
-        result: selectionEditResult,
-      })
-      await appendRunEvent(runId, {
-        type: 'status',
-        message: runStatus.failed ? 'failed' : 'succeeded',
-        data: { status: runStatus.failed ? 'failed' : 'succeeded', error: runStatus.error },
-      })
+      await finishFactoryRunWithResult(runId, controller.signal, selectionEditResult, runStatus)
       return
     }
 
@@ -1130,23 +1150,12 @@ async function runFactoryRun(runId: string) {
           qualityReport: processLineResult.qualityReport,
         },
       })
-      await appendRunEvent(runId, { type: 'result', data: processLineResult })
       const runStatus = failedFactoryRunStatus(
         processLineResult,
         false,
         'Factory process line failed quality checks.',
       )
-      await updateRun(runId, {
-        status: runStatus.failed ? 'failed' : 'succeeded',
-        completedAt: new Date().toISOString(),
-        ...(runStatus.failed ? { error: runStatus.error } : {}),
-        result: processLineResult,
-      })
-      await appendRunEvent(runId, {
-        type: 'status',
-        message: runStatus.failed ? 'failed' : 'succeeded',
-        data: { status: runStatus.failed ? 'failed' : 'succeeded', error: runStatus.error },
-      })
+      await finishFactoryRunWithResult(runId, controller.signal, processLineResult, runStatus)
       return
     }
 
@@ -1175,23 +1184,12 @@ async function runFactoryRun(runId: string) {
           qualityReport: planResult.qualityReport,
         },
       })
-      await appendRunEvent(runId, { type: 'result', data: planResult })
       const runStatus = failedFactoryRunStatus(
         planResult,
         planned.plan.kind === 'missing',
         planResult.missingAssets[0]?.reason ?? 'missing asset',
       )
-      await updateRun(runId, {
-        status: runStatus.failed ? 'failed' : 'succeeded',
-        completedAt: new Date().toISOString(),
-        ...(runStatus.failed ? { error: runStatus.error } : {}),
-        result: planResult,
-      })
-      await appendRunEvent(runId, {
-        type: 'status',
-        message: runStatus.failed ? 'failed' : 'succeeded',
-        data: { status: runStatus.failed ? 'failed' : 'succeeded', error: runStatus.error },
-      })
+      await finishFactoryRunWithResult(runId, controller.signal, planResult, runStatus)
       return
     }
 
@@ -1224,23 +1222,12 @@ async function runFactoryRun(runId: string) {
           qualityReport: equipmentNodeResult.qualityReport,
         },
       })
-      await appendRunEvent(runId, { type: 'result', data: equipmentNodeResult })
       const runStatus = failedFactoryRunStatus(
         equipmentNodeResult,
         false,
         'Factory equipment node failed quality checks.',
       )
-      await updateRun(runId, {
-        status: runStatus.failed ? 'failed' : 'succeeded',
-        completedAt: new Date().toISOString(),
-        ...(runStatus.failed ? { error: runStatus.error } : {}),
-        result: equipmentNodeResult,
-      })
-      await appendRunEvent(runId, {
-        type: 'status',
-        message: runStatus.failed ? 'failed' : 'succeeded',
-        data: { status: runStatus.failed ? 'failed' : 'succeeded', error: runStatus.error },
-      })
+      await finishFactoryRunWithResult(runId, controller.signal, equipmentNodeResult, runStatus)
       return
     }
 
@@ -1281,23 +1268,12 @@ async function runFactoryRun(runId: string) {
         qualityReport: result.qualityReport,
       },
     })
-    await appendRunEvent(runId, { type: 'result', data: result })
     const runStatus = failedFactoryRunStatus(
       result,
       !result.artifact,
       result.missingAssets[0]?.reason ?? 'missing asset',
     )
-    await updateRun(runId, {
-      status: runStatus.failed ? 'failed' : 'succeeded',
-      completedAt: new Date().toISOString(),
-      ...(runStatus.failed ? { error: runStatus.error } : {}),
-      result,
-    })
-    await appendRunEvent(runId, {
-      type: 'status',
-      message: runStatus.failed ? 'failed' : 'succeeded',
-      data: { status: runStatus.failed ? 'failed' : 'succeeded', error: runStatus.error },
-    })
+    await finishFactoryRunWithResult(runId, controller.signal, result, runStatus)
   } catch (error) {
     if (isAbortError(error) || controller.signal.aborted) {
       await markRunCancelled(runId, 'Factory generation cancelled')

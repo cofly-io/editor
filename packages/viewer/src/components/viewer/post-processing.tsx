@@ -30,6 +30,7 @@ import { GRID_LAYER, OVERLAY_LAYER, SCENE_LAYER, ZONE_LAYER } from '../../lib/la
 import { mergedOutline } from '../../lib/merged-outline-node'
 import { getSceneTheme } from '../../lib/scene-themes'
 import { installEmptyDrawGuard } from '../../lib/webgpu-draw-guard'
+import { isGpuOutOfMemoryError } from '../../lib/webgpu-health'
 import useViewer from '../../store/use-viewer'
 
 // SSGI Parameters - adjust these to fine-tune global illumination and ambient occlusion
@@ -290,8 +291,9 @@ const PostProcessingPasses = ({
   const shadows = useViewer((s) => s.shadows)
   const inkOpacityOverride = useViewer((s) => s.inkOpacity)
   const transparentBackground = useViewer((s) => s.transparentBackground)
+  const complexity = useViewer((s) => s.sceneComplexity)
   const lastProjectIdRef = useRef(projectId)
-  const postFxSettingsKey = `${projectId}|${shading}|${edges}|${shadows}|${inkOpacityOverride}|${transparentBackground}`
+  const postFxSettingsKey = `${projectId}|${shading}|${edges}|${shadows}|${inkOpacityOverride}|${transparentBackground}|${complexity.tier}`
   const lastPostFxSettingsKeyRef = useRef(postFxSettingsKey)
 
   const [pipelineVersion, setPipelineVersion] = useState(0)
@@ -395,10 +397,12 @@ const PostProcessingPasses = ({
     const ssgiEnabled =
       shading === 'rendered' &&
       SSGI_PARAMS.enabled &&
+      !complexity.disableSsgi &&
       !perfDisable.ao &&
       !postFxDegradeRef.current.ao
     const denoiseEnabled = ssgiEnabled && !perfDisable.denoise && !postFxDegradeRef.current.denoise
-    const outlineEnabled = !perfDisable.outline && !postFxDegradeRef.current.outline
+    const outlineEnabled =
+      !complexity.disableOutline && !perfDisable.outline && !postFxDegradeRef.current.outline
     activePostFxFeaturesRef.current = {
       ssgi: ssgiEnabled,
       denoise: denoiseEnabled,
@@ -610,6 +614,12 @@ const PostProcessingPasses = ({
       renderPipelineRef.current = renderPipeline
       retryCountRef.current = 0
     } catch (error) {
+      if (isGpuOutOfMemoryError(error)) {
+        useViewer.getState().setRendererHealth('lost', 'GPU 显存不足，渲染和物品放置已停止。')
+        renderPipelineRef.current?.dispose()
+        renderPipelineRef.current = null
+        return
+      }
       hasPipelineErrorRef.current = true
       const degrade = nextPostFxDegrade(activePostFxFeaturesRef.current, postFxDegradeRef.current)
       if (degrade) {
@@ -667,6 +677,8 @@ const PostProcessingPasses = ({
     }
   }, [
     camera,
+    complexity.disableOutline,
+    complexity.disableSsgi,
     disablePostFx,
     hoverHiddenColor,
     hoverPulseMix,
@@ -753,6 +765,12 @@ const PostProcessingPasses = ({
         })
       }
     } catch (error) {
+      if (isGpuOutOfMemoryError(error)) {
+        useViewer.getState().setRendererHealth('lost', 'GPU 显存不足，渲染和物品放置已停止。')
+        renderPipelineRef.current?.dispose()
+        renderPipelineRef.current = null
+        return
+      }
       hasPipelineErrorRef.current = true
       const degrade = nextPostFxDegrade(activePostFxFeaturesRef.current, postFxDegradeRef.current)
       if (!postFxFailureWarnedRef.current) {

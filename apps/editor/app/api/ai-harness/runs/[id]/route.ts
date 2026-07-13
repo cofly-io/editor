@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { loadRun } from '@/lib/ai-harness-runs/run-store'
+import { loadRun, markRunCancellationRequested } from '@/lib/ai-harness-runs/run-store'
 import type { AiHarnessRun } from '@/lib/ai-harness-runs/types'
 
 export const runtime = 'nodejs'
@@ -33,7 +33,10 @@ export async function GET(_request: Request, { params }: RouteParams) {
 export async function DELETE(_request: Request, { params }: RouteParams) {
   const { id } = await params
   const run = await loadRun(id)
-  if (!run) return NextResponse.json({ error: 'not_found' }, { status: 404 })
+  if (!run) {
+    markRunCancellationRequested(id)
+    return NextResponse.json({ ok: true, pending: true })
+  }
 
   await cancelRun(run)
 

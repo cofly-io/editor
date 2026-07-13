@@ -31,6 +31,12 @@ export type GlbExport = {
   animations: THREE.AnimationClip[]
 }
 
+export function nextFrames(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  })
+}
+
 export async function exportSceneToGlb(
   sceneGroup: Object3D,
   nodes: Record<string, AnyNode>,
@@ -215,9 +221,9 @@ function isRenderableMesh(mesh: THREE.Mesh): boolean {
   const position = mesh.geometry?.getAttribute('position')
   if (!position || position.count === 0) return false
   const material = mesh.material
-  return Array.isArray(material)
-    ? material.some((m) => m?.visible !== false)
-    : material?.visible !== false
+  const renders = (m: THREE.Material | null | undefined) =>
+    m?.visible !== false && m?.colorWrite !== false
+  return Array.isArray(material) ? material.some(renders) : renders(material)
 }
 
 const STANDARD_MAP_SLOTS = [

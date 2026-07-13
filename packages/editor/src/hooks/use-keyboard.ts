@@ -55,11 +55,15 @@ function getPlanNudgeDelta(key: string, step: number): [number, number, number] 
   return null
 }
 
-function getPositionPatchForPlanNudge(node: AnyNode, delta: [number, number, number]) {
+function getPositionPatchForPlanNudge(
+  node: AnyNode,
+  delta: [number, number, number],
+  options: { allowPositionFallback?: boolean } = {},
+) {
   const registryNudge = nodeRegistry.get(node.type)?.editActions?.nudgePlan
   if (registryNudge) return registryNudge(node as never, delta) as Partial<AnyNode> | null
 
-  if (!isPlanDragMovableNode(node)) return null
+  if (!options.allowPositionFallback && !isPlanDragMovableNode(node)) return null
 
   const position = (node as { position?: unknown }).position
   if (!Array.isArray(position) || position.length < 3) return null
@@ -70,16 +74,63 @@ function getPositionPatchForPlanNudge(node: AnyNode, delta: [number, number, num
   }
 }
 
-function nudgeSelectedNodesOnPlan(key: string, step: number): boolean {
+function findContainingAssemblyId(node: AnyNode): AnyNodeId | null {
+  const nodes = useScene.getState().nodes
+  let parentId = node.parentId as AnyNodeId | null
+  const visited = new Set<string>()
+
+  while (parentId && !visited.has(parentId)) {
+    visited.add(parentId)
+    const parent = nodes[parentId]
+    if (!parent) break
+    if (parent.type === 'assembly') return parent.id as AnyNodeId
+    parentId = parent.parentId as AnyNodeId | null
+  }
+
+  return null
+}
+
+type NudgeTarget = {
+  id: AnyNodeId
+  allowPositionFallback: boolean
+}
+
+function selectedNudgeTargets(): NudgeTarget[] {
+  const scene = useScene.getState()
+  const selectedIds = useViewer.getState().selection.selectedIds as AnyNodeId[]
+  const editingAssemblyId = useEditor.getState().editingAssemblyId
+  const targets = new Map<AnyNodeId, NudgeTarget>()
+
+  for (const id of selectedIds) {
+    const node = scene.nodes[id]
+    if (!node) continue
+    const containingAssemblyId = findContainingAssemblyId(node)
+    const targetId =
+      containingAssemblyId && containingAssemblyId !== editingAssemblyId ? containingAssemblyId : id
+    const allowPositionFallback = containingAssemblyId === editingAssemblyId
+    const existing = targets.get(targetId)
+    targets.set(targetId, {
+      id: targetId,
+      allowPositionFallback: existing?.allowPositionFallback || allowPositionFallback,
+    })
+  }
+
+  return [...targets.values()]
+}
+
+export function nudgeSelectedNodesOnPlan(key: string, step: number): boolean {
   const delta = getPlanNudgeDelta(key, step)
   if (!delta) return false
 
   const scene = useScene.getState()
-  const selectedIds = useViewer.getState().selection.selectedIds as AnyNodeId[]
-  const updates = selectedIds.flatMap((id) => {
-    const node = scene.nodes[id]
-    const data = node ? getPositionPatchForPlanNudge(node, delta) : null
-    return data ? [{ id, data }] : []
+  const updates = selectedNudgeTargets().flatMap((target) => {
+    const node = scene.nodes[target.id]
+    const data = node
+      ? getPositionPatchForPlanNudge(node, delta, {
+          allowPositionFallback: target.allowPositionFallback,
+        })
+      : null
+    return data ? [{ id: target.id, data }] : []
   })
 
   if (updates.length === 0) return false
@@ -103,13 +154,12 @@ function getPositionPatchForVerticalNudge(node: AnyNode, deltaY: number) {
   return { position: [x, y + deltaY, z] as [number, number, number] }
 }
 
-function nudgeSelectedNodesVertically(key: string, step: number): boolean {
+export function nudgeSelectedNodesVertically(key: string, step: number): boolean {
   if (key !== 'ArrowUp' && key !== 'ArrowDown') return false
 
   const deltaY = key === 'ArrowUp' ? step : -step
   const scene = useScene.getState()
-  const selectedIds = useViewer.getState().selection.selectedIds as AnyNodeId[]
-  const updates = selectedIds.flatMap((id) => {
+  const updates = selectedNudgeTargets().flatMap(({ id }) => {
     const node = scene.nodes[id]
     const data = node ? getPositionPatchForVerticalNudge(node, deltaY) : null
     return data ? [{ id, data }] : []
@@ -251,6 +301,9 @@ export const useKeyboard = ({
         e.preventDefault()
         const result = pasteEditorClipboardToLevel()
         if (result?.pastedIds.length) {
+          useEditor.getState().setMode('select')
+          useEditor.getState().setEditingAssemblyId(null)
+          useEditor.getState().setFloorplanSelectionTool('click')
           sfxEmitter.emit('sfx:item-place')
         }
       } else if (e.key === 'z' && (e.metaKey || e.ctrlKey)) {

@@ -20,6 +20,7 @@ export const pipeParametrics: ParametricDescriptor<PipeNode> = {
       label: PL.appearance(),
       fields: [
         { key: 'color', kind: 'color' },
+        { key: 'opacity', kind: 'number', min: 0, max: 1, step: 0.05 },
         { key: 'insulated', kind: 'boolean' },
         {
           key: 'insulationThickness',
