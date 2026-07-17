@@ -160,7 +160,7 @@ export const ItemRenderer = ({ node }: { node: ItemNode }) => {
   useRegistry(node.id, node.type, ref)
 
   const setSettled = useCallback((value: boolean) => {
-    ref.current.userData.itemModelSettled = value
+    if (ref.current) ref.current.userData.itemModelSettled = value
   }, [])
 
   useLayoutEffect(() => {

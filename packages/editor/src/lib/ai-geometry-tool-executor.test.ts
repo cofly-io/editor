@@ -19,6 +19,34 @@ function sourceParts(value: unknown): TestSourcePart[] {
 }
 
 describe('AI geometry tool executor', () => {
+  test('preserves a standalone explicit part plan without adding a registry assembly', () => {
+    const result = executeGeometryToolCall(
+      'compose_parts',
+      {
+        parts: [
+          {
+            id: 'linear_member',
+            kind: 'pipe_run',
+            semanticRole: 'linear_member',
+            length: 1.2,
+            radius: 0.012,
+            axis: 'x',
+          },
+        ],
+        requiredRoles: ['linear_member'],
+      },
+      { prompt: 'Generate one straight linear member.' },
+    )
+
+    expect(result.artifact).toBeDefined()
+    expect(result.artifact?.shapes.every((shape) => shape.sourcePartKind === 'pipe_run')).toBe(
+      true,
+    )
+    expect(result.artifact?.shapes.some((shape) => shape.sourcePartKind === 'pipe_rack')).toBe(
+      false,
+    )
+  })
+
   test('accepts complex extrude profiles with bore and keyway holes', () => {
     const teeth = 20
     const profile: [number, number][] = []
@@ -1466,11 +1494,12 @@ describe('AI geometry tool executor', () => {
   })
 
   test('lowers derived primitive aliases to canonical primitive shapes', () => {
-    const [ellipsoid, ovalPanel, halfOval, pyramid] = normalizeGeometryToolShapes([
+    const [ellipsoid, ovalPanel, halfOval, pyramid, disk] = normalizeGeometryToolShapes([
       { kind: 'ellipsoid', length: 2, width: 1, height: 0.8 },
       { kind: 'ellipse-panel', length: 1.2, width: 0.6, thickness: 0.04, segments: 16 },
       { kind: 'semi-ellipse-panel', length: 1, height: 0.4, thickness: 0.03 },
       { kind: 'pyramid', radius: 0.5, height: 1 },
+      { kind: '\u5706\u76d8', diameter: 1.5, thickness: 0.05 },
     ])
 
     expect(ellipsoid).toMatchObject({ kind: 'sphere', scale: [1, 0.4, 0.5] })
@@ -1478,6 +1507,7 @@ describe('AI geometry tool executor', () => {
     expect(ovalPanel?.profile?.length).toBe(16)
     expect(halfOval).toMatchObject({ kind: 'extrude', depth: 0.03 })
     expect(pyramid).toMatchObject({ kind: 'cone', radialSegments: 4, height: 1 })
+    expect(disk).toMatchObject({ kind: 'cylinder', radius: 0.75, height: 0.05, axis: 'y' })
   })
 
   test('expands primitive array expressions before validation and shape budget checks', () => {

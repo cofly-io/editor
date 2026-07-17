@@ -69,8 +69,19 @@ describe('keyboard nudges', () => {
 
     expect(nudgeSelectedNodesOnPlan('ArrowRight', 0.02)).toBe(true)
 
-    expect(getNodePosition(assembly.id)).toEqual([1.02, 0, 2])
+    expect(getNodePosition(assembly.id)).toEqual([1, 0, 1.98])
     expect(getNodePosition(box.id)).toEqual([0.5, 0.25, 0])
+  })
+
+  test('maps up and down arrows to the horizontal canvas axis', () => {
+    const { assembly, box } = installAssemblyScene()
+    useViewer.getState().setSelection({ selectedIds: [box.id as AnyNodeId] })
+
+    expect(nudgeSelectedNodesOnPlan('ArrowUp', 0.02)).toBe(true)
+    expect(getNodePosition(assembly.id)).toEqual([0.98, 0, 2])
+    expect(nudgeSelectedNodesOnPlan('ArrowDown', 0.02)).toBe(true)
+
+    expect(getNodePosition(assembly.id)).toEqual([1, 0, 2])
   })
 
   test('vertically nudges an assembly root when an assembly child is selected', () => {
@@ -91,7 +102,7 @@ describe('keyboard nudges', () => {
     expect(nudgeSelectedNodesOnPlan('ArrowRight', 0.02)).toBe(true)
 
     expect(getNodePosition(assembly.id)).toEqual([1, 0, 2])
-    expect(getNodePosition(box.id)).toEqual([0.52, 0.25, 0])
+    expect(getNodePosition(box.id)).toEqual([0.5, 0.25, -0.02])
   })
 
   test('vertically nudges the selected assembly child while editing assembly parts', () => {

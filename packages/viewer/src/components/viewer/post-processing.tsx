@@ -76,7 +76,9 @@ function resetRendererForDirectRender(renderer: unknown, clearColor: Color, clea
     setOutputRenderTarget?: (target: unknown) => void
     setRenderObjectFunction?: (fn: unknown) => void
     setRenderTarget?: (target: unknown) => void
+    setScissor?: (x: number, y: number, width: number, height: number) => void
     setScissorTest?: (enabled: boolean) => void
+    setViewport?: (x: number, y: number, width: number, height: number) => void
   }
 
   try {
@@ -94,6 +96,26 @@ function resetRendererForDirectRender(renderer: unknown, clearColor: Color, clea
       error: summarizeError(error),
     })
   }
+}
+
+function resetRendererForPipelineFrame(renderer: unknown, width: number, height: number) {
+  const r = renderer as {
+    setMRT?: (mrt: unknown) => void
+    setOutputRenderTarget?: (target: unknown) => void
+    setRenderObjectFunction?: (fn: unknown) => void
+    setRenderTarget?: (target: unknown) => void
+    setScissor?: (x: number, y: number, width: number, height: number) => void
+    setScissorTest?: (enabled: boolean) => void
+    setViewport?: (x: number, y: number, width: number, height: number) => void
+  }
+
+  r.setMRT?.(null)
+  r.setRenderTarget?.(null)
+  r.setOutputRenderTarget?.(null)
+  r.setRenderObjectFunction?.(null)
+  r.setScissorTest?.(false)
+  r.setViewport?.(0, 0, width, height)
+  r.setScissor?.(0, 0, width, height)
 }
 
 // Diagnostic toggles for thermal A/B testing. Add `?disable=ao,denoise,outline,postFx`
@@ -746,6 +768,7 @@ const PostProcessingPasses = ({
     }
 
     try {
+      resetRendererForPipelineFrame(renderer, size.width, size.height)
       // Clear alpha=0 so background pixels in the output MRT attachment (index 0) get a=0,
       // making scenePassColor.a a reliable geometry mask (geometry pixels write a=1 via output node).
       ;(renderer as any).setClearAlpha(0)

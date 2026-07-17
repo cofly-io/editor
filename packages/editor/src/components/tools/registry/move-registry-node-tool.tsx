@@ -38,6 +38,7 @@ function getMetadataRecord(node: AnyNode): Record<string, unknown> {
 
 function stripPlacementMetadata(node: AnyNode) {
   const metadata = { ...getMetadataRecord(node) }
+  delete metadata.disablePrimitiveBatch
   delete metadata.isNew
   delete metadata.isTransient
   return metadata
@@ -170,6 +171,8 @@ export function MoveRegistryNodeTool({ node }: { node: AnyNode }) {
     let committed = false
     const handledWindowMoves = new WeakSet<Event>()
     const isNewPlacement = isNewPlacementNode(node)
+    const trackPointerDirectly = smoothPlanMove || isNewPlacement
+    let previewVisible = !isNewPlacement
 
     // Disable raycast on the moved node's meshes for the duration of
     // the drag. As the shelf follows the cursor, the cursor ray would
@@ -223,7 +226,7 @@ export function MoveRegistryNodeTool({ node }: { node: AnyNode }) {
     }
 
     const getCursorParentLocalPosition = (event: GridEvent): [number, number, number] => {
-      if (!smoothPlanMove) return event.localPosition
+      if (!trackPointerDirectly) return event.localPosition
 
       const nativeEvent = event.nativeEvent as unknown as PointerEvent | MouseEvent | undefined
       if (
@@ -253,6 +256,14 @@ export function MoveRegistryNodeTool({ node }: { node: AnyNode }) {
       ? [htmlDragOriginPosition[0], htmlDragOriginPosition[2]]
       : null
 
+    const revealPlacementPreview = () => {
+      if (previewVisible) return
+      previewVisible = true
+      const mesh = sceneRegistry.nodes.get(node.id)
+      if (mesh) mesh.visible = true
+      useScene.getState().updateNode(node.id, { visible: true } as Partial<AnyNode>)
+    }
+
     const applyMove = (event: GridEvent) => {
       const cursorLocalPosition = getCursorParentLocalPosition(event)
       if (smoothPlanMove) {
@@ -269,6 +280,7 @@ export function MoveRegistryNodeTool({ node }: { node: AnyNode }) {
       const y = originalPosition[1]
       setCursorPosition([x, y, z])
       lastCursorRef.current = [x, y, z]
+      revealPlacementPreview()
 
       // Pure imperative: move the mesh via its registered Object3D ref.
       sceneRegistry.nodes.get(node.id)?.position.set(x, y, z)
@@ -317,6 +329,29 @@ export function MoveRegistryNodeTool({ node }: { node: AnyNode }) {
      */
     const commitAtCursor = (event?: ClickTriggerEvent | PointerEvent) => {
       if (committed) return
+      const native = event ? (event as { nativeEvent?: unknown }).nativeEvent : undefined
+      const pointer = native ?? event
+      if (
+        isNewPlacement &&
+        pointer &&
+        typeof (pointer as PointerEvent).clientX === 'number' &&
+        typeof (pointer as PointerEvent).clientY === 'number'
+      ) {
+        const rect = gl.domElement.getBoundingClientRect()
+        const pointerEvent = pointer as PointerEvent
+        if (
+          pointerEvent.clientX >= rect.left &&
+          pointerEvent.clientX <= rect.right &&
+          pointerEvent.clientY >= rect.top &&
+          pointerEvent.clientY <= rect.bottom
+        ) {
+          applyMove({
+            position: [originalWorldPosition.x, originalWorldPosition.y, originalWorldPosition.z],
+            localPosition: [...lastCursorRef.current],
+            nativeEvent: pointerEvent as never,
+          } as GridEvent)
+        }
+      }
       const position: [number, number, number] = [...lastCursorRef.current]
 
       if (useScene.getState().nodes[node.id]) {
@@ -362,7 +397,6 @@ export function MoveRegistryNodeTool({ node }: { node: AnyNode }) {
 
       // Stop further propagation so other listeners (e.g. a selection
       // change on the clicked node) don't fire during the commit click.
-      const native = event ? (event as { nativeEvent?: unknown }).nativeEvent : undefined
       if (
         native &&
         typeof (native as { stopPropagation?: () => void }).stopPropagation === 'function'
@@ -373,12 +407,21 @@ export function MoveRegistryNodeTool({ node }: { node: AnyNode }) {
       if (typeof direct === 'function') direct.call(event)
     }
 
-    if (!smoothPlanMove && lastGridMoveRef.localPosition) {
+    if (!trackPointerDirectly && lastGridMoveRef.localPosition) {
       onGridMove({ localPosition: lastGridMoveRef.localPosition } as GridEvent)
     }
 
     const onPointerMove = (event: PointerEvent) => {
-      if (!smoothPlanMove) return
+      if (!trackPointerDirectly) return
+      const rect = gl.domElement.getBoundingClientRect()
+      if (
+        event.clientX < rect.left ||
+        event.clientX > rect.right ||
+        event.clientY < rect.top ||
+        event.clientY > rect.bottom
+      ) {
+        return
+      }
       handledWindowMoves.add(event)
       applyMove({
         position: [originalWorldPosition.x, originalWorldPosition.y, originalWorldPosition.z],
@@ -419,7 +462,7 @@ export function MoveRegistryNodeTool({ node }: { node: AnyNode }) {
     emitter.on('grid:move', onGridMove)
     emitter.on('grid:click', commitAtCursor)
     window.addEventListener('pointermove', onPointerMove, { capture: true })
-    window.addEventListener('pointerup', onPointerUp)
+    if (!isNewPlacement) window.addEventListener('pointerup', onPointerUp)
     window.addEventListener('keydown', onKeyDown)
 
     // Listen on every common + registry-selectable kind's click event too.
@@ -451,7 +494,7 @@ export function MoveRegistryNodeTool({ node }: { node: AnyNode }) {
       emitter.off('grid:move', onGridMove)
       emitter.off('grid:click', commitAtCursor)
       window.removeEventListener('pointermove', onPointerMove, { capture: true })
-      window.removeEventListener('pointerup', onPointerUp)
+      if (!isNewPlacement) window.removeEventListener('pointerup', onPointerUp)
       window.removeEventListener('keydown', onKeyDown)
       useViewer.getState().setInputDragging(previousInputDragging)
       for (const kind of clickTriggerKinds) {

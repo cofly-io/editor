@@ -55,6 +55,56 @@ export type ComponentGeneratorResolution = {
   routeObstacle: FactoryRouteObstacleMetadata
 }
 
+export function generateAssetComponentArtifact(input: {
+  profileId: string
+  componentPack: string
+  generator: string
+  name: string
+  userPrompt: string
+  params?: Record<string, unknown>
+  expectedDimensions?: { length?: number; width?: number; height?: number }
+}): GeneratedGeometryArtifact | null {
+  const entry = componentGeneratorEntry(input.componentPack, input.generator)
+  if (!entry) return null
+  const output = runGeneratorModule(entry, {
+    id: input.profileId,
+    name: input.name,
+    params: input.params ?? {},
+    placement: { x: 0, y: 0, z: 0, rotationY: 0 },
+  })
+  const parts = output?.assembly?.parts ?? []
+  if (!parts.length) return null
+  const shapes = parts.map(shapeFromPart)
+  const transforms = shapes.map((shape) => ({ position: shape.position, rotation: shape.rotation }))
+  return {
+    id: createGeneratedGeometryId(),
+    title: input.name,
+    sourceTool: 'asset_component_generator',
+    sourceArgs: {
+      profileId: input.profileId,
+      componentPack: input.componentPack,
+      generator: input.generator,
+      primarySemanticRole: output.assembly?.primarySemanticRole,
+    },
+    userPrompt: input.userPrompt,
+    version: 1,
+    createdAt: new Date().toISOString(),
+    shapes,
+    transforms,
+    assemblyName: input.name,
+    assemblyPosition: computeGeneratedAssemblyPosition(transforms),
+    createdNames: shapes.map((shape) => shape.name ?? shape.kind),
+    shapeDetails: formatGeneratedShapeDetails(shapes, transforms),
+    geometryBrief: {
+      category: input.profileId,
+      units: 'meters',
+      expectedDimensions: input.expectedDimensions,
+      requiredRoles: output.assembly?.editableParts ?? [],
+      semanticRoles: output.assembly?.editableParts ?? [],
+    },
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

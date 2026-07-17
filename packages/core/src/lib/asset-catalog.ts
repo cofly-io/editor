@@ -269,9 +269,19 @@ export const CATALOG_ITEMS: AssetInput[] = [
     interactive: {
       controls: [
         { kind: 'toggle' as const },
-        { kind: 'slider' as const, label: 'Intensity', min: 0, max: 100, unit: '%', displayMode: 'dial' as const, default: 100 },
+        {
+          kind: 'slider' as const,
+          label: 'Intensity',
+          min: 0,
+          max: 100,
+          unit: '%',
+          displayMode: 'dial' as const,
+          default: 100,
+        },
       ],
-      effects: [{ kind: 'light' as const, intensityRange: [0, 2], color: '#ffffff', offset: [0, -0.1, 0] }],
+      effects: [
+        { kind: 'light' as const, intensityRange: [0, 2], color: '#ffffff', offset: [0, -0.1, 0] },
+      ],
     },
   },
   {
@@ -288,9 +298,19 @@ export const CATALOG_ITEMS: AssetInput[] = [
     interactive: {
       controls: [
         { kind: 'toggle' as const },
-        { kind: 'slider' as const, label: 'Intensity', min: 0, max: 100, unit: '%', displayMode: 'dial' as const, default: 100 },
+        {
+          kind: 'slider' as const,
+          label: 'Intensity',
+          min: 0,
+          max: 100,
+          unit: '%',
+          displayMode: 'dial' as const,
+          default: 100,
+        },
       ],
-      effects: [{ kind: 'light' as const, intensityRange: [0, 2], color: '#ffffff', offset: [0, -0.3, 0] }],
+      effects: [
+        { kind: 'light' as const, intensityRange: [0, 2], color: '#ffffff', offset: [0, -0.3, 0] },
+      ],
     },
   },
   {
@@ -307,9 +327,19 @@ export const CATALOG_ITEMS: AssetInput[] = [
     interactive: {
       controls: [
         { kind: 'toggle' as const },
-        { kind: 'slider' as const, label: 'Intensity', min: 0, max: 100, unit: '%', displayMode: 'dial' as const, default: 100 },
+        {
+          kind: 'slider' as const,
+          label: 'Intensity',
+          min: 0,
+          max: 100,
+          unit: '%',
+          displayMode: 'dial' as const,
+          default: 100,
+        },
       ],
-      effects: [{ kind: 'light' as const, intensityRange: [0, 2], color: '#ffffff', offset: [0, -0.2, 0] }],
+      effects: [
+        { kind: 'light' as const, intensityRange: [0, 2], color: '#ffffff', offset: [0, -0.2, 0] },
+      ],
     },
   },
   {
@@ -326,9 +356,19 @@ export const CATALOG_ITEMS: AssetInput[] = [
     interactive: {
       controls: [
         { kind: 'toggle' as const },
-        { kind: 'slider' as const, label: 'Intensity', min: 0, max: 100, unit: '%', displayMode: 'dial' as const, default: 100 },
+        {
+          kind: 'slider' as const,
+          label: 'Intensity',
+          min: 0,
+          max: 100,
+          unit: '%',
+          displayMode: 'dial' as const,
+          default: 100,
+        },
       ],
-      effects: [{ kind: 'light' as const, intensityRange: [0, 2], color: '#ffffff', offset: [0, -0.2, 0] }],
+      effects: [
+        { kind: 'light' as const, intensityRange: [0, 2], color: '#ffffff', offset: [0, -0.2, 0] },
+      ],
     },
   },
   {
@@ -345,9 +385,19 @@ export const CATALOG_ITEMS: AssetInput[] = [
     interactive: {
       controls: [
         { kind: 'toggle' as const },
-        { kind: 'slider' as const, label: 'Intensity', min: 0, max: 100, unit: '%', displayMode: 'dial' as const, default: 100 },
+        {
+          kind: 'slider' as const,
+          label: 'Intensity',
+          min: 0,
+          max: 100,
+          unit: '%',
+          displayMode: 'dial' as const,
+          default: 100,
+        },
       ],
-      effects: [{ kind: 'light' as const, intensityRange: [0, 2], color: '#ffffff', offset: [0, -0.2, 0] }],
+      effects: [
+        { kind: 'light' as const, intensityRange: [0, 2], color: '#ffffff', offset: [0, -0.2, 0] },
+      ],
     },
   },
   {
@@ -363,9 +413,19 @@ export const CATALOG_ITEMS: AssetInput[] = [
     interactive: {
       controls: [
         { kind: 'toggle' as const },
-        { kind: 'slider' as const, label: 'Intensity', min: 0, max: 100, unit: '%', displayMode: 'dial' as const, default: 100 },
+        {
+          kind: 'slider' as const,
+          label: 'Intensity',
+          min: 0,
+          max: 100,
+          unit: '%',
+          displayMode: 'dial' as const,
+          default: 100,
+        },
       ],
-      effects: [{ kind: 'light' as const, intensityRange: [0, 2], color: '#ffffff', offset: [0, 1.4, 0] }],
+      effects: [
+        { kind: 'light' as const, intensityRange: [0, 2], color: '#ffffff', offset: [0, 1.4, 0] },
+      ],
     },
   },
 
@@ -1018,6 +1078,9 @@ export const CATALOG_ITEMS: AssetInput[] = [
     tags: ['floor', 'vehicle', 'car'],
     ...supabase('1967-chevrolet-camaro-moa24wsf'),
     dimensions: [1.9, 1.4, 4.8],
+    offset: [0.0207, 0.6894, 0.0021],
+    rotation: [0, Math.PI / 2, 0],
+    scale: [4.811, 4.7092, 4.119],
   },
   {
     id: 'car-toy',
@@ -1495,7 +1558,6 @@ export function getDefaultCatalogItem(category: string | null | undefined): Asse
   if (!category) return null
   return CATALOG_ITEMS.find((item) => item.category === category) ?? CATALOG_ITEMS[0] ?? null
 }
-
 
 export function findCatalogItem(id: string): AssetInput | undefined {
   return CATALOG_ITEMS.find((item) => item.id === id)

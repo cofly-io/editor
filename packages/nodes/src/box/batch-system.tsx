@@ -7,6 +7,7 @@ import {
   emitter,
   type NodeEvent,
   sceneRegistry,
+  useLiveTransforms,
   useScene,
 } from '@pascal-app/core'
 import {
@@ -104,7 +105,13 @@ function emitNodeEvent(
   emitter.emit(`box:${suffix}`, payload as never)
 }
 
-function BoxBatchMesh({ batch }: { batch: BoxBatch }) {
+function BoxBatchMesh({
+  batch,
+  hasLiveTransforms,
+}: {
+  batch: BoxBatch
+  hasLiveTransforms: boolean
+}) {
   const meshRef = useRef<THREE.InstancedMesh>(null)
   const lastClickRef = useRef<{ time: number; x: number; y: number; instanceId: number } | null>(
     null,
@@ -131,6 +138,7 @@ function BoxBatchMesh({ batch }: { batch: BoxBatch }) {
   }, [batch.nodes, shading])
 
   const applyMatrices = useCallback(() => {
+    void shading
     const mesh = meshRef.current
     if (!mesh) return false
 
@@ -150,7 +158,7 @@ function BoxBatchMesh({ batch }: { batch: BoxBatch }) {
     mesh.computeBoundingBox()
     mesh.computeBoundingSphere()
     return complete
-  }, [nodesByIndex])
+  }, [nodesByIndex, shading])
 
   useLayoutEffect(() => {
     applyMatrices()
@@ -158,8 +166,11 @@ function BoxBatchMesh({ batch }: { batch: BoxBatch }) {
 
   const needsRegistryWarmup = useRef(true)
   useFrame(() => {
-    if (!needsRegistryWarmup.current) return
-    needsRegistryWarmup.current = !applyMatrices()
+    if (needsRegistryWarmup.current) {
+      needsRegistryWarmup.current = !applyMatrices()
+      return
+    }
+    if (hasLiveTransforms) applyMatrices()
   }, 19)
 
   useLayoutEffect(() => () => geometry.dispose(), [geometry])
@@ -264,6 +275,7 @@ export default function BoxBatchSystem() {
   const selection = useViewer((state) => state.selection)
   const previewSelectedIds = useViewer((state) => state.previewSelectedIds)
   const hoveredId = useViewer((state) => state.hoveredId)
+  const hasLiveTransforms = useLiveTransforms((state) => state.transforms.size > 0)
 
   const excludedIds = useMemo(() => {
     const ids = new Set<string>()
@@ -281,7 +293,7 @@ export default function BoxBatchSystem() {
   return (
     <>
       {batches.map((batch) => (
-        <BoxBatchMesh batch={batch} key={batch.key} />
+        <BoxBatchMesh batch={batch} hasLiveTransforms={hasLiveTransforms} key={batch.key} />
       ))}
     </>
   )

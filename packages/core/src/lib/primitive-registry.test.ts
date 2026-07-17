@@ -14,7 +14,9 @@ describe('primitive registry', () => {
     expect(normalizePrimitiveKindFromRegistry('\u534a\u5706\u5f62\u7403')).toBe('hemisphere')
     expect(normalizePrimitiveKindFromRegistry('semi sphere')).toBe('hemisphere')
     expect(normalizePrimitiveKindFromRegistry('金字塔')).toBe('pyramid')
+    expect(normalizePrimitiveKindFromRegistry('\u5706\u76d8')).toBe('disk')
     expect(primitiveCapabilitySummary()).toContain('pyramid -> cone')
+    expect(primitiveCapabilitySummary()).toContain('disk -> cylinder')
   })
 
   test('lowers derived primitives to canonical renderable shapes', () => {
@@ -32,7 +34,15 @@ describe('primitive registry', () => {
       height: 0.5,
     })
 
+    const disk = lowerDerivedPrimitiveShape({
+      kind: 'disk',
+      position: [0, 0, 0],
+      radius: 0.75,
+      thickness: 0.05,
+    })
+
     expect(pyramid).toMatchObject({ kind: 'cone', radialSegments: 4 })
     expect(ellipsoid).toMatchObject({ kind: 'sphere', scale: [1, 0.25, 0.5] })
+    expect(disk).toMatchObject({ kind: 'cylinder', radius: 0.75, height: 0.05, axis: 'y' })
   })
 })

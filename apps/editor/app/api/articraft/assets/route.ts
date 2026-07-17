@@ -117,7 +117,10 @@ async function exportModelGlb(
   thumbnailPath: string,
   floorPlanPath: string,
 ) {
-  const articraftRoot = path.join(repoRoot, 'articraft')
+  const configuredArticraftRoot = process.env.ARTICRAFT_REPO_ROOT?.trim()
+  const articraftRoot = configuredArticraftRoot
+    ? path.resolve(configuredArticraftRoot)
+    : path.join(repoRoot, 'articraft')
   const modernCli = path.join(articraftRoot, 'cli', 'main.py')
   if (!(await exists(modernCli))) {
     throw new Error(

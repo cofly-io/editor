@@ -56,6 +56,21 @@ describe('part registry', () => {
     )
   })
 
+  test('registers pipe racks for industry-pack profiles', () => {
+    const pipeRack = getPartCapabilityMetadata('pipe_system').find(
+      (part) => part.kind === 'pipe_rack',
+    )
+
+    expect(pipeRack).toEqual(
+      expect.objectContaining({
+        id: 'pipe_system.pipe_rack',
+        semanticRole: 'pipe_rack_support_frame',
+        dimensionProperties: expect.arrayContaining(['length', 'width', 'height', 'radius']),
+        quantityProperties: expect.arrayContaining(['count']),
+      }),
+    )
+  })
+
   test('exposes independent fan blade arrays for editable fan profiles', () => {
     const metadata = getPartCapabilityMetadata('fan')
     const blade = metadata.find((part) => part.kind === 'fan_blade')

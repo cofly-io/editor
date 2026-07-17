@@ -48,10 +48,10 @@ const INDUSTRIAL_VERTICAL_NUDGE_TYPES = new Set([
 ])
 
 function getPlanNudgeDelta(key: string, step: number): [number, number, number] | null {
-  if (key === 'ArrowLeft') return [-step, 0, 0]
-  if (key === 'ArrowRight') return [step, 0, 0]
-  if (key === 'ArrowUp') return [0, 0, -step]
-  if (key === 'ArrowDown') return [0, 0, step]
+  if (key === 'ArrowLeft') return [0, 0, step]
+  if (key === 'ArrowRight') return [0, 0, -step]
+  if (key === 'ArrowUp') return [-step, 0, 0]
+  if (key === 'ArrowDown') return [step, 0, 0]
   return null
 }
 

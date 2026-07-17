@@ -23,6 +23,7 @@ import {
 import type { GeneratedGeometryArtifact } from '../../../../packages/editor/src/lib/ai-generated-geometry-core'
 import { persistDeviceProfileCandidateFromArtifact } from '../device-profile-candidates'
 import { loadDeviceProfiles } from '../device-profiles'
+import { generateAssetComponentArtifact } from './asset-component-generator-runner'
 import { type IndustryPackRef, resolveIndustryPackDir } from './industry-factory-knowledge'
 import { basicPrimitiveDeterministicRoute } from './primitive-basic-routes'
 import { precisionPartDeterministicRoute } from './primitive-precision-routes'
@@ -133,6 +134,65 @@ function isAbortError(error: unknown) {
 
 function throwIfAborted(signal: AbortSignal) {
   if (signal.aborted) throw new DOMException('Primitive generation cancelled', 'AbortError')
+}
+
+function assetComponentGeneratorForProfile(profile: {
+  layoutHints?: Record<string, unknown>
+  defaultDimensions?: { length?: number; width?: number; height?: number }
+}) {
+  const generator = profile.layoutHints?.assetComponentGenerator
+  if (!isRecord(generator)) return undefined
+  const componentPack =
+    typeof generator.componentPack === 'string' ? generator.componentPack : undefined
+  const generatorId = typeof generator.generator === 'string' ? generator.generator : undefined
+  if (!componentPack || !generatorId) return undefined
+  return {
+    componentPack,
+    generator: generatorId,
+    params: isRecord(generator.params) ? generator.params : {},
+    expectedDimensions: profile.defaultDimensions,
+  }
+}
+
+async function executeAssetComponentGeneratorRoute(input: {
+  runId: string
+  userPrompt: string
+  profile: {
+    id: string
+    name: string
+    layoutHints?: Record<string, unknown>
+    defaultDimensions?: { length?: number; width?: number; height?: number }
+  }
+  signal: AbortSignal
+  progressRoute: string
+}) {
+  const generator = assetComponentGeneratorForProfile(input.profile)
+  if (!generator) return undefined
+  await appendRunEvent(input.runId, {
+    type: 'tool-call',
+    message: 'asset_component_generator',
+    data: { name: 'asset_component_generator', arguments: generator },
+  })
+  throwIfAborted(input.signal)
+  const artifact = generateAssetComponentArtifact({
+    profileId: input.profile.id,
+    name: input.profile.name,
+    userPrompt: input.userPrompt,
+    ...generator,
+  })
+  if (!artifact) return undefined
+  const content = `Generated ${artifact.shapes.length} parts with ${generator.componentPack}/${generator.generator}.`
+  await appendRunEvent(input.runId, {
+    type: 'tool-result',
+    message: content,
+    data: { name: 'asset_component_generator', artifact },
+  })
+  await appendRunEvent(input.runId, {
+    type: 'progress',
+    message: content,
+    data: { stage: 'generate', route: input.progressRoute, results: [content], artifact },
+  })
+  return { artifact, content }
 }
 
 async function markRunCancelled(runId: string, message = 'cancelled') {
@@ -778,7 +838,7 @@ async function runPrimitiveRun(runId: string) {
         deterministicSucceeded: false,
         stage2Called: false,
         family: editableRevisionProfile.family,
-        deterministicTool: 'compose_parts',
+        deterministicTool: 'asset_component_generator',
         stage2ToolCallCount: 0,
         repairCallCount: 0,
       }
@@ -937,7 +997,9 @@ async function runPrimitiveRun(runId: string) {
         profile.overrides?.some((entry) => entry.source === 'builtin')
           ? 'This profile overrides a builtin fallback profile.'
           : undefined,
-        'Using deterministic compose_parts route before LLM Stage2.',
+        assetComponentGeneratorForProfile(profile)
+          ? 'Using the industry-pack component generator before LLM Stage2.'
+          : 'Using deterministic compose_parts fallback before LLM Stage2.',
       ]
         .filter(Boolean)
         .join('\n')
@@ -953,20 +1015,32 @@ async function runPrimitiveRun(runId: string) {
           overrodeBuiltin: profile.overrides?.some((entry) => entry.source === 'builtin') === true,
         },
       })
-      const directResult = await executeDirectGeometryRoute({
+      const componentResult = await executeAssetComponentGeneratorRoute({
         runId,
-        toolName: 'compose_parts',
-        args: profileArgs,
         userPrompt,
-        revisionTarget,
-        blueprint: null,
-        loadedDeviceProfiles,
+        profile,
         signal,
         progressRoute: 'profile',
-        progressResults: [],
-        toolCallData: { deterministic: true },
-        toolResultData: { deterministic: true },
       })
+      const directResult =
+        componentResult ??
+        (await executeDirectGeometryRoute({
+          runId,
+          toolName: 'compose_parts',
+          args: profileArgs,
+          userPrompt,
+          revisionTarget,
+          blueprint: null,
+          loadedDeviceProfiles,
+          signal,
+          progressRoute: 'profile',
+          progressResults: [],
+          toolCallData: { deterministic: true, fallback: 'asset_component_generator_unavailable' },
+          toolResultData: {
+            deterministic: true,
+            fallback: 'asset_component_generator_unavailable',
+          },
+        }))
       const directResults = [directResult.content]
 
       if (directResult.artifact) {

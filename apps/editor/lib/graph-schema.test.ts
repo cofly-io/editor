@@ -72,6 +72,13 @@ function makeGeneratedPumpGraph() {
 }
 
 describe('apiGraphSchema diagnostics', () => {
+  test('rejects a node whose parent is absent from the graph', () => {
+    const graph = makeGeneratedPumpGraph()
+    delete graph.nodes.level_generated_save
+
+    expect(apiGraphSchema.safeParse(graph).success).toBe(false)
+  })
+
   test('reports invalid generated node details by node id, type, path, and message', () => {
     const graph = makeGeneratedPumpGraph()
     graph.nodes.box_pump_base = { ...graph.nodes.box_pump_base, length: -1 }

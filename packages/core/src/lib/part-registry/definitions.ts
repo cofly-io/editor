@@ -1598,6 +1598,25 @@ export const ELECTRICAL_PART_DEFINITIONS: readonly PartDefinition[] = [
 
 export const PIPE_SYSTEM_PART_DEFINITIONS: readonly PartDefinition[] = [
   {
+    id: 'pipe_system.pipe_rack',
+    family: 'pipe_system',
+    kind: 'pipe_rack',
+    semanticRole: 'pipe_rack_support_frame',
+    aliases: ['pipe_rack', 'pipe rack', 'process_pipe_rack', '管廊', '主管廊'],
+    required: true,
+    layoutRole: 'pipe_rack',
+    description: 'Elevated structural frame carrying parallel process pipe runs.',
+    params: {
+      length: { type: 'number', min: 0.3, max: 6, default: 1.4 },
+      width: { type: 'number', min: 0.12, max: 2.5, default: 0.5 },
+      height: { type: 'number', min: 0.2, max: 3, default: 0.7 },
+      count: { type: 'integer', min: 1, max: 8, default: 3 },
+      radius: { type: 'number', min: 0.006, max: 0.12, default: 0.025 },
+      primaryColor: { type: 'color', default: '#64748b' },
+      metalColor: { type: 'color', default: '#94a3b8' },
+    },
+  },
+  {
     id: 'pipe_system.pipe_run',
     family: 'pipe_system',
     kind: 'pipe_run',

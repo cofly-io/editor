@@ -1,5 +1,6 @@
 import type { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { createDefaultSceneGraph, isEmptySceneGraph } from '@/lib/default-scene-graph'
 import { apiGraphSchema, diagnoseApiGraph } from '@/lib/graph-schema'
 import { guardSceneApiRequest, sceneApiJson, sceneApiPreflight } from '@/lib/scene-api-security'
 import { getSceneOperations } from '@/lib/scene-store-server'
@@ -84,11 +85,14 @@ export async function POST(request: NextRequest) {
 
   const operations = await getSceneOperations()
   try {
+    const graph = isEmptySceneGraph(parsed.data.graph)
+      ? createDefaultSceneGraph()
+      : parsed.data.graph
     const meta = await operations.saveScene({
       id: parsed.data.id,
       name: parsed.data.name,
       projectId: parsed.data.projectId ?? null,
-      graph: parsed.data.graph as never,
+      graph: graph as never,
       thumbnailUrl: parsed.data.thumbnailUrl ?? null,
     })
     return sceneApiJson(request, meta, {

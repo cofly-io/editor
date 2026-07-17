@@ -34,6 +34,7 @@ export function primitivePatternInstances(metadata: unknown): PrimitivePatternIn
 export function primitiveBatchDisabled(metadata: unknown): boolean {
   if (!isRecord(metadata)) return false
   if (metadata.disablePrimitiveBatch === true) return true
+  if (typeof metadata.equipmentRootId === 'string') return true
   const bridge = metadata.articraftBridge
   return isRecord(bridge) && bridge.role === 'visual'
 }

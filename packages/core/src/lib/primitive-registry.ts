@@ -241,6 +241,28 @@ export const PRIMITIVE_DEFINITIONS: readonly PrimitiveDefinition[] = [
     },
   },
   {
+    kind: 'disk',
+    aliases: [
+      'disc',
+      'circle',
+      'circular-disc',
+      'round-plate',
+      '\u5706\u76d8',
+      '\u5706\u7247',
+      '\u5706\u997c',
+      '\u5706\u76d8\u5f62',
+      '\u5706\u5f62\u677f',
+    ],
+    derivedFrom: 'cylinder',
+    description: 'Thin solid circular disk lowered to a cylinder.',
+    params: {
+      radius: { type: 'number', min: 0.001 },
+      thickness: { type: 'number', min: 0.001, default: 0.04 },
+      axis: { type: 'string', values: ['x', 'y', 'z'] },
+      radialSegments: { type: 'integer', min: 8, max: 96, default: 48 },
+    },
+  },
+  {
     kind: 'semi-ellipse-panel',
     aliases: [
       'half-ellipse',
@@ -365,6 +387,16 @@ export function primitiveCapabilitySummary(): string {
 
 export function lowerDerivedPrimitiveShape(shape: PrimitiveShapeInput): PrimitiveShapeInput {
   const kind = normalizePrimitiveKindFromRegistry(shape.kind)
+  if (kind === 'disk') {
+    return {
+      ...shape,
+      kind: 'cylinder',
+      height: numberValue(shape.thickness, shape.depth, shape.height) ?? 0.04,
+      axis: shape.axis ?? 'y',
+      radialSegments: integerValue(shape.radialSegments, 48, 8, 96),
+    }
+  }
+
   if (kind === 'ellipsoid') {
     const length = numberValue(shape.length, shape.width)
     const height = numberValue(shape.height)

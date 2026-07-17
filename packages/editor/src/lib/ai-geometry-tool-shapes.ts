@@ -99,7 +99,9 @@ export function normalizeGeometryToolShapes(
       ? (rawHeight ?? rawLength ?? rawDepth ?? rawWheelWidth ?? rawWidth ?? size?.[1])
       : (rawHeight ?? size?.[1])
     const normalizedThickness =
-      kind === 'rounded-panel' ? (rawThickness ?? rawHeight ?? size?.[1]) : rawThickness
+      kind === 'rounded-panel' || kind === 'disk'
+        ? (rawThickness ?? rawHeight ?? size?.[1])
+        : rawThickness
     const normalizedDepth = kind === 'extrude' ? (rawDepth ?? rawWidth ?? size?.[2]) : rawDepth
     const rawDiameter = read('diameter')
     const diameter =
@@ -113,7 +115,8 @@ export function normalizeGeometryToolShapes(
       kind === 'capsule' ||
       kind === 'half-cylinder' ||
       kind === 'sphere' ||
-      kind === 'hemisphere'
+      kind === 'hemisphere' ||
+      kind === 'disk'
     const radius =
       (read('radius') as number | undefined) ??
       (radiusKind && diameter != null ? diameter / 2 : undefined)

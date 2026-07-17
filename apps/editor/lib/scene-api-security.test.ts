@@ -35,6 +35,45 @@ test('requires a token for non-loopback scene API requests', async () => {
   expect(await response?.json()).toEqual({ error: 'scene_api_token_required' })
 })
 
+test('allows browser requests from the same forwarded origin without a token', () => {
+  delete process.env.PASCAL_SCENE_API_TOKEN
+  const request = new Request('http://editor:3000/api/scenes', {
+    headers: {
+      host: 'editor:3000',
+      origin: 'https://editor.example',
+      'x-forwarded-host': 'editor.example',
+      'x-forwarded-proto': 'https',
+    },
+  })
+
+  expect(guardSceneApiRequest(request)).toBeNull()
+})
+
+test('allows same-origin browser requests without an Origin header', () => {
+  delete process.env.PASCAL_SCENE_API_TOKEN
+  const request = new Request('http://editor:3000/api/scenes/scene/events', {
+    headers: {
+      host: 'editor:3000',
+      'sec-fetch-site': 'same-origin',
+    },
+  })
+
+  expect(guardSceneApiRequest(request)).toBeNull()
+})
+
+test('allows browser event requests from an allowed Referer without an Origin header', () => {
+  delete process.env.PASCAL_SCENE_API_TOKEN
+  process.env.PASCAL_SCENE_API_ORIGINS = 'https://editor.example'
+  const request = new Request('http://editor:3000/api/scenes/scene/events', {
+    headers: {
+      host: 'editor:3000',
+      referer: 'https://editor.example/scene/scene',
+    },
+  })
+
+  expect(guardSceneApiRequest(request)).toBeNull()
+})
+
 test('accepts bearer token auth when configured', () => {
   process.env.PASCAL_SCENE_API_TOKEN = 'secret'
   const request = new Request('https://editor.example/api/scenes', {

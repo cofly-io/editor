@@ -11,7 +11,7 @@ import {
   resolveEditableSchemaForProfile,
   validateDeviceProfileDefinition,
 } from '@pascal-app/core/lib/device-profile-registry'
-import { loadAssetIndustryPackResourcesSync } from './asset-industry-packs'
+import { isAssetIndustryPackDir, loadAssetIndustryPackResourcesSync } from './asset-industry-packs'
 import { installedAssetIndustryPackDirs } from './asset-packs'
 import { findRepoRoot } from './generated-assets/manifest'
 import { enabledProfilePackDirs, validateProfilePackDir } from './profile-packs'
@@ -301,6 +301,22 @@ function mappedAssetRole(role: string | undefined) {
 
 function assetProfilePartFallbacks(raw: Record<string, unknown>) {
   const generator = assetGeneratorId(raw)
+  const dimensions = recordValue(raw.defaultDimensions)
+  const params = recordValue(raw.params)
+  const length =
+    typeof params?.length === 'number' && params.length > 0
+      ? params.length
+      : typeof dimensions?.length === 'number' && dimensions.length > 0
+        ? dimensions.length
+        : undefined
+  const radius =
+    typeof params?.radius === 'number' && params.radius > 0
+      ? params.radius
+      : typeof dimensions?.width === 'number' && dimensions.width > 0
+        ? dimensions.width / 2
+        : typeof dimensions?.height === 'number' && dimensions.height > 0
+          ? dimensions.height / 2
+          : undefined
   const primary = mappedAssetRole(
     typeof raw.primarySemanticRole === 'string' ? raw.primarySemanticRole : undefined,
   )
@@ -309,13 +325,46 @@ function assetProfilePartFallbacks(raw: Record<string, unknown>) {
     case 'vessel.horizontal':
       return [
         {
-          kind: generator === 'tank.vertical' ? 'storage_tank_shell' : 'cylindrical_tank',
+          kind: 'cylindrical_tank',
           semanticRole: 'vessel_shell',
         },
-        { kind: 'liquid_volume', semanticRole: 'liquid_volume', required: false },
         { kind: 'flanged_nozzle', semanticRole: 'inlet_port', required: false },
         { kind: 'flanged_nozzle', semanticRole: 'outlet_port', required: false },
         { kind: 'platform_ladder', semanticRole: 'access_ladder', required: false },
+      ]
+    case 'kiln.rotary':
+      return [
+        {
+          kind: 'cylindrical_tank',
+          semanticRole: 'kiln_shell',
+          required: true,
+          ...(length ? { length } : {}),
+          ...(radius ? { radius } : {}),
+        },
+        {
+          kind: 'flange_ring',
+          semanticRole: 'riding_ring',
+          attachToRole: 'kiln_shell',
+          arrayAlong: 'length',
+          count: 3,
+        },
+        {
+          kind: 'bearing_block',
+          semanticRole: 'support_roller',
+          attachToRole: 'kiln_shell',
+          arrayAlong: 'length',
+          count: 3,
+        },
+        {
+          kind: 'flange_ring',
+          semanticRole: 'girth_gear',
+          attachToRole: 'kiln_shell',
+        },
+        {
+          kind: 'motor_gearbox_unit',
+          semanticRole: 'kiln_drive_unit',
+          attachToRole: 'kiln_shell',
+        },
       ]
     case 'tower.distillation':
       return [
@@ -374,6 +423,7 @@ function assetProfilePartFallbacks(raw: Record<string, unknown>) {
 function assetProfileArchetype(raw: Record<string, unknown>) {
   const generator = assetGeneratorId(raw)
   if (generator === 'pump.centrifugal') return 'rotating_fluid_machine'
+  if (generator === 'kiln.rotary') return 'thermal_equipment'
   if (
     generator === 'pipe-rack.standard' ||
     generator === 'pipe.run' ||
@@ -381,7 +431,11 @@ function assetProfileArchetype(raw: Record<string, unknown>) {
   ) {
     return 'pipe_valve_system'
   }
-  if (generator === 'heat-exchanger.shell' || generator === 'heater.fired' || generator === 'boiler.utility')
+  if (
+    generator === 'heat-exchanger.shell' ||
+    generator === 'heater.fired' ||
+    generator === 'boiler.utility'
+  )
     return 'thermal_equipment'
   if (
     generator === 'tank.vertical' ||
@@ -393,11 +447,48 @@ function assetProfileArchetype(raw: Record<string, unknown>) {
   return 'generic_industrial'
 }
 
+function assetProfileLayoutFamily(raw: Record<string, unknown>) {
+  switch (assetGeneratorId(raw)) {
+    case 'kiln.rotary':
+    case 'mill.vertical':
+    case 'mill.ball-cement':
+    case 'pump.centrifugal':
+    case 'turbine.generator':
+      return 'rotating_machine_layout'
+    case 'tank.vertical':
+    case 'vessel.horizontal':
+    case 'tower.distillation':
+      return 'vessel_layout'
+    case 'pipe-rack.standard':
+    case 'pipe.run':
+    case 'platform.stair':
+      return 'linear_transport_layout'
+    default:
+      return 'generic_industrial_layout'
+  }
+}
+
+function assetProfileAliases(raw: Record<string, unknown>) {
+  const id = typeof raw.id === 'string' ? raw.id : undefined
+  const builtIn = id === 'cement.rotary_kiln' ? ['rotary kiln', '回转窑', '水泥窑'] : []
+  return [
+    ...(id ? [id, id.split('.').pop() ?? id] : []),
+    ...(typeof raw.name === 'string' ? [raw.name] : []),
+    ...(Array.isArray(raw.aliases)
+      ? raw.aliases.filter(
+          (alias): alias is string => typeof alias === 'string' && alias.trim().length > 0,
+        )
+      : []),
+    ...builtIn,
+  ]
+}
+
 function normalizeAssetIndustryProfile(
   raw: Record<string, unknown>,
   sourcePack: { id: string; version: string; industry: string },
 ) {
   const params = recordValue(raw.params)
+  const generatorRef = recordValue(raw.generatorRef)
   const primarySemanticRole = mappedAssetRole(
     typeof raw.primarySemanticRole === 'string' ? raw.primarySemanticRole : undefined,
   )
@@ -409,15 +500,26 @@ function normalizeAssetIndustryProfile(
     : []
   return {
     ...raw,
-    ...(typeof raw.family === 'string' ? { family: raw.family } : {}),
+    family: 'generic',
+    layoutFamily: assetProfileLayoutFamily(raw),
     archetypeFamily: assetProfileArchetype(raw),
+    layoutHints: {
+      ...(recordValue(raw.layoutHints) ?? {}),
+      ...(typeof generatorRef?.componentPack === 'string' &&
+      typeof generatorRef.generator === 'string'
+        ? {
+            assetComponentGenerator: {
+              componentPack: generatorRef.componentPack,
+              generator: generatorRef.generator,
+              params: params ?? {},
+            },
+          }
+        : {}),
+    },
     primarySemanticRole,
     parts: assetProfilePartFallbacks(raw),
     sourcePack,
-    aliases: [
-      ...(typeof raw.id === 'string' ? [raw.id, raw.id.split('.').pop() ?? raw.id] : []),
-      ...(typeof raw.name === 'string' ? [raw.name] : []),
-    ],
+    aliases: assetProfileAliases(raw),
     description:
       typeof raw.description === 'string'
         ? raw.description
@@ -480,11 +582,15 @@ export async function loadDeviceProfiles(
     },
   ]
   const loaded = await Promise.all(sourceDirs.map(loadProfilesFromDir))
+  const assetIndustryExtraPackDirs = extraPackDirs.filter(isAssetIndustryPackDir)
+  const profilePackExtraDirs = extraPackDirs.filter((dir) => !isAssetIndustryPackDir(dir))
   const enabledPacks = await Promise.all(
-    [...enabledPackDirs, ...extraPackDirs].map(loadProfilesFromPackDir),
+    [...enabledPackDirs, ...profilePackExtraDirs].map(loadProfilesFromPackDir),
   )
   const assetIndustryPacks = await Promise.all(
-    [...assetIndustryPackDirs].map(loadProfilesFromAssetIndustryPackDir),
+    [...assetIndustryPackDirs, ...assetIndustryExtraPackDirs].map(
+      loadProfilesFromAssetIndustryPackDir,
+    ),
   )
   const packResources: NonNullable<LoadedDeviceProfiles['knowledgeResources']> = {
     layouts: enabledPacks.flatMap((entry) => entry.knowledgeResources?.layouts ?? []),

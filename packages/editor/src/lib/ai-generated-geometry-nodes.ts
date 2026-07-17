@@ -1,4 +1,9 @@
-import { extractPrimitiveShapeContract, type Vec3 } from '@pascal-app/core/lib/primitive-compose'
+import {
+  extractPrimitiveShapeContract,
+  resolvePrimitiveWorldTransforms,
+  type PrimitiveShapeInput,
+  type Vec3,
+} from '@pascal-app/core/lib/primitive-compose'
 import {
   type AnyNode,
   type AnyNodeId,
@@ -113,7 +118,9 @@ function shapeRotation(input: {
   shape: ShapeSpec
   shapeIndex: number
 }) {
-  return input.artifact.transforms[input.shapeIndex]?.rotation ?? input.shape.rotation
+  const transformRotation = input.artifact.transforms[input.shapeIndex]?.rotation
+  if (transformRotation) return transformRotation
+  return resolvePrimitiveWorldTransforms([input.shape as PrimitiveShapeInput])[0]?.rotation ?? input.shape.rotation
 }
 
 function isTankShellShape(shape: ShapeSpec) {
@@ -180,7 +187,7 @@ function generatedTankLevelGeometry(
     diameter: radius * 2,
     length,
     position: localCenter,
-    rotation: shell.shape.rotation,
+    rotation,
     source: 'generated-geometry',
     shellShapeIndex: shell.shapeIndex,
   }
@@ -326,7 +333,7 @@ export function buildGeneratedGeometryNodes(artifact: GeneratedGeometryArtifact)
     if (!shape) continue
 
     const worldPosition = transform?.position ?? shape.position
-    const rotation = transform?.rotation ?? shape.rotation ?? [0, 0, 0]
+    const rotation = shapeRotation({ artifact, shape, shapeIndex: i }) ?? [0, 0, 0]
     const position = toAssemblyLocalPosition(worldPosition, artifact.assemblyPosition)
     const displayName = shape.name ?? shape.kind
 
@@ -637,8 +644,10 @@ export function markGeneratedPlacementDraft<T extends AnyNode>(node: T): T {
 
   return {
     ...node,
+    visible: false,
     metadata: {
       ...metadata,
+      disablePrimitiveBatch: true,
       isNew: true,
     },
   }
@@ -765,6 +774,11 @@ function withEquipmentChildMetadata(
       equipmentRootId: input.rootId,
       partGroupId,
       partGroupLabel,
+      // Batched primitive bases cannot participate in the Assembly's
+      // part-level pointer lifecycle. Keep generated Assembly parts as
+      // individual render objects so clicks select the Assembly and a
+      // double-click can enter the exact part.
+      disablePrimitiveBatch: true,
     }),
   )
 }

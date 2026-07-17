@@ -3,6 +3,7 @@ import type { GeneratedGeometryArtifact } from './ai-generated-geometry-core'
 import {
   buildGeneratedGeometryCreatePatches,
   buildGeneratedGeometryNodes,
+  markGeneratedPlacementDraft,
 } from './ai-generated-geometry-nodes'
 
 type EquipmentContractMetadata = {
@@ -70,6 +71,11 @@ describe('ai generated geometry nodes', () => {
     expect(plan.patches[1]?.parentId).toBe(plan.rootNode?.id)
     expect(plan.patches[2]?.parentId).toBe(plan.rootNode?.id)
     expect(plan.nodeIds).toEqual(plan.patches.map((patch) => patch.node.id))
+    expect(plan.childNodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ metadata: expect.objectContaining({ disablePrimitiveBatch: true }) }),
+      ]),
+    )
   })
 
   test('strips undefined values from generated metadata before node validation', () => {
@@ -135,6 +141,30 @@ describe('ai generated geometry nodes', () => {
       position: [0, 14.26, 0],
       height: 28,
     })
+  })
+
+  test('applies a primitive axis rotation before a generated cylinder first renders', () => {
+    const { createdNodes } = buildGeneratedGeometryNodes(
+      artifact({
+        shapes: [
+          {
+            kind: 'hollow-cylinder',
+            name: 'rotary kiln shell',
+            position: [10, 1.2, 20],
+            rotation: [0, 0, 0],
+            axis: 'x',
+            radius: 0.4,
+            height: 6,
+            wallThickness: 0.04,
+          },
+        ],
+        transforms: [],
+        createdNames: ['rotary kiln shell'],
+      }),
+    )
+
+    expect(createdNodes[0]).toMatchObject({ type: 'cylinder', position: [0, 1.2, 0] })
+    expect((createdNodes[0] as { rotation: number[] }).rotation[2]).toBeCloseTo(-Math.PI / 2)
   })
 
   test('preserves generated shape selectors on child node metadata', () => {
@@ -318,6 +348,16 @@ describe('ai generated geometry nodes', () => {
     expect(plan.patches[0]?.node.type).toBe('box')
     expect(plan.childNodes).toEqual([rootNode])
     expect(plan.nodeIds).toEqual([rootNode.id])
+  })
+
+  test('hides a generated placement draft until the pointer enters the canvas', () => {
+    const plan = buildGeneratedGeometryCreatePatches(artifact())
+    const draft = markGeneratedPlacementDraft(plan.rootNode!)
+
+    expect(draft).toMatchObject({
+      visible: false,
+      metadata: { disablePrimitiveBatch: true, isNew: true },
+    })
   })
 
   test('adds dynamic level geometry metadata for generated storage tank shells', () => {

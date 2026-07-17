@@ -16,14 +16,23 @@ describe('shared asset catalog', () => {
   })
 
   test('category filters also match catalog tags for legacy MCP queries', () => {
-    expect(searchCatalogItems({ query: 'bed', category: 'furniture' }).map((item) => item.id)).toContain(
-      'double-bed',
-    )
+    expect(
+      searchCatalogItems({ query: 'bed', category: 'furniture' }).map((item) => item.id),
+    ).toContain('double-bed')
   })
 
   test('catalog item assets are accepted by item nodes', () => {
     const asset = findCatalogItem('factory-electric-box')
     expect(asset).toBeDefined()
     expect(() => ItemNode.parse({ asset })).not.toThrow()
+  })
+
+  test('calibrates the Camaro model to its declared vehicle footprint', () => {
+    expect(findCatalogItem('1967-chevrolet-camaro-moa24wsf')).toMatchObject({
+      dimensions: [1.9, 1.4, 4.8],
+      offset: [0.0207, 0.6894, 0.0021],
+      rotation: [0, Math.PI / 2, 0],
+      scale: [4.811, 4.7092, 4.119],
+    })
   })
 })

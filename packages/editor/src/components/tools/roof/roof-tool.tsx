@@ -18,6 +18,7 @@ import { EDITOR_LAYER } from '../../../lib/constants'
 import { sfxEmitter } from '../../../lib/sfx-bus'
 import useEditor from '../../../store/use-editor'
 import { CursorSphere } from '../shared/cursor-sphere'
+import { getDefaultRoofPlacementY } from './roof-placement-height'
 
 const DEFAULT_WALL_HEIGHT = 0.5
 const DEFAULT_ROOF_HEIGHT = 2.5
@@ -104,7 +105,7 @@ const commitRoofPlacement = (
   // Create the roof container
   const roof = RoofNode.parse({
     name,
-    position: [centerX, 0, centerZ],
+    position: [centerX, getDefaultRoofPlacementY(levelId, nodes), centerZ],
     children: [segment.id],
   })
 

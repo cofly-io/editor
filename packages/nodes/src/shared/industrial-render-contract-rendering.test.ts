@@ -108,6 +108,7 @@ describe('industrial render contract rendering', () => {
       }),
     ).toBe(false)
     expect(primitiveBatchDisabled({ disablePrimitiveBatch: true })).toBe(true)
+    expect(primitiveBatchDisabled({ equipmentRootId: 'generated_bicycle' })).toBe(true)
     expect(primitiveBatchDisabled({})).toBe(false)
   })
 })

@@ -82,6 +82,7 @@ export const COMPOSE_PRIMITIVE_TOOL = {
                   'capsule',
                   'half-cylinder',
                   'rounded-panel',
+                  'disk',
                   'ellipsoid',
                   'ellipse-panel',
                   'semi-ellipse-panel',
@@ -90,7 +91,7 @@ export const COMPOSE_PRIMITIVE_TOOL = {
                   'sweep',
                 ],
                 description:
-                  'Primitive type. box=solid cuboid, rounded-panel=thin bevelled rounded rectangle, cylinder=solid circular extrusion, hollow-cylinder=tube/pipe, cone=pointed circular cone, frustum=truncated cone/circular taper, hemisphere=closed dome, torus=ring/donut tube, wedge=sloped triangular prism, trapezoid-prism=tapered rectangular prism, capsule=rounded-ended bar, half-cylinder=semicircular extrusion, sphere/ellipsoid=scaled round body, ellipse-panel/semi-ellipse-panel=thin oval profiles, pyramid=square pyramid, lathe=revolved vertical profile, extrude=custom 2D profile with depth, sweep=tube along a 3D path.',
+                  'Primitive type. box=solid cuboid, disk=thin solid circular plate, rounded-panel=thin bevelled rounded rectangle, cylinder=solid circular extrusion, hollow-cylinder=tube/pipe, cone=pointed circular cone, frustum=truncated cone/circular taper, hemisphere=closed dome, torus=ring/donut tube, wedge=sloped triangular prism, trapezoid-prism=tapered rectangular prism, capsule=rounded-ended bar, half-cylinder=semicircular extrusion, sphere/ellipsoid=scaled round body, ellipse-panel/semi-ellipse-panel=thin oval profiles, pyramid=square pyramid, lathe=revolved vertical profile, extrude=custom 2D profile with depth, sweep=tube along a 3D path.',
               },
               position: {
                 type: 'array',
@@ -125,7 +126,7 @@ export const COMPOSE_PRIMITIVE_TOOL = {
               },
               thickness: {
                 type: 'number',
-                description: 'Rounded-panel thickness along local Y, in meters.',
+                description: 'Disk or rounded-panel thickness along its local axis, in meters.',
               },
               radius: { type: 'number', description: 'Cylinder/cone/sphere/hemisphere/capsule/torus fallback radius, in meters.' },
               radiusTop: { type: 'number', description: 'Frustum top radius, in meters.' },
@@ -1065,6 +1066,7 @@ const REVISION_SHAPE_SCHEMA = {
         'capsule',
         'half-cylinder',
         'rounded-panel',
+        'disk',
         'ellipsoid',
         'ellipse-panel',
         'semi-ellipse-panel',

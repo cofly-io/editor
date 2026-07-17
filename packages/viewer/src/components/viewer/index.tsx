@@ -146,6 +146,70 @@ function GPUDeviceWatcher() {
   return null
 }
 
+function RendererSizeSync() {
+  const gl = useThree((state) => state.gl)
+  const size = useThree((state) => state.size)
+  const setSize = useThree((state) => state.setSize)
+  const dpr = useThree((state) => state.viewport.dpr)
+  const invalidate = useThree((state) => state.invalidate)
+  const shading = useViewer((state) => state.shading)
+
+  useLayoutEffect(() => {
+    let frame: number | null = null
+
+    const syncRendererSize = () => {
+      frame = null
+
+      const canvas = gl.domElement
+      const rect = canvas.getBoundingClientRect()
+      const parentRect = canvas.parentElement?.getBoundingClientRect()
+      const width = Math.round(rect.width || parentRect?.width || size.width)
+      const height = Math.round(rect.height || parentRect?.height || size.height)
+
+      if (width < 1 || height < 1) return
+
+      if (Math.round(size.width) !== width || Math.round(size.height) !== height) {
+        setSize(width, height)
+      }
+
+      gl.setPixelRatio(dpr)
+      gl.setSize(width, height, false)
+      const bufferWidth = Math.max(1, Math.round(width * dpr))
+      const bufferHeight = Math.max(1, Math.round(height * dpr))
+      if (canvas.width !== bufferWidth || canvas.height !== bufferHeight) {
+        canvas.width = bufferWidth
+        canvas.height = bufferHeight
+        gl.setSize(width, height, false)
+      }
+      invalidate()
+    }
+
+    const scheduleSync = () => {
+      if (frame !== null) return
+      frame = requestAnimationFrame(syncRendererSize)
+    }
+
+    // Shading rebuilds the WebGPU pipeline, which must inherit the current Canvas size.
+    void shading
+    scheduleSync()
+
+    const observer = new ResizeObserver(scheduleSync)
+    observer.observe(gl.domElement)
+    if (gl.domElement.parentElement) {
+      observer.observe(gl.domElement.parentElement)
+    }
+    window.addEventListener('resize', scheduleSync)
+
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', scheduleSync)
+      if (frame !== null) cancelAnimationFrame(frame)
+    }
+  }, [dpr, gl, invalidate, setSize, shading, size.height, size.width])
+
+  return null
+}
+
 function SceneComplexityController() {
   useEffect(() => {
     let frame: number | null = null
@@ -490,7 +554,7 @@ const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(
   return (
     <Canvas
       camera={{ position: [50, 50, 50], fov: 50 }}
-      className={`transition-colors duration-700 ${
+      className={`[&_canvas]:h-full [&_canvas]:w-full transition-colors duration-700 ${
         transparentBackground ? 'bg-transparent' : isDark ? 'bg-[#1f2433]' : 'bg-[#fafafa]'
       }`}
       dpr={[1, maxDpr]}
@@ -544,6 +608,7 @@ const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(
       <SceneComplexityController />
       <ViewerCamera />
       <GPUDeviceWatcher />
+      <RendererSizeSync />
       <RendererRecoveryOverlay />
       <ToneMappingExposure />
       <ShadowMapSync />

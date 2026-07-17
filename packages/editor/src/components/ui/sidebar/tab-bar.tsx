@@ -25,7 +25,7 @@ export function TabBar({ tabs, activeTab, onTabChange }: TabBarProps) {
         return (
           <button
             className={cn(
-              'relative h-7 rounded-md px-3 font-medium text-sm transition-colors',
+              'relative h-7 rounded-md px-3 font-medium text-[12px] transition-colors',
               isActive
                 ? 'bg-accent text-foreground'
                 : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',

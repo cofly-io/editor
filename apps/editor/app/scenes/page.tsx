@@ -1,4 +1,3 @@
-import { headers } from 'next/headers'
 import Link from 'next/link'
 import { DeleteSceneButton } from '@/components/delete-scene-button'
 import { CreateSceneButton } from '@/components/save-button'
@@ -7,23 +6,18 @@ import { t } from '@/i18n'
 
 export const dynamic = 'force-dynamic'
 
-async function resolveBaseUrl(): Promise<string> {
-  if (process.env.NEXT_PUBLIC_APP_URL) {
-    return process.env.NEXT_PUBLIC_APP_URL
-  }
-  const h = await headers()
-  const host = h.get('x-forwarded-host') ?? h.get('host')
-  const proto = h.get('x-forwarded-proto') ?? 'http'
-  if (!host) {
-    return 'http://localhost:3000'
-  }
-  return `${proto}://${host}`
+function resolveBaseUrl(): string {
+  const configured = process.env.PASCAL_INTERNAL_APP_URL?.trim()
+  if (configured) return configured.replace(/\/$/, '')
+  return `http://127.0.0.1:${process.env.PORT ?? '3000'}`
 }
 
 async function fetchScenes(): Promise<SceneMeta[]> {
-  const base = await resolveBaseUrl()
+  const base = resolveBaseUrl()
+  const sceneApiToken = process.env.PASCAL_SCENE_API_TOKEN
   const response = await fetch(`${base}/api/scenes?limit=50`, {
     cache: 'no-store',
+    headers: sceneApiToken ? { 'x-pascal-scene-token': sceneApiToken } : undefined,
   })
   if (!response.ok) {
     return []

@@ -109,6 +109,7 @@ export function defaultGroundedPosition(
     case 'pyramid':
       return [0, height / 2, 0]
     case 'rounded-panel':
+    case 'disk':
     case 'ellipse-panel':
     case 'semi-ellipse-panel':
       return [0, positive(values.thickness ?? values.height, 0.04) / 2, 0]

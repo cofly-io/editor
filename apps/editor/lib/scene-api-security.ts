@@ -65,6 +65,9 @@ function validateOrigin(request: Request): NextResponse | null {
 function validateAuth(request: Request): NextResponse | null {
   const token = process.env.PASCAL_SCENE_API_TOKEN
   if (!token) {
+    const origin = request.headers.get('origin') ?? originFromReferer(request)
+    if (origin && isOriginAllowed(request, origin)) return null
+    if (request.headers.get('sec-fetch-site') === 'same-origin') return null
     if (isLoopbackRequest(request)) return null
     return sceneApiJson(request, { error: 'scene_api_token_required' }, { status: 503 })
   }
@@ -145,8 +148,16 @@ function configuredOrigins(): Set<string> {
 function isSameOrigin(request: Request, origin: string): boolean {
   const parsedOrigin = parseUrl(origin)
   if (!parsedOrigin) return false
+  return normalizeOrigin(parsedOrigin) === requestOrigin(request)
+}
+
+function requestOrigin(request: Request): string {
   const requestUrl = new URL(request.url)
-  return normalizeOrigin(parsedOrigin) === normalizeOrigin(requestUrl)
+  const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim()
+  const host = forwardedHost || request.headers.get('host') || requestUrl.host
+  const forwardedProtocol = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim()
+  const protocol = forwardedProtocol || requestUrl.protocol.replace(/:$/, '')
+  return `${protocol}://${host}`.toLowerCase()
 }
 
 function isLoopbackRequest(request: Request): boolean {
@@ -165,6 +176,12 @@ function parseUrl(value: string): URL | null {
   } catch {
     return null
   }
+}
+
+function originFromReferer(request: Request): string | null {
+  const referer = request.headers.get('referer')
+  const parsed = referer ? parseUrl(referer) : null
+  return parsed ? normalizeOrigin(parsed) : null
 }
 
 function normalizeOrigin(url: URL): string {

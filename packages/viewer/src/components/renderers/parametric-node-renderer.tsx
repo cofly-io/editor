@@ -20,8 +20,9 @@ import { NodeRenderer } from './node-renderer'
  *  - Mounts an empty `<group>`.
  *  - Registers the group with `sceneRegistry` so `<GeometrySystem>` can find
  *    it and inject children built by `def.geometry(node, ctx)`.
- *  - Wires `useNodeEvents(node, node.type)` on the group so pointer events
- *    bubble through to the editor's selection / hover bus.
+ *  - Wires `useNodeEvents(node, node.type)` on renderable groups so pointer
+ *    events bubble through to the editor's selection / hover bus. Assembly
+ *    roots are empty transform containers; their child nodes own hit events.
  *  - Marks the node dirty on mount so the geometry system runs once on
  *    first render (and on every subsequent identity change).
  *  - Reads `useLiveTransforms` so drag tools that imperatively override
@@ -51,6 +52,7 @@ export const ParametricNodeRenderer = ({ node }: { node: AnyNode }) => {
   const ref = useRef<Group>(null!)
   const n = node as RenderableNode
   const handlers = useNodeEvents(node as any, node.type as any)
+  const isAssemblyContainer = node.type === 'assembly'
   const liveTransform = useLiveTransforms((s) => s.get(node.id as AnyNodeId))
 
   useRegistry(node.id, node.type, ref)
@@ -75,7 +77,7 @@ export const ParametricNodeRenderer = ({ node }: { node: AnyNode }) => {
       rotation={rotation}
       scale={scale}
       visible={n.visible !== false}
-      {...handlers}
+      {...(isAssemblyContainer ? {} : handlers)}
     >
       {Array.isArray(n.children) &&
         n.children.map((childId) => (

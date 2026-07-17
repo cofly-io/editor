@@ -29,7 +29,6 @@ export {
   type GeneratedGeometryPlacementSpec,
 } from './ai-generated-geometry-nodes'
 
-
 export const AI_GEOMETRY_ASSETS_STORAGE_KEY = 'pascal.ai.geometryAssets'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -251,14 +250,29 @@ export function buildRevisionContext(artifact: GeneratedGeometryArtifact, userRe
   ].join('\n')
 }
 
-
 function beginGeneratedGeometryPlacement(root: AnyNode) {
   const editor = useEditor.getState()
-  useViewer.getState().setSelection({ selectedIds: [] })
+  useViewer.getState().setSelection({ selectedIds: [root.id] })
   editor.setPhase('structure')
   editor.setStructureLayer('elements')
   editor.setMode('select')
   editor.setMovingNode(root as never)
+}
+
+function resolveGeneratedGeometryLevelId() {
+  const nodes = useScene.getState().nodes
+  const selectedLevelId = useViewer.getState().selection.levelId
+  const isValidLevel = (id: AnyNodeId | null | undefined) => {
+    const level = id ? nodes[id] : undefined
+    if (level?.type !== 'level' || !level.parentId) return false
+    return nodes[level.parentId as AnyNodeId]?.type === 'building'
+  }
+
+  if (isValidLevel(selectedLevelId)) return selectedLevelId
+
+  return Object.values(nodes).find(
+    (node) => node.type === 'level' && isValidLevel(node.id as AnyNodeId),
+  )?.id
 }
 
 type PlaceGeneratedGeometryOptions = {
@@ -269,12 +283,14 @@ export function placeGeneratedGeometryArtifact(
   artifact: GeneratedGeometryArtifact,
   options: PlaceGeneratedGeometryOptions = {},
 ) {
-  const levelId = useViewer.getState().selection.levelId
+  const levelId = resolveGeneratedGeometryLevelId()
+  if (!levelId) return { nodeIds: [] as string[], created: [] as string[] }
   const plan = buildGeneratedGeometryCreatePatches(artifact, {
-    parentId: levelId ?? undefined,
+    parentId: levelId,
     generatedBy: 'ai-chat',
   })
-  if (!plan.patches.length || !plan.rootNode) return { nodeIds: [] as string[], created: plan.created }
+  if (!plan.patches.length || !plan.rootNode)
+    return { nodeIds: [] as string[], created: plan.created }
 
   const scene = useScene.getState()
   const rootId = plan.rootNode.id

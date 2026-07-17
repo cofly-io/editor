@@ -883,6 +883,14 @@ function getRawShapes(
       const mixerShapes = mixerPartComposerFallbackShapes(args, dimensionAwarePartArgs, prompt)
       if (mixerShapes?.length) return mixerShapes
     }
+    if (
+      hasExplicitParts &&
+      !hasExplicitCompositionTarget(dimensionAwarePartArgs) &&
+      isStandaloneExplicitPartPlan(dimensionAwarePartArgs)
+    ) {
+      const directShapes = directPartComposerFallbackShapes(args, dimensionAwarePartArgs, prompt)
+      if (directShapes?.length) return directShapes
+    }
     if (hasExplicitParts) {
       const registryShapes = registryPartFallbackShapes(
         args,
@@ -1051,6 +1059,30 @@ function getRawShapes(
     return applyGenericPrimitiveFallback(args, args, prompt)
   }
   return args.shapes as RawShape[] | undefined
+}
+
+function hasExplicitCompositionTarget(args: Record<string, unknown>) {
+  return (
+    typeof args.family === 'string' ||
+    typeof args.deviceProfile === 'string' ||
+    typeof args.profile === 'string' ||
+    typeof args.deviceType === 'string' ||
+    isRecord(args.deviceProfileDraft) ||
+    args.registryPartPlan === true ||
+    args.__registryPartPlan === true
+  )
+}
+
+function isStandaloneExplicitPartPlan(args: Record<string, unknown>) {
+  if (!Array.isArray(args.parts) || args.parts.length !== 1) return false
+  const [part] = args.parts
+  if (!isRecord(part) || typeof part.semanticRole !== 'string') return false
+  const requiredRoles = Array.isArray(args.requiredRoles)
+    ? args.requiredRoles.filter((role): role is string => typeof role === 'string')
+    : []
+  if (requiredRoles.length !== 1) return false
+  const normalize = (value: string) => value.trim().toLowerCase().replace(/[\s-]+/g, '_')
+  return normalize(requiredRoles[0]!) === normalize(part.semanticRole)
 }
 
 const INDUSTRIAL_PART_FAMILIES = new Set([

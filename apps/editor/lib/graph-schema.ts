@@ -83,6 +83,15 @@ export const apiGraphSchema = z
             message: issue.message,
           })
         }
+        continue
+      }
+
+      if (res.data.parentId && !value.nodes[res.data.parentId]) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['nodes', nodeId, 'parentId'],
+          message: `Parent node "${res.data.parentId}" does not exist.`,
+        })
       }
     }
   })

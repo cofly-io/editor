@@ -35,7 +35,7 @@ import { sfxEmitter } from '../../lib/sfx-bus'
 import { duplicateStairSubtree } from '../../lib/stair-duplication'
 import { duplicateNodeSubtree } from '../../lib/subtree-duplication'
 import useEditor from '../../store/use-editor'
-import { getActionMenuAnchor } from './action-menu-placement'
+import { getActionMenuAnchor, getActionMenuTargetId } from './action-menu-placement'
 import { NodeActionMenu } from './node-action-menu'
 
 const ALLOWED_TYPES = [
@@ -189,7 +189,12 @@ export function FloatingActionMenu() {
     if (obj) {
       obj.updateWorldMatrix(true, false)
 
-      const box = boxRef.current.setFromObject(obj)
+      const anchorTargetId = node
+        ? getActionMenuTargetId(node, useScene.getState().nodes)
+        : undefined
+      const anchorTarget = anchorTargetId ? sceneRegistry.nodes.get(anchorTargetId) : undefined
+      anchorTarget?.updateWorldMatrix(true, false)
+      const box = boxRef.current.setFromObject(anchorTarget ?? obj)
       if (!box.isEmpty() && node) {
         const anchor = getActionMenuAnchor(node, box, menuAnchorRef.current, sizeRef.current)
         menuGroupRef.current?.position.copy(anchor)

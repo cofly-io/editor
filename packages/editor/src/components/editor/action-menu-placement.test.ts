@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import * as THREE from 'three'
-import { getActionMenuAnchor } from './action-menu-placement'
+import { getActionMenuAnchor, getActionMenuTargetId } from './action-menu-placement'
 
 function boxFromSize(width: number, height: number, depth: number) {
   return new THREE.Box3(
@@ -38,5 +38,39 @@ describe('getActionMenuAnchor', () => {
     )
 
     expect(anchor.y).toBeCloseTo(1)
+  })
+})
+
+describe('getActionMenuTargetId', () => {
+  test('anchors a semantic assembly to its declared primary child', () => {
+    expect(
+      getActionMenuTargetId(
+        {
+          type: 'assembly',
+          children: ['support', 'shell'],
+          metadata: { equipmentAssembly: { primarySemanticRole: 'vessel_shell' } },
+        },
+        {
+          support: { metadata: { semanticRole: 'support_roller' } },
+          shell: { metadata: { semanticRole: 'vessel_shell' } },
+        },
+      ),
+    ).toBe('shell')
+  })
+
+  test('uses a single generated required role when no explicit primary role exists', () => {
+    expect(
+      getActionMenuTargetId(
+        {
+          type: 'assembly',
+          children: ['rack', 'body'],
+          metadata: { sourceArgs: { requiredRoles: ['rebar_body'] } },
+        },
+        {
+          rack: { metadata: { semanticRole: 'support_frame' } },
+          body: { metadata: { semanticRole: 'rebar_body' } },
+        },
+      ),
+    ).toBe('body')
   })
 })
