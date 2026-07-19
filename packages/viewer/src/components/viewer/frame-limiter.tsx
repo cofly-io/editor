@@ -45,15 +45,30 @@ const FrameLimiter: React.FC<FrameLimiterProps> = ({ fps = 50, idleFps = 4, acti
         then = t - (elapsed % interval)
       }
     }
+    // rAF can stall while a tab is hidden, unfocused, or occluded. With the
+    // default loop disabled, force one current frame as soon as it resumes.
+    function kick() {
+      i += 1 / 1000
+      advance(i)
+    }
+    function onVisibilityChange() {
+      if (document.visibilityState === 'visible') kick()
+    }
     // Set frameloop to never, it will shut down the default render loop
     set({ frameloop: 'never' })
     // Kick off custom render loop
     raf = requestAnimationFrame(tick)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('focus', kick)
+    window.addEventListener('pageshow', kick)
     // Restore initial setting
     return () => {
       if (raf) {
         cancelAnimationFrame(raf)
       }
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('focus', kick)
+      window.removeEventListener('pageshow', kick)
       set({ frameloop: initFrameloop })
     }
   }, [fps, idleFps, active, advance, set, initFrameloop])
