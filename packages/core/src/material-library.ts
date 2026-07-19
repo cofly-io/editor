@@ -2458,9 +2458,15 @@ export function toLibraryMaterialRef(id: string) {
 }
 
 export function getLibraryMaterialIdFromRef(materialRef?: string | null) {
-  if (!materialRef) return null
+  if (typeof materialRef !== 'string') return null
   if (!materialRef.startsWith(LIBRARY_MATERIAL_REF_PREFIX)) return null
   return materialRef.slice(LIBRARY_MATERIAL_REF_PREFIX.length)
+}
+
+export function getSceneMaterialIdFromRef(materialRef?: string | null): string | null {
+  if (typeof materialRef !== 'string') return null
+  if (!materialRef.startsWith(SCENE_MATERIAL_REF_PREFIX)) return null
+  return materialRef.slice(SCENE_MATERIAL_REF_PREFIX.length)
 }
 
 export function getMaterialSolidColorByRef(materialRef?: string | null): string | null {
