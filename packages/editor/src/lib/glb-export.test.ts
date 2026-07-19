@@ -97,7 +97,125 @@ describe('prepareSceneForExport', () => {
     expect(material.color.getHexString()).toBe('cc3300')
   })
 
-  test('does not flag a door openable when no open clip bakes', () => {
+  test('shared NodeMaterial instances convert to a single shared material', () => {
+    const root = new THREE.Group()
+    const shared = nodeMaterial()
+    root.add(meshWithNodeMaterial(shared), meshWithNodeMaterial(shared))
+
+    const { scene } = prepareSceneForExport(root, {})
+
+    const meshes = scene.children as THREE.Mesh[]
+    expect(meshes[0]!.material).toBe(meshes[1]!.material)
+  })
+
+  test('strips editor overlays that live off the scene layer', () => {
+    const root = new THREE.Group()
+    const realMesh = meshWithNodeMaterial(nodeMaterial())
+    const overlay = meshWithNodeMaterial(nodeMaterial())
+    overlay.layers.set(1) // OVERLAY_LAYER / EDITOR_LAYER — off scene layer 0
+    root.add(realMesh, overlay)
+
+    const { scene } = prepareSceneForExport(root, {})
+
+    const meshes: THREE.Mesh[] = []
+    scene.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh)
+    })
+    expect(meshes).toHaveLength(1)
+  })
+
+  test('neutralises an invisible hitbox root but keeps its visible children', () => {
+    // Door/window roots are selection hitboxes: a box geometry with an invisible
+    // material (object stays visible). Left intact it would plug the wall opening.
+    const root = new THREE.Group()
+    const hitbox = new THREE.Mesh(
+      new THREE.BoxGeometry(1, 2, 0.2),
+      new THREE.MeshBasicMaterial({ visible: false }),
+    )
+    const leaf = meshWithNodeMaterial(nodeMaterial())
+    hitbox.add(leaf)
+    root.add(hitbox)
+
+    const doorId = 'door_hitbox'
+    sceneRegistry.nodes.set(doorId, hitbox)
+    const nodes: Record<string, AnyNode> = {
+      [doorId]: { object: 'node', id: doorId, type: 'door' } as unknown as AnyNode,
+    }
+
+    const { scene } = prepareSceneForExport(root, nodes)
+
+    const exported = scene.getObjectByProperty('name', doorId) as THREE.Mesh
+    expect(exported).toBeDefined()
+    // Geometry emptied -> GLTFExporter emits a plain node, no solid block.
+    expect(exported.geometry.getAttribute('position')).toBeUndefined()
+    // The visible leaf survives as a child.
+    const visibleChildren = exported.children.filter((c) => (c as THREE.Mesh).isMesh)
+    expect(visibleChildren).toHaveLength(1)
+  })
+
+  test('fills undefined slots in an array material so no undefined survives the prune', () => {
+    // Multi-material / group geometry where one slot was never assigned:
+    // `mesh.material = [validMat, undefined]`. The scalar-null guard doesn't
+    // catch this (an array is never `== null`), so the undefined slot used to
+    // reach GLTFExporter and crash on `material.isShaderMaterial`.
+    const root = new THREE.Group()
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1))
+    mesh.material = [nodeMaterial(), undefined as unknown as THREE.Material]
+    root.add(mesh)
+
+    const { scene } = prepareSceneForExport(root, {})
+
+    const exported = scene.children[0] as THREE.Mesh
+    const materials = exported.material as THREE.Material[]
+    expect(Array.isArray(materials)).toBe(true)
+    expect(materials).toHaveLength(2)
+    // No undefined/null slot survives; every slot is a real material.
+    expect(materials.every((m) => m != null)).toBe(true)
+  })
+
+  test('stamps identity from the scene registry and strips other userData', () => {
+    const root = new THREE.Group()
+    const doorGroup = new THREE.Group()
+    const leaf = new THREE.Group()
+    leaf.userData.pascalSwingLeaf = { axis: 'y', openRotationY: Math.PI / 2 }
+    leaf.add(meshWithNodeMaterial(nodeMaterial()))
+    doorGroup.add(leaf)
+    root.add(doorGroup)
+
+    const doorId = 'door_test'
+    sceneRegistry.nodes.set(doorId, doorGroup)
+    const nodes: Record<string, AnyNode> = {
+      [doorId]: {
+        object: 'node',
+        id: doorId,
+        type: 'door',
+        name: 'Front door',
+      } as unknown as AnyNode,
+    }
+
+    const { scene } = prepareSceneForExport(root, nodes)
+
+    const exportedDoor = scene.getObjectByProperty('name', doorId)
+    expect(exportedDoor).toBeDefined()
+    expect(exportedDoor?.userData).toEqual({
+      pascalId: doorId,
+      kind: 'door',
+      label: 'Front door',
+      openable: true,
+      clips: ['door_test: open'],
+    })
+
+    // The swing-leaf marker must not survive into glTF extras.
+    let leafMarkerSurvived = false
+    scene.traverse((object) => {
+      if (object.userData.pascalSwingLeaf) leafMarkerSurvived = true
+    })
+    expect(leafMarkerSurvived).toBe(false)
+  })
+
+  test('does not flag a door/window openable when no open clip bakes', () => {
+    // A cased opening (no swing leaf) / fixed window (no operable sash) builds
+    // no movable part, so no clip bakes and the node must not claim openable.
     const root = new THREE.Group()
     const openingGroup = new THREE.Group()
     openingGroup.add(meshWithNodeMaterial(nodeMaterial()))
