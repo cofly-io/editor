@@ -121,9 +121,35 @@ function pairClones(
 const EMPTY_GEOMETRY = new THREE.BufferGeometry()
 const PLACEHOLDER_MATERIAL = new THREE.MeshBasicMaterial({ visible: false })
 
+/**
+ * Strip everything that must not bake into the model:
+ *  - Renderer-owned presentation geometry explicitly marked
+ *    `userData.pascalExport = 'strip'` (for example the site's 800 m horizon
+ *    disc). These meshes make the authoring viewport look grounded but aren't
+ *    part of the portable scene artifact.
+ *  - Editor overlays on non-scene layers (gizmos, selection handles, ground
+ *    grid, zone fills). The editor camera shows them via extra layers; a
+ *    thumbnail/bake is layer 0 only. Scene-layer affordances that can't be
+ *    layer-filtered (ceiling/site brackets) are hidden by the caller's
+ *    `thumbnail:before-capture` emit before the clone instead.
+ *  - Selection hitboxes, whose invisibility lives on `material.visible = false`
+ *    (which GLTFExporter's `onlyVisible` does not catch). A door/window's hitbox
+ *    root is a box spanning the wall opening — left in, it plugs the cutout.
+ *    With children (it parents the visible frame + leaf) it keeps its node but
+ *    loses its geometry; childless ones are removed outright.
+ */
 function pruneNonRenderableMeshes(root: THREE.Object3D, identityNodes: Set<THREE.Object3D>) {
   const toRemove: THREE.Object3D[] = []
   root.traverse((object) => {
+    if (object.userData.pascalExport === 'strip') {
+      toRemove.push(object)
+      return
+    }
+    // Editor-only overlays (gizmos, selection handles, ground grid, zone fills)
+    // live off the scene layer; the editor camera shows them via extra layers
+    // but a thumbnail/bake only wants layer 0. Drop the whole overlay subtree —
+    // except identity nodes, which we keep (their off-layer mesh children are
+    // still pruned as the traversal continues).
     if (!object.layers.isEnabled(SCENE_LAYER)) {
       if (identityNodes.has(object)) return
       toRemove.push(object)

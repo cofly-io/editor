@@ -12,6 +12,7 @@ import {
 } from '@pascal-app/core'
 import {
   type ColorPreset,
+  configureKtx2Support,
   createDefaultMaterial,
   createMaterial,
   createMaterialFromPresetRef,
@@ -28,7 +29,7 @@ import {
 } from '@pascal-app/viewer'
 import { useAnimations, useGLTF } from '@react-three/drei'
 import { Clone } from '@react-three/drei/core/Clone'
-import { useFrame } from '@react-three/fiber'
+import { useFrame, useLoader, useThree } from '@react-three/fiber'
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AnimationAction, AnimationClip, Group, Material, Mesh, Object3D } from 'three'
 import { MathUtils } from 'three'
@@ -91,7 +92,104 @@ function resolveItemModelUrl(node: ItemNode) {
   return `${src}${src.includes('?') ? '&' : '?'}pascalImportedGlb=1`
 }
 
-function ModelWithRetry({
+const configureItemModelLoader = (loader: ItemGLTFLoader, renderer: unknown) => {
+  configureKtx2Support(loader, renderer)
+  if (!itemDracoLoader) {
+    itemDracoLoader = new DRACOLoader(loader.manager)
+    itemDracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.5/')
+  }
+  loader.setDRACOLoader(itemDracoLoader)
+  loader.setMeshoptDecoder(MeshoptDecoder)
+}
+
+type LoadedItemGltf = GLTF & {
+  materials: Record<string, Material>
+  nodes: Record<string, Object3D>
+}
+
+const useItemGltf = (url: string): LoadedItemGltf => {
+  const renderer = useThree((state) => state.gl)
+  return useLoader(ItemGLTFLoader, url, (loader) =>
+    configureItemModelLoader(loader, renderer),
+  ) as LoadedItemGltf
+}
+
+type DeferredUnavailableCleanup = {
+  consumers: number
+  timer: ReturnType<typeof setTimeout> | null
+}
+
+const unavailableAssetConsumers = new Map<string, DeferredUnavailableCleanup>()
+const unavailableFailureConsumers = new Map<string, DeferredUnavailableCleanup>()
+
+const retainUnavailableConsumer = (
+  entries: Map<string, DeferredUnavailableCleanup>,
+  key: string,
+) => {
+  const entry = entries.get(key) ?? { consumers: 0, timer: null }
+  if (entry.timer !== null) {
+    clearTimeout(entry.timer)
+    entry.timer = null
+  }
+  entry.consumers += 1
+  entries.set(key, entry)
+}
+
+const releaseUnavailableConsumer = (
+  entries: Map<string, DeferredUnavailableCleanup>,
+  key: string,
+  onLastRelease: () => void,
+) => {
+  const entry = entries.get(key)
+  if (!entry) return
+  entry.consumers = Math.max(0, entry.consumers - 1)
+  if (entry.consumers > 0 || entry.timer !== null) return
+
+  // A zero-delay release distinguishes a real unmount from Strict Mode's
+  // immediate setup-cleanup-setup cycle and same-tick replacements.
+  entry.timer = setTimeout(() => {
+    if (entry.consumers > 0 || entries.get(key) !== entry) return
+    entries.delete(key)
+    onLastRelease()
+  }, 0)
+}
+
+const UnavailableItemModel = ({
+  markSettled,
+  node,
+  url,
+}: {
+  markSettled: () => void
+  node: ItemNode
+  url: string
+}) => {
+  useEffect(() => {
+    retainUnavailableConsumer(unavailableFailureConsumers, node.id)
+    if (url) retainUnavailableConsumer(unavailableAssetConsumers, url)
+    markSettled()
+    useViewer.getState().reportItemLoadFailure(node.id, url)
+    return () => {
+      releaseUnavailableConsumer(unavailableFailureConsumers, node.id, () =>
+        useViewer.getState().clearItemLoadFailure(node.id),
+      )
+      if (url) {
+        releaseUnavailableConsumer(unavailableAssetConsumers, url, () => {
+          cancelItemModelLoad(url)
+          useLoader.clear(ItemGLTFLoader, url)
+        })
+      }
+    }
+  }, [markSettled, node.id, url])
+
+  return <BrokenItemFallback node={node} />
+}
+
+/**
+ * Expected network failures resolve through ItemGLTFLoader as an unavailable
+ * scene so they never become React render errors. Parse and renderer failures
+ * still reach this boundary and remain visible to developers.
+ */
+const ModelWithRetry = ({
   node,
   setSettled,
 }: {
@@ -197,34 +295,39 @@ function getPreviewMaterial(shading: RenderShading) {
   return material
 }
 
-const PreviewModel = ({
-  node,
-  hideDuringExport = true,
-}: {
-  node: ItemNode
-  hideDuringExport?: boolean
-}) => {
-  const shading = useViewer((state) => state.shading)
-  const isExporting = useViewer((state) => state.isExporting)
-  const handlers = useNodeEvents(node, 'item')
-  if (hideDuringExport && isExporting) return null
+const PreviewModel = ({ node }: { node: ItemNode }) => {
+  const shading = useViewer((s) => s.shading)
+  const isExporting = useViewer((s) => s.isExporting)
+  const [w, h, d] = getScaledDimensions(node)
+  // Loading placeholder — must never land in an exported GLB.
+  if (isExporting) return null
   return (
-    <mesh
-      material={getPreviewMaterial(shading)}
-      position-y={node.asset.dimensions[1] / 2}
-      {...handlers}
-    >
-      <boxGeometry
-        args={[node.asset.dimensions[0], node.asset.dimensions[1], node.asset.dimensions[2]]}
-      />
+    <mesh material={getPreviewMaterial(shading)} position-y={h / 2}>
+      <boxGeometry args={[w, h, d]} />
+    </mesh>
     </mesh>
   )
 }
 
-const multiplyScales = (
-  a: [number, number, number],
-  b: [number, number, number],
-): [number, number, number] => [a[0] * b[0], a[1] * b[1], a[2] * b[2]]
+const ClearPreviewModel = ({ node }: { node: ItemNode }) => {
+  const shading = useViewer((s) => s.shading)
+  const [w, h, d] = getScaledDimensions(node)
+  const material = useMemo(() => {
+    const next = createDefaultMaterial('#ef4444', 1, shading) as MutableMaterial
+    next.depthTest = false
+    next.opacity = 0.35
+    next.transparent = true
+    next.wireframe = true
+    next.needsUpdate = true
+    return next
+  }, [shading])
+
+  return (
+    <mesh material={material} position-y={h / 2}>
+      <boxGeometry args={[w, h, d]} />
+    </mesh>
+  )
+}
 
 const ModelRenderer = ({ node, markSettled }: { node: ItemNode; markSettled: () => void }) => {
   const importedGlb = isImportedGlbAsset(node)
@@ -349,15 +452,17 @@ const ModelRenderer = ({ node, markSettled }: { node: ItemNode; markSettled: () 
   // Undo can unmount one item while another clone of the same asset still needs them.
   return (
     <>
-      <Clone
-        dispose={null}
-        object={preparedScene}
-        position={node.asset.offset}
-        ref={ref}
-        rotation={node.asset.rotation}
-        scale={multiplyScales(node.asset.scale || [1, 1, 1], node.scale || [1, 1, 1])}
-        {...handlers}
-      />
+      <group scale={node.scale}>
+        <Clone
+          dispose={null}
+          object={preparedScene}
+          position={node.asset.offset}
+          ref={ref}
+          rotation={node.asset.rotation}
+          scale={node.asset.scale || [1, 1, 1]}
+          {...handlers}
+        />
+      </group>
       {animations.length > 0 && (
         <ItemAnimation
           actions={actions}

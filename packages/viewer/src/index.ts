@@ -32,6 +32,13 @@ export {
   SUBTRACTION,
 } from './lib/csg-utils'
 export type { EdgeMode } from './lib/edge-style'
+export {
+  applyIsolation,
+  clearIsolation,
+  collectIsolationSubtree,
+  isIsolationActive,
+} from './lib/isolation'
+export { configureKtx2Support, ensureKtx2Support } from './lib/ktx2-loader'
 export { GRID_LAYER, OVERLAY_LAYER, SCENE_LAYER, ZONE_LAYER } from './lib/layers'
 export { clearViewerMaterialCaches, getViewerMaterialCacheSize } from './lib/material-cache'
 export {

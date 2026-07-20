@@ -167,6 +167,19 @@ export const SiteRenderer = ({ node }: { node: SiteNode }) => {
         />
       )}
 
+      {/* Infinite-ground presentation disc fading into the sky at the horizon */}
+      {horizonGeometry && horizonMaterial && fadeBounds && (
+        <mesh
+          geometry={horizonGeometry}
+          material={horizonMaterial}
+          position={[fadeBounds.cx, -0.07, fadeBounds.cz]}
+          raycast={noopRaycast}
+          receiveShadow
+          rotation={[-Math.PI / 2, 0, 0]}
+          userData={{ pascalExport: 'strip' }}
+        />
+      )}
+
       {/* Simple boundary line */}
       {/* @ts-ignore */}
       <line frustumCulled={false} geometry={lineGeometry} renderOrder={9}>
