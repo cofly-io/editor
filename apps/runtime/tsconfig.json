@@ -1,0 +1,6 @@
+{
+  "extends": "@pascal/typescript-config/nextjs.json",
+  "compilerOptions": { "plugins": [{ "name": "next" }] },
+  "include": ["**/*.ts", "**/*.tsx", "next-env.d.ts", ".next/types/**/*.ts"],
+  "references": [{ "path": "../../packages/core" }, { "path": "../../packages/viewer" }, { "path": "../../packages/nodes" }]
+}

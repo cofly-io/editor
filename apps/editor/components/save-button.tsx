@@ -27,6 +27,9 @@ export function CreateSceneButton({ label }: { label?: string } = {}) {
   const buttonLabel = label ?? t('scenes.createNewScene', 'Create new scene')
 
   const handleCreate = useCallback(async () => {
+    const name = window.prompt(t('save.newSceneName', 'Scene name'), '')?.trim()
+    if (!name) return
+
     setIsCreating(true)
     setError(null)
     try {
@@ -34,7 +37,7 @@ export function CreateSceneButton({ label }: { label?: string } = {}) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: t('save.untitledScene', 'Untitled scene'),
+          name,
           graph: EMPTY_GRAPH,
         }),
       })

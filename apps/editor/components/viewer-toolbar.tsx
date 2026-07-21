@@ -22,11 +22,15 @@ import {
   Check,
   ChevronsLeft,
   ChevronsRight,
+  CircleAlert,
+  CircleCheck,
   Columns2,
   Contrast,
+  Download,
   Eye,
   Footprints,
   Grid2X2,
+  LoaderCircle,
   Magnet,
   PenLine,
   SlidersHorizontal,
@@ -34,7 +38,7 @@ import {
   SwatchBook,
 } from 'lucide-react'
 import Image from 'next/image'
-import { type ReactNode, useCallback, useMemo } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { t } from '@/i18n'
 import { cn } from '@/lib/utils'
@@ -147,7 +151,7 @@ const SHADING_OPTIONS = [
     id: 'solid',
     name: 'Solid',
     labelKey: 'toolbar.renderModes.solid',
-    detailKey: 'toolbar.renderModes.solidDetail',
+    detailKey: 'toolbar.renderModes.etail',
     detail: 'Flat and fast',
     icon: Box,
   },
@@ -623,6 +627,173 @@ function PreviewButton() {
   )
 }
 
+type SuposExportJob = {
+  id: string
+  status: 'queued' | 'running' | 'succeeded' | 'failed'
+  progress: number
+  messages: string[]
+  error?: string
+  fileName?: string
+}
+
+const SUPOS_EXPORT_POLL_INTERVAL_MS = 5000
+
+function ExportSuposRuntimeButton({ sceneId }: { sceneId: string }) {
+  const [isExporting, setIsExporting] = useState(false)
+  const [job, setJob] = useState<SuposExportJob | null>(null)
+  const label = t('toolbar.exportSuposRuntime', '导出 supOS 安装包')
+
+  const downloadPackage = useCallback(
+    async (jobId: string) => {
+      const response = await fetch(`/api/scenes/${sceneId}/export/supos?job=${jobId}&download=1`)
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { detail?: string } | null
+        throw new Error(payload?.detail || `Download failed (${response.status})`)
+      }
+      const blob = await response.blob()
+      const disposition = response.headers.get('content-disposition') ?? ''
+      const name = disposition.match(/filename="?([^";]+)"?/)?.[1] ?? 'pascal-runtime.zip'
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = name
+      anchor.click()
+      URL.revokeObjectURL(url)
+    },
+    [sceneId],
+  )
+
+  useEffect(() => {
+    const jobId = job?.id
+    const jobStatus = job?.status
+    if (!jobId || jobId === 'pending' || jobStatus === 'succeeded' || jobStatus === 'failed') return
+    let cancelled = false
+
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/scenes/${sceneId}/export/supos?job=${jobId}`)
+        if (!response.ok) throw new Error(`Progress check failed (${response.status})`)
+        const next = (await response.json()) as SuposExportJob
+        if (cancelled) return
+        setJob(next)
+        if (next.status === 'succeeded') {
+          await downloadPackage(next.id)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setJob((current) =>
+            current
+              ? {
+                  ...current,
+                  status: 'failed',
+                  error: error instanceof Error ? error.message : 'supOS export failed',
+                }
+              : current,
+          )
+        }
+      }
+    }
+
+    void poll()
+    const timer = window.setInterval(() => void poll(), SUPOS_EXPORT_POLL_INTERVAL_MS)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [downloadPackage, job?.id, job?.status, sceneId])
+
+  const exportPackage = useCallback(async () => {
+    setIsExporting(true)
+    setJob({
+      id: 'pending',
+      status: 'queued',
+      progress: 0,
+      messages: ['正在创建导出任务…'],
+    })
+    try {
+      const response = await fetch(`/api/scenes/${sceneId}/export/supos?async=1`, {
+        method: 'POST',
+      })
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { detail?: string } | null
+        throw new Error(payload?.detail || `Export failed (${response.status})`)
+      }
+      setJob((await response.json()) as SuposExportJob)
+    } catch (error) {
+      setJob({
+        id: 'failed',
+        status: 'failed',
+        progress: 0,
+        messages: [],
+        error: error instanceof Error ? error.message : 'supOS export failed',
+      })
+    } finally {
+      setIsExporting(false)
+    }
+  }, [sceneId])
+
+  const isInProgress = job?.status === 'queued' || job?.status === 'running'
+  const statusLabel =
+    job?.status === 'succeeded'
+      ? '安装包已下载'
+      : job?.status === 'failed'
+        ? '导出失败'
+        : '正在导出 supOS 安装包'
+
+  return (
+    <DropdownMenu open={Boolean(job)}>
+      <ToolbarTooltip label={label}>
+        <DropdownMenuTrigger asChild>
+          <button
+            aria-label={label}
+            className={cn(TOOLBAR_BTN, 'w-auto gap-1.5 px-2.5')}
+            disabled={isExporting || isInProgress}
+            onClick={exportPackage}
+            type="button"
+          >
+            {isInProgress ? (
+              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Download className="h-3.5 w-3.5" />
+            )}
+            <span className="font-medium text-xs">导出</span>
+          </button>
+        </DropdownMenuTrigger>
+      </ToolbarTooltip>
+      <DropdownMenuContent align="end" className="w-80 p-3" side="bottom" sideOffset={10}>
+        <div className="flex items-center gap-2 font-medium text-sm">
+          {job?.status === 'failed' ? (
+            <CircleAlert className="h-4 w-4 text-destructive" />
+          ) : job?.status === 'succeeded' ? (
+            <CircleCheck className="h-4 w-4 text-emerald-500" />
+          ) : (
+            <LoaderCircle className="h-4 w-4 animate-spin text-primary" />
+          )}
+          <span>{statusLabel}</span>
+        </div>
+        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-[width] duration-500"
+            style={{ width: `${job?.progress ?? 0}%` }}
+          />
+        </div>
+        <div className="mt-1 text-right text-muted-foreground text-xs">{job?.progress ?? 0}%</div>
+        <div className="mt-3 max-h-48 space-y-1 overflow-y-auto rounded-md bg-muted/45 p-2 font-mono text-[11px] leading-5 text-muted-foreground">
+          {job?.messages.map((message, index) => (
+            <div key={`${message}-${index}`}>{message}</div>
+          ))}
+          {job?.error ? (
+            <div className="whitespace-pre-wrap text-destructive">{job.error}</div>
+          ) : null}
+        </div>
+        {job?.fileName ? (
+          <div className="mt-2 text-muted-foreground text-xs">{job.fileName}</div>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 export function CommunityViewerToolbarLeft() {
   return (
     <>
@@ -632,7 +803,7 @@ export function CommunityViewerToolbarLeft() {
   )
 }
 
-export function CommunityViewerToolbarRight() {
+export function CommunityViewerToolbarRight({ sceneId }: { sceneId: string }) {
   return (
     <div className={TOOLBAR_CONTAINER}>
       <LevelModeToggle />
@@ -642,6 +813,7 @@ export function CommunityViewerToolbarRight() {
       <div className="my-1.5 w-px bg-border/50" />
       <WalkthroughButton />
       <PreviewButton />
+      <ExportSuposRuntimeButton sceneId={sceneId} />
     </div>
   )
 }

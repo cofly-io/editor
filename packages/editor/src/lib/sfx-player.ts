@@ -81,25 +81,24 @@ function randomInRange([min, max]: [number, number]): number {
 const sfxCache = new Map<SFXName, Howl>()
 const lastPlayedAt = new Map<SFXName, number>()
 
-// Initialize all sounds
-Object.entries(SFX).forEach(([name, config]) => {
+function getSound(name: SFXName): Howl {
+  const cached = sfxCache.get(name)
+  if (cached) return cached
+
   const sound = new Howl({
-    src: [config.src],
+    src: [SFX[name].src],
     preload: true,
     volume: 0.5, // Will be adjusted by the bus
   })
-  sfxCache.set(name as SFXName, sound)
-})
+  sfxCache.set(name, sound)
+  return sound
+}
 
 /**
  * Play a sound effect with volume based on audio settings
  */
 export function playSFX(name: SFXName) {
-  const sound = sfxCache.get(name)
-  if (!sound) {
-    console.warn(`SFX not found: ${name}`)
-    return
-  }
+  const sound = getSound(name)
   const config = SFX[name]!
 
   // Drop rapid repeats — two plays of the same SFX within minIntervalMs just

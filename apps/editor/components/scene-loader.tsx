@@ -328,6 +328,9 @@ export function SceneLoader({ initialScene, meta }: SceneLoaderProps) {
   }, [meta.projectId])
 
   const handleCreateScene = useCallback(async () => {
+    const name = window.prompt(t('save.newSceneName', 'Scene name'), '')?.trim()
+    if (!name) return
+
     setIsCreatingScene(true)
     setSaveError(null)
 
@@ -336,7 +339,7 @@ export function SceneLoader({ initialScene, meta }: SceneLoaderProps) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: t('save.untitledScene', 'Untitled scene'),
+          name,
           graph: EMPTY_GRAPH,
         }),
       })
@@ -435,7 +438,7 @@ export function SceneLoader({ initialScene, meta }: SceneLoaderProps) {
         projectId={meta.projectId ?? 'default'}
         sidebarTabs={sidebarTabs}
         viewerToolbarLeft={<CommunityViewerToolbarLeft />}
-        viewerToolbarRight={<CommunityViewerToolbarRight />}
+        viewerToolbarRight={<CommunityViewerToolbarRight sceneId={meta.id} />}
       />
     </div>
   )

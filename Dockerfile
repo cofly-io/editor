@@ -12,14 +12,18 @@ RUN bun install --frozen-lockfile
 # from their defaults. Runtime secrets are injected when the container starts.
 ARG NEXT_PUBLIC_ASSETS_CDN_URL
 ARG NEXT_PUBLIC_ARTICRAFT_VIEWER_URL
+ARG NEXT_PUBLIC_VIEWER_FORCE_WEBGL
 ENV NEXT_TELEMETRY_DISABLED=1 \
     SKIP_ENV_VALIDATION=1 \
     NEXT_PUBLIC_ASSETS_CDN_URL=$NEXT_PUBLIC_ASSETS_CDN_URL \
-    NEXT_PUBLIC_ARTICRAFT_VIEWER_URL=$NEXT_PUBLIC_ARTICRAFT_VIEWER_URL
+    NEXT_PUBLIC_ARTICRAFT_VIEWER_URL=$NEXT_PUBLIC_ARTICRAFT_VIEWER_URL \
+    NEXT_PUBLIC_VIEWER_FORCE_WEBGL=$NEXT_PUBLIC_VIEWER_FORCE_WEBGL
 
 # The app script explicitly loads the root .env.local, which is intentionally
 # excluded from Docker build contexts so credentials cannot enter an image layer.
 RUN touch .env.local && bun --cwd=apps/editor run build
+
+FROM docker:27-cli AS docker-cli
 
 FROM node:22-bookworm-slim AS runner
 
@@ -34,9 +38,13 @@ ENV NODE_ENV=production \
     HOME=/tmp \
     ARTICRAFT_REPO_ROOT=/articraft \
     UV_PYTHON_INSTALL_DIR=/uv-data/python \
-    UV_CACHE_DIR=/uv-data/cache
+    UV_CACHE_DIR=/uv-data/cache \
+    PASCAL_RUNTIME_EXPORT_SOURCE=/export-source
 
 RUN chmod 755 /bin/uv /bin/uvx \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends zip \
+    && rm -rf /var/lib/apt/lists/* \
     && addgroup --system --gid 1001 nodejs \
     && adduser --system --uid 1001 --ingroup nodejs nextjs \
     && install -d -o nextjs -g nodejs /uv-data
@@ -44,6 +52,12 @@ RUN chmod 755 /bin/uv /bin/uvx \
 COPY --from=builder --chown=nextjs:nodejs /app/apps/editor/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/editor/.next/static ./apps/editor/.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/apps/editor/public ./apps/editor/public
+COPY --from=builder --chown=nextjs:nodejs /app/Dockerfile /app/package.json /app/bun.lock /app/turbo.json /export-source/
+COPY --from=builder --chown=nextjs:nodejs /app/packages /export-source/packages
+COPY --from=builder --chown=nextjs:nodejs /app/tooling /export-source/tooling
+COPY --from=builder --chown=nextjs:nodejs /app/apps/runtime /export-source/apps/runtime
+COPY --from=builder --chown=nextjs:nodejs /app/apps/editor/public/audios /export-source/apps/editor/public/audios
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 
 USER nextjs
 
