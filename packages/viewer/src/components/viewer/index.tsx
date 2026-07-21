@@ -18,12 +18,7 @@ import type { ColorPreset, RenderShading } from '../../lib/materials'
 import { ensureObjectWebGPUCompatibleGeometry } from '../../lib/safe-geometry'
 import { assessSceneComplexity } from '../../lib/scene-complexity'
 import { getSceneTheme } from '../../lib/scene-themes'
-import { installEmptyDrawGuard } from '../../lib/webgpu-draw-guard'
-import {
-  isGpuOutOfMemoryError,
-  isUnrecoverableGpuDeviceLoss,
-  isUnrecoverableGpuError,
-} from '../../lib/webgpu-health'
+import { installTextureNodeNullGuard } from '../../lib/texture-node-guard'
 import useViewer, { type RenderContext } from '../../store/use-viewer'
 import { FloorElevationSystem } from '../../systems/floor-elevation/floor-elevation-system'
 import { GeometrySystem } from '../../systems/geometry/geometry-system'
@@ -39,6 +34,10 @@ import { SceneBvh } from './scene-bvh'
 import { SceneEnvironment } from './scene-environment'
 import { SelectionManager } from './selection-manager'
 import { ViewerCamera } from './viewer-camera'
+
+// Must be in place before any node material builds — a null texture pulled by
+// a shared override-material pass otherwise kills the render pass outright.
+installTextureNodeNullGuard()
 
 declare module '@react-three/fiber' {
   interface ThreeElements extends ThreeToJSXElements<typeof THREE> {}
