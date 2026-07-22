@@ -5,12 +5,15 @@ import {
   emitter,
   getLevelDisplayName,
   isOperationDoorType,
+  itemClipRegistry,
   type LevelNode,
+  nodeRegistry,
   sceneRegistry,
   type WindowNode,
   type ZoneNode,
 } from '@pascal-app/core'
 import {
+  getPascalTextureRef,
   poseDoorMovingParts,
   poseWindowMovingParts,
   SCENE_LAYER,
@@ -18,12 +21,24 @@ import {
 } from '@pascal-app/viewer'
 import type { Object3D } from 'three'
 import * as THREE from 'three'
-import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
+import {
+  GLTFExporter,
+  type GLTFExporterPlugin,
+  type GLTFWriter,
+} from 'three/examples/jsm/exporters/GLTFExporter.js'
 import * as WebGPUTextureUtils from 'three/examples/jsm/utils/WebGPUTextureUtils.js'
 
+/**
+ * Two TRS samples (closed vs open) differing by less than this are treated as
+ * stationary, so only genuinely moving parts get an animation track.
+ */
 const POSE_EPSILON = 1e-5
-const OPERATION_DOOR_SAMPLES = 16
 
+/**
+ * Marker stamped on a door's swing-leaf group by the door system. `axis` is the
+ * hinge axis and `openRotationY` is the fully-open angle (radians). The export
+ * reads it to bake an open clip from a single closed pose; see `door-system`.
+ */
 type SwingLeafMarker = { axis: 'y'; openRotationY: number }
 
 export type GlbExport = {
@@ -31,42 +46,139 @@ export type GlbExport = {
   animations: THREE.AnimationClip[]
 }
 
+export type GlbExportOptions = {
+  textures?: 'embed' | 'reference'
+}
+
+/** Resolve after the next couple of animation frames, giving React/R3F time to
+ * commit and mount export-only geometry (e.g. instanced kinds' real meshes)
+ * before the exporter clones the scene graph. Callers must set
+ * `useViewer.setExporting(true)` first and reset it after the export. */
 export function nextFrames(): Promise<void> {
   return new Promise((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
   })
 }
 
+type GltfExtrasDef = {
+  extras?: Record<string, unknown>
+}
+
+type TextureReferenceWriter = GLTFWriter & {
+  json: {
+    images?: GltfExtrasDef[]
+  }
+}
+
+function getExportedImageIndex(textureDef: Record<string, unknown>): number | null {
+  if (Number.isInteger(textureDef.source)) return textureDef.source as number
+  const extensions = textureDef.extensions as Record<string, { source?: unknown }> | undefined
+  const source = extensions?.EXT_texture_webp?.source ?? extensions?.EXT_texture_avif?.source
+  return Number.isInteger(source) ? (source as number) : null
+}
+
+export function writeTextureReferenceExtras(
+  writer: GLTFWriter,
+  texture: THREE.Texture,
+  textureDef: Record<string, unknown>,
+) {
+  const ref = getPascalTextureRef(texture)
+  if (!ref) return
+
+  const imageIndex = getExportedImageIndex(textureDef)
+  const imageDef =
+    imageIndex === null ? undefined : (writer as TextureReferenceWriter).json.images?.[imageIndex]
+  if (!imageDef) {
+    throw new Error('GLTFExporter did not expose an image for a referenced Pascal texture')
+  }
+
+  const textureWithExtras = textureDef as GltfExtrasDef
+  textureWithExtras.extras = {
+    ...textureWithExtras.extras,
+    pascalTextureRef: ref,
+  }
+  imageDef.extras = {
+    ...imageDef.extras,
+    pascalTextureRef: ref,
+  }
+}
+
+function textureReferencePlugin(writer: GLTFWriter): GLTFExporterPlugin {
+  return {
+    writeTexture: (texture, textureDef) => {
+      writeTextureReferenceExtras(writer, texture, textureDef)
+    },
+  }
+}
+
 export async function exportSceneToGlb(
   sceneGroup: Object3D,
   nodes: Record<string, AnyNode>,
+  options: GlbExportOptions = {},
 ): Promise<ArrayBuffer> {
+  const textureMode = options.textures ?? 'embed'
   emitter.emit('thumbnail:before-capture', undefined)
+  // Snap levels to their true stacked positions (like thumbnail capture) so the
+  // export always reflects the clean stacked building, regardless of the live
+  // levelMode (exploded/solo) or an unsettled level lerp that could otherwise
+  // bake a level at a stray offset.
   const restoreLevels = snapLevelsToTruePositions()
-  let prepared: GlbExport
+  let prepared: ReturnType<typeof prepareSceneForExport>
   try {
-    prepared = prepareSceneForExport(sceneGroup, nodes)
+    prepared =
+      textureMode === 'reference'
+        ? prepareSceneForExport(sceneGroup, nodes, { textures: 'reference' })
+        : prepareSceneForExport(sceneGroup, nodes)
   } finally {
     restoreLevels()
     emitter.emit('thumbnail:after-capture', undefined)
   }
+  const { scene: exportScene, animations } = prepared
 
   const exporter = new GLTFExporter()
+  if (textureMode === 'reference') exporter.register(textureReferencePlugin)
+  // Painted finishes use KTX2 (GPU-compressed) maps; GLTFExporter can't read
+  // those directly. WebGPUTextureUtils blits each one to RGBA on its own
+  // offscreen renderer (passing the live renderer would resize/draw over the
+  // editor canvas), letting the exporter embed standard textures.
   exporter.setTextureUtils(WebGPUTextureUtils)
 
   return new Promise<ArrayBuffer>((resolve, reject) => {
     exporter.parse(
-      prepared.scene,
-      (gltf) => resolve(gltf as ArrayBuffer),
-      (error) => reject(error),
-      { binary: true, animations: prepared.animations },
+      exportScene,
+      (gltf) => {
+        resolve(gltf as ArrayBuffer)
+      },
+      (error) => {
+        reject(error)
+      },
+      { binary: true, animations },
     )
   })
 }
 
+/**
+ * Build an engine-agnostic export tree from the live scene graph. The result is
+ * a standalone three.js scene plus glTF animation clips, ready for
+ * `GLTFExporter` — it carries no Pascal runtime dependency.
+ *
+ *  - Clones the source so live objects are never mutated.
+ *  - Converts WebGPU NodeMaterials to classic glTF-standard materials.
+ *    `GLTFExporter` only recognises `isMeshStandardMaterial` /
+ *    `isMeshBasicMaterial`; the viewer's `MeshStandard/LambertNodeMaterial` set
+ *    `isNodeMaterial` instead, so without this every surface exports as a blank
+ *    default material.
+ *  - Bakes open motions into glTF animation clips via kind-owned registry
+ *    hooks, plus the legacy door/window build-once + pose-at-t primitives
+ *    (`pascalSwingLeaf` for doors, `poseWindowMovingParts` for windows).
+ *  - Stamps `name` + `extras` identity from `sceneRegistry` so selection/hover
+ *    survive the bake with no in-memory registry, and strips all other userData
+ *    so editor/runtime ephemera never leak into glTF extras.
+ */
 export function prepareSceneForExport(
   source: THREE.Object3D,
   nodes: Record<string, AnyNode>,
+  options: GlbExportOptions = {},
 ): GlbExport {
   const scene = source.clone(true)
   const cloneByOriginal = pairClones(source, scene)
@@ -85,6 +197,10 @@ export function prepareSceneForExport(
     }
   }
 
+  // Object3Ds that carry node identity — never strip these even when they sit on
+  // a non-scene layer. Some are metadata-only: a zone's visible fill/wall meshes
+  // are stripped, but its identity node stays to carry the polygon that /viewer
+  // reconstructs the room from.
   const identityNodes = new Set<THREE.Object3D>()
   for (const original of sceneRegistry.nodes.values()) {
     const clone = cloneByOriginal.get(original)
@@ -93,14 +209,20 @@ export function prepareSceneForExport(
 
   pruneNonRenderableMeshes(scene, identityNodes)
   sanitizeMaterialGroups(scene, identityNodes)
-  convertMaterials(scene)
+  convertMaterials(scene, options.textures ?? 'embed')
 
   const { clips, clipNamesByNode } = bakeAnimationClips(cloneByOriginal, nodes)
+
   stampIdentity(scene, cloneByOriginal, nodes, clipNamesByNode)
 
   return { scene, animations: clips }
 }
 
+/**
+ * Pair each original Object3D with its clone. `clone(true)` builds children in
+ * source order, so parallel pre-order traversals line up 1:1 — this is how we
+ * map `sceneRegistry`'s live refs onto the export tree without mutating either.
+ */
 function pairClones(
   source: THREE.Object3D,
   clone: THREE.Object3D,
@@ -118,7 +240,14 @@ function pairClones(
   return map
 }
 
+// A single empty geometry shared by every container mesh we neutralise below —
+// it has no attributes, so GLTFExporter's processMesh returns null and emits a
+// plain transform node instead of a primitive.
 const EMPTY_GEOMETRY = new THREE.BufferGeometry()
+
+// Hidden placeholder for a neutralised renderable that has no material: a valid
+// material keeps GLTFExporter from crashing on `material.isShaderMaterial`, while
+// EMPTY_GEOMETRY makes it emit a transform node instead of a primitive.
 const PLACEHOLDER_MATERIAL = new THREE.MeshBasicMaterial({ visible: false })
 
 /**
@@ -155,7 +284,12 @@ function pruneNonRenderableMeshes(root: THREE.Object3D, identityNodes: Set<THREE
       toRemove.push(object)
       return
     }
-
+    // A renderable (Mesh / Line / Points) with no material can't produce valid
+    // glTF and crashes GLTFExporter, which reads `material.isShaderMaterial`
+    // unconditionally — e.g. an imported sub-model that left a mesh material-less.
+    // Non-Mesh renderables also slip past the `isMesh` checks below and the
+    // material conversion. Neutralise it: keep the node (so children survive) but
+    // strip its geometry + give it the hidden placeholder, or drop it if a leaf.
     const renderable = object as THREE.Mesh & { isLine?: boolean; isPoints?: boolean }
     if (
       (renderable.isMesh === true || renderable.isLine === true || renderable.isPoints === true) &&
@@ -191,7 +325,9 @@ function pruneNonRenderableMeshes(root: THREE.Object3D, identityNodes: Set<THREE
       toRemove.push(mesh)
     }
   })
-  for (const object of toRemove) object.removeFromParent()
+  for (const object of toRemove) {
+    object.removeFromParent()
+  }
 }
 
 /**
@@ -260,10 +396,15 @@ function isRenderableMesh(mesh: THREE.Mesh): boolean {
   const position = mesh.geometry?.getAttribute('position')
   if (!position || position.count === 0) return false
   const material = mesh.material
+  // `colorWrite: false` is how raycast-only colliders (e.g. instanced plants'
+  // proxy boxes) hide on the GPU — glTF has no equivalent, so exporting one
+  // yields an opaque white box. Treat it as non-renderable.
   const renders = (m: THREE.Material | null | undefined) =>
     m?.visible !== false && m?.colorWrite !== false
   return Array.isArray(material) ? material.some(renders) : renders(material)
 }
+
+// --- Material conversion -------------------------------------------------
 
 const STANDARD_MAP_SLOTS = [
   'map',
@@ -278,26 +419,53 @@ const STANDARD_MAP_SLOTS = [
   'bumpMap',
 ] as const
 
-function convertMaterials(root: THREE.Object3D) {
+const REFERENCE_MAP_SLOTS = [
+  ...STANDARD_MAP_SLOTS,
+  'clearcoatMap',
+  'clearcoatNormalMap',
+  'clearcoatRoughnessMap',
+  'iridescenceMap',
+  'iridescenceThicknessMap',
+  'transmissionMap',
+  'thicknessMap',
+  'specularIntensityMap',
+  'specularColorMap',
+  'sheenRoughnessMap',
+  'sheenColorMap',
+  'anisotropyMap',
+] as const
+
+function convertMaterials(root: THREE.Object3D, textureMode: 'embed' | 'reference') {
   const cache = new Map<THREE.Material, THREE.Material>()
+  const placeholderCache = new Map<THREE.Texture, THREE.Texture>()
   root.traverse((object) => {
     const mesh = object as THREE.Mesh
     if (!mesh.isMesh) return
     const material = mesh.material
     if (Array.isArray(material)) {
-      mesh.material = material.map((m) => convertMaterial(m, cache))
+      mesh.material = material.map((m) => convertMaterial(m, cache, textureMode, placeholderCache))
       return
     }
+    // glTF has no BackSide — GLTFExporter renders the *front* face for any
+    // non-DoubleSide material, which inverts a BackSide surface (e.g. the
+    // ceiling underside, meant to be seen from the room). Flip the mesh winding
+    // so the intended face shows with the FrontSide material convertMaterial
+    // produces. Per-mesh geometry clone keeps shared geometry untouched.
     if (
       (material as { isNodeMaterial?: boolean }).isNodeMaterial &&
       material.side === THREE.BackSide
     ) {
       mesh.geometry = flipGeometryWinding(mesh.geometry)
     }
-    mesh.material = convertMaterial(material, cache)
+    mesh.material = convertMaterial(material, cache, textureMode, placeholderCache)
   })
 }
 
+/**
+ * Reverse triangle winding and negate normals so a surface authored for
+ * `BackSide` reads correctly once exported as `FrontSide` (glTF can't express
+ * back-face-only rendering).
+ */
 function flipGeometryWinding(geometry: THREE.BufferGeometry): THREE.BufferGeometry {
   const flipped = geometry.clone()
   const index = flipped.getIndex()
@@ -330,25 +498,51 @@ function flipGeometryWinding(geometry: THREE.BufferGeometry): THREE.BufferGeomet
   return flipped
 }
 
+/**
+ * Convert a viewer NodeMaterial into the classic `MeshStandardMaterial` the
+ * glTF exporter understands. Classic materials pass through untouched, and the
+ * cache preserves material sharing (one source instance -> one target), so the
+ * exporter still dedups shared surfaces.
+ */
 function convertMaterial(
   material: THREE.Material,
   cache: Map<THREE.Material, THREE.Material>,
+  textureMode: 'embed' | 'reference',
+  placeholderCache: Map<THREE.Texture, THREE.Texture>,
 ): THREE.Material {
-  if ((material as { isNodeMaterial?: boolean }).isNodeMaterial !== true) return material
+  const isNodeMaterial = (material as { isNodeMaterial?: boolean }).isNodeMaterial === true
+  if (!isNodeMaterial) {
+    if (textureMode === 'embed') return material
+    const cached = cache.get(material)
+    if (cached) return cached
+    const target = material.clone()
+    replaceReferencedTextures(target, placeholderCache)
+    cache.set(material, target)
+    return target
+  }
 
   const cached = cache.get(material)
   if (cached) return cached
 
   const src = material as THREE.Material & Record<string, unknown>
   const target = new THREE.MeshStandardMaterial()
+
   target.name = material.name
   if (src.color instanceof THREE.Color) target.color.copy(src.color)
   if (src.emissive instanceof THREE.Color) target.emissive.copy(src.emissive)
   if (typeof src.emissiveIntensity === 'number') target.emissiveIntensity = src.emissiveIntensity
+  // Lambert (solid-shading / glass) node materials carry no PBR scalars; a fully
+  // rough, non-metallic surface is the faithful lit fallback.
   target.roughness = typeof src.roughness === 'number' ? src.roughness : 1
   target.metalness = typeof src.metalness === 'number' ? src.metalness : 0
+  // Only genuinely see-through surfaces stay transparent. Several viewer
+  // materials set `transparent: true` while fully opaque (opacity 1); exporting
+  // those as alphaMode=BLEND makes them render see-through with no depth write
+  // (e.g. the ceiling looked semi-transparent). Glass (opacity < 1) is kept.
   target.transparent = material.transparent && material.opacity < 1
   target.opacity = material.opacity
+  // BackSide is flipped to FrontSide (with the mesh winding reversed in
+  // convertMaterials) because glTF has no back-face-only mode.
   target.side = material.side === THREE.BackSide ? THREE.FrontSide : material.side
   target.alphaTest = material.alphaTest
   target.depthWrite = material.depthWrite
@@ -366,9 +560,91 @@ function convertMaterial(
     }
   }
 
+  if (textureMode === 'reference') replaceReferencedTextures(target, placeholderCache)
+
   cache.set(material, target)
   return target
 }
+
+function replaceReferencedTextures(
+  material: THREE.Material,
+  placeholderCache: Map<THREE.Texture, THREE.Texture>,
+) {
+  const textureMaterial = material as THREE.Material & Record<string, unknown>
+  for (const slot of REFERENCE_MAP_SLOTS) {
+    const texture = textureMaterial[slot]
+    if (!(texture instanceof THREE.Texture) || !getPascalTextureRef(texture)) continue
+
+    let placeholder = placeholderCache.get(texture)
+    if (!placeholder) {
+      placeholder = createReferencePlaceholder(texture)
+      placeholderCache.set(texture, placeholder)
+    }
+    textureMaterial[slot] = placeholder
+  }
+}
+
+/** GLTFExporter serializes images via canvas drawImage/createImageBitmap,
+ *  which reject a DataTexture's raw `{data,width,height}` image — so in DOM
+ *  environments the placeholder must be canvas-backed. The DataTexture branch
+ *  covers non-DOM runs (bun tests), where the exporter itself never runs. */
+function createPlaceholderCanvas(): OffscreenCanvas | HTMLCanvasElement | null {
+  const canvas =
+    typeof OffscreenCanvas !== 'undefined'
+      ? new OffscreenCanvas(1, 1)
+      : typeof document !== 'undefined'
+        ? Object.assign(document.createElement('canvas'), { width: 1, height: 1 })
+        : null
+  if (!canvas) return null
+  const ctx = canvas.getContext('2d') as
+    | OffscreenCanvasRenderingContext2D
+    | CanvasRenderingContext2D
+    | null
+  if (!ctx) return null
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, 1, 1)
+  return canvas
+}
+
+function createReferencePlaceholder(texture: THREE.Texture): THREE.Texture {
+  const ref = getPascalTextureRef(texture)
+  if (!ref) throw new Error('Cannot create a placeholder for an invalid Pascal texture reference')
+
+  const canvas = createPlaceholderCanvas()
+  const placeholder = canvas
+    ? new THREE.Texture(canvas)
+    : new THREE.DataTexture(
+        new Uint8Array([255, 255, 255, 255]),
+        1,
+        1,
+        THREE.RGBAFormat,
+        THREE.UnsignedByteType,
+      )
+  placeholder.name = texture.name
+  placeholder.mapping = texture.mapping
+  placeholder.channel = texture.channel
+  placeholder.wrapS = texture.wrapS
+  placeholder.wrapT = texture.wrapT
+  placeholder.magFilter = texture.magFilter
+  placeholder.minFilter = texture.minFilter
+  placeholder.anisotropy = texture.anisotropy
+  placeholder.offset.copy(texture.offset)
+  placeholder.repeat.copy(texture.repeat)
+  placeholder.center.copy(texture.center)
+  placeholder.rotation = texture.rotation
+  placeholder.matrixAutoUpdate = texture.matrixAutoUpdate
+  placeholder.matrix.copy(texture.matrix)
+  placeholder.generateMipmaps = texture.generateMipmaps
+  placeholder.premultiplyAlpha = texture.premultiplyAlpha
+  placeholder.flipY = texture.flipY
+  placeholder.unpackAlignment = texture.unpackAlignment
+  placeholder.colorSpace = texture.colorSpace
+  placeholder.userData = { pascalTextureRef: ref }
+  placeholder.needsUpdate = true
+  return placeholder
+}
+
+// --- Animation clip baking ----------------------------------------------
 
 function bakeAnimationClips(
   cloneByOriginal: Map<THREE.Object3D, THREE.Object3D>,
@@ -383,21 +659,83 @@ function bakeAnimationClips(
     if (!node || !target) continue
 
     const clip =
-      node.type === 'door'
+      bakeRegistryAnimationClips(node, target) ??
+      (node.type === 'door'
         ? bakeDoorClip(id, node, target)
         : node.type === 'window'
           ? bakeWindowClip(id, node as WindowNode, target)
-          : null
+          : node.type === 'item'
+            ? bakeItemClip(id, target)
+            : null)
 
     if (clip) {
-      clips.push(clip)
-      clipNamesByNode.set(id, [clip.name])
+      const nodeClips = Array.isArray(clip) ? clip : [clip]
+      clips.push(...nodeClips)
+      clipNamesByNode.set(
+        id,
+        nodeClips.map((c) => c.name),
+      )
     }
   }
 
   return { clips, clipNamesByNode }
 }
 
+function bakeRegistryAnimationClips(
+  node: AnyNode,
+  object: THREE.Object3D,
+): THREE.AnimationClip | THREE.AnimationClip[] | null | undefined {
+  return nodeRegistry.get(node.type)?.exportAnimation?.({ node, object })
+}
+
+/**
+ * Re-emit a catalog item's ambient clip (e.g. a fan's spin) onto the baked
+ * subtree. The source clip targets the item GLB's nodes by name (`lamp_018`);
+ * since every fan shares those names, we rebind each track to the specific
+ * cloned node's uuid so multiple fans animate independently. The clip is named
+ * per node (`<id>: loop`) so the baked viewer can drive each one on its own.
+ */
+function bakeItemClip(id: string, itemObject: THREE.Object3D): THREE.AnimationClip | null {
+  const entry = itemClipRegistry.get(id)
+  if (!entry) return null
+
+  const tracks: THREE.KeyframeTrack[] = []
+  // The catalog node names (e.g. "lamp_018") repeat across every instance of the
+  // item, and the glTF export→import roundtrip rebinds clip tracks by node name —
+  // so a shared name would make all fans share one clip. Uniquify the targeted
+  // node's name per item once, then bind tracks by its (stable) uuid.
+  const renamed = new Map<string, THREE.Object3D>()
+  for (const track of entry.clip.tracks) {
+    const dot = track.name.lastIndexOf('.')
+    if (dot < 0) continue
+    const targetName = track.name.slice(0, dot)
+    const property = track.name.slice(dot + 1)
+    let targetNode = renamed.get(targetName)
+    if (!targetNode) {
+      const found = itemObject.getObjectByName(targetName)
+      if (!found) continue
+      found.name = `${id}__${targetName}`
+      renamed.set(targetName, found)
+      targetNode = found
+    }
+    const retargeted = track.clone()
+    retargeted.name = `${targetNode.uuid}.${property}`
+    tracks.push(retargeted)
+  }
+
+  if (tracks.length === 0) return null
+  const clip = new THREE.AnimationClip(`${id}: loop`, entry.clip.duration, tracks)
+  clip.userData = { loop: entry.loop }
+  return clip
+}
+
+/**
+ * Bake a door's open motion. Swing doors (hinged/double/french) carry a
+ * `pascalSwingLeaf` marker and bake a single quaternion track per leaf;
+ * operation doors (sliding/pocket/barn/folding/garage-*) build their moving
+ * parts in named groups posed by `poseDoorMovingParts`, sampled here into
+ * keyframes (their motion is non-linear, e.g. the sectional's overhead curve).
+ */
 function bakeDoorClip(
   id: string,
   node: AnyNode,
@@ -406,9 +744,19 @@ function bakeDoorClip(
   if (node.type === 'door' && isOperationDoorType((node as DoorNode).doorType)) {
     return bakeOperationDoorClip(id, node as DoorNode, doorObject)
   }
-  return bakeSwingDoorClip(id, doorObject)
+  return bakeSwingDoorClip(id, node, doorObject)
 }
 
+/** Number of keyframes sampled across an operation door's 0→1 open motion. */
+const OPERATION_DOOR_SAMPLES = 16
+
+/**
+ * Sample an operation door's open motion into keyframe tracks by posing the
+ * export clone with `poseDoorMovingParts` at evenly-spaced fractions. Only the
+ * named moving groups change (their children are rigid), so a track is emitted
+ * per group whose position / rotation / scale actually moves. The clone is left
+ * posed closed so the GLB's rest state is shut.
+ */
 function bakeOperationDoorClip(
   id: string,
   node: DoorNode,
@@ -465,6 +813,7 @@ function bakeOperationDoorClip(
   }
 
   poseDoorMovingParts(node, doorObject, 0)
+
   if (tracks.length === 0) return null
   return openClip(id, tracks)
 }
@@ -496,12 +845,21 @@ function samplesMoveScale(flat: number[], base: THREE.Vector3): boolean {
   return false
 }
 
-function bakeSwingDoorClip(id: string, doorObject: THREE.Object3D): THREE.AnimationClip | null {
+/**
+ * Bake a swing door's open motion. Each marked leaf is rotated from closed
+ * (rest pose) to its fully-open angle and emitted as a 1-second quaternion
+ * track; the leaf is left at the closed pose so the GLB's rest state is shut.
+ */
+function bakeSwingDoorClip(
+  id: string,
+  node: AnyNode,
+  doorObject: THREE.Object3D,
+): THREE.AnimationClip | null {
   const tracks: THREE.KeyframeTrack[] = []
 
   doorObject.traverse((object) => {
     const marker = object.userData.pascalSwingLeaf as SwingLeafMarker | undefined
-    if (!marker || marker.axis !== 'y') return
+    if (marker?.axis !== 'y') return
 
     object.rotation.y = 0
     const closed = object.quaternion.clone()
@@ -522,12 +880,32 @@ function bakeSwingDoorClip(id: string, doorObject: THREE.Object3D): THREE.Animat
   return openClip(id, tracks)
 }
 
+/**
+ * Wrap an open motion in a named 1-second clip. The name is keyed by the node id
+ * (`<id>: open`), NOT the node's display name: clip names must be unique because
+ * the baked viewer drives playback by clip name (`useAnimations` maps name →
+ * action), so two same-named openables (e.g. several "Window 1"s) would collapse
+ * to a single action and a trigger on one would animate another. The
+ * human-readable name lives in `extras.label` instead. glTF has no core loop
+ * flag — the player decides — so we stamp `extras.loop = false` (via the clip's
+ * userData, which `GLTFExporter` serialises onto the animation): Pascal's
+ * `/viewer` and any extras-aware consumer play it once and hold the open pose; a
+ * dumb glTF player still loops. Consumers map a clip back to its node by walking
+ * up from a channel's target to the nearest ancestor carrying `extras.pascalId`.
+ */
 function openClip(id: string, tracks: THREE.KeyframeTrack[]): THREE.AnimationClip {
   const clip = new THREE.AnimationClip(`${id}: open`, 1, tracks)
   clip.userData = { loop: false }
   return clip
 }
 
+/**
+ * Bake a window's open motion generically: snapshot every part's pose closed,
+ * pose the subtree open, and emit a track for whichever parts actually moved
+ * (translation for sliding/hung sashes, rotation for casement/awning/louvre).
+ * Reusing the live `poseWindowMovingParts` keeps one source of truth for window
+ * kinematics. The subtree is left posed closed as the GLB's rest state.
+ */
 function bakeWindowClip(
   id: string,
   node: WindowNode,
@@ -574,10 +952,24 @@ function bakeWindowClip(
   })
 
   poseWindowMovingParts(node, windowObject, 0)
+
   if (tracks.length === 0) return null
   return openClip(id, tracks)
 }
 
+// --- Identity stamping ---------------------------------------------------
+
+/**
+ * Replace every clone's userData with `{}`, then stamp identity onto the nodes
+ * that `sceneRegistry` tracks. Wiping first guarantees no editor/runtime marker
+ * (e.g. `pascalSwingLeaf`, cached-material flags) leaks into glTF extras — the
+ * file describes itself with exactly the fields a consumer needs.
+ */
+/**
+ * Human-readable label for a baked node, mirroring the viewer's `getNodeName`:
+ * an explicit name wins, items fall back to their catalog asset name, other
+ * kinds to a capitalized type. Levels override this with their display name.
+ */
 function nodeDisplayLabel(node: AnyNode): string {
   if (node.name) return node.name
   switch (node.type) {
@@ -589,6 +981,9 @@ function nodeDisplayLabel(node: AnyNode): string {
       return 'Door'
     case 'window':
       return 'Window'
+    case 'cabinet':
+    case 'cabinet-module':
+      return 'Cabinet'
     case 'slab':
       return 'Slab'
     case 'ceiling':
@@ -622,30 +1017,52 @@ function stampIdentity(
     if (!node || !target) continue
 
     target.name = id
-    const extras: Record<string, unknown> = {
-      pascalId: id,
-      kind: node.type,
-      label: nodeDisplayLabel(node),
-    }
+    const extras: Record<string, unknown> = { pascalId: id, kind: node.type }
+    // Stamp a human label for every node (catalog name for items, a type label
+    // otherwise) so the viewer breadcrumb/hover read names, not raw pascalIds.
+    extras.label = nodeDisplayLabel(node)
+    // Camera bookmarks ride on the identity node (any kind can carry one) so the
+    // baked viewer flies to a saved pose on selection without a side file.
     if (node.camera) extras.camera = node.camera
+    // Levels carry no stored name; stamp the editor's display name ("Level 1")
+    // so the baked viewer's level/breadcrumb UI reads the same labels. Force the
+    // node visible: the bake must capture every floor regardless of the editor's
+    // current level mode (solo/hidden floors would otherwise be dropped by
+    // GLTFExporter's `onlyVisible`).
     if (node.type === 'level') {
       extras.label = getLevelDisplayName(node as LevelNode)
       target.visible = true
     }
-    if (node.type === 'door' || node.type === 'window') {
+    // Only nodes that actually baked an open clip are openable. A cased opening
+    // (no leaf), fixed window, or static cabinet produces no clip, so it stays
+    // unflagged — the file never claims a part opens when nothing moves.
+    if (clipNamesByNode.get(id)?.some((name) => name.endsWith(': open'))) {
       const clipNames = clipNamesByNode.get(id)
       if (clipNames?.length) {
         extras.openable = true
         extras.clips = clipNames
       }
     }
+    // Items with a baked ambient clip (a fan's spin) carry the clip name but no
+    // `openable` flag — nothing opens; the clip just loops.
+    if (node.type === 'item') {
+      const clipNames = clipNamesByNode.get(id)
+      if (clipNames?.length) extras.clips = clipNames
+    }
     if (node.type === 'zone') {
+      // Zone fills are stripped from the bake; /viewer rebuilds the room from
+      // this polygon. Force the identity node visible so GLTFExporter's
+      // `onlyVisible` keeps it even when the editor had zones hidden at export.
       const zone = node as ZoneNode
       extras.polygon = zone.polygon
       extras.color = zone.color
       target.visible = true
     }
     if (node.type === 'spawn') {
+      // The spawn marker's visible mesh lives on a non-scene overlay layer (and
+      // is pruned), so this identity node is an empty transform. Keep it + force
+      // visible so the baked walkthrough can read its world position/yaw and
+      // start the player there (`extras.rotation` mirrors the node's yaw).
       extras.rotation = (node as { rotation?: number }).rotation ?? 0
       target.visible = true
     }
