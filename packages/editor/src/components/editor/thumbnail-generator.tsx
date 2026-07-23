@@ -1,20 +1,24 @@
 'use client'
 
-import { emitter, sceneRegistry } from '@pascal-app/core'
-import { GTAO_PARAMS, snapLevelsToTruePositions, useViewer } from '@pascal-app/viewer'
+import { emitter } from '@pascal-app/core'
+import {
+  computeHeroFraming,
+  createSnapshotPipeline,
+  GRID_LAYER,
+  heroCameraPose,
+  type SnapshotPipeline,
+  snapLevelsToTruePositions,
+  THUMBNAIL_HEIGHT,
+  THUMBNAIL_WIDTH,
+  temporarilyHideNodeTypes,
+  useViewer,
+} from '@pascal-app/viewer'
 import type { CameraControls } from '@react-three/drei'
 import { useThree } from '@react-three/fiber'
 import { useCallback, useEffect, useRef } from 'react'
 import * as THREE from 'three'
-import { ao as gtao } from 'three/addons/tsl/display/GTAONode.js'
-import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js'
-import { fxaa } from 'three/examples/jsm/tsl/display/FXAANode.js'
-import { convertToTexture, float, mrt, normalView, output, pass, vec4 } from 'three/tsl'
-import { RenderPipeline, RenderTarget, type WebGPURenderer } from 'three/webgpu'
+import type { WebGPURenderer } from 'three/webgpu'
 import { EDITOR_LAYER } from '../../lib/constants'
-
-const THUMBNAIL_WIDTH = 1920
-const THUMBNAIL_HEIGHT = 1080
 
 export interface SnapshotCameraData {
   position: [number, number, number]
@@ -38,8 +42,7 @@ export const ThumbnailGenerator = ({ onThumbnailCapture }: ThumbnailGeneratorPro
   const onThumbnailCaptureRef = useRef(onThumbnailCapture)
 
   const thumbnailCameraRef = useRef<THREE.PerspectiveCamera | null>(null)
-  const pipelineRef = useRef<RenderPipeline | null>(null)
-  const renderTargetRef = useRef<RenderTarget | null>(null)
+  const pipelineRef = useRef<SnapshotPipeline | null>(null)
 
   useEffect(() => {
     onThumbnailCaptureRef.current = onThumbnailCapture
@@ -49,78 +52,30 @@ export const ThumbnailGenerator = ({ onThumbnailCapture }: ThumbnailGeneratorPro
   useEffect(() => {
     const cam = new THREE.PerspectiveCamera(60, THUMBNAIL_WIDTH / THUMBNAIL_HEIGHT, 0.1, 1000)
     cam.layers.disable(EDITOR_LAYER)
+    cam.layers.disable(GRID_LAYER)
     thumbnailCameraRef.current = cam
 
     let mounted = true
 
     const buildPipeline = async () => {
-      try {
-        if ((gl as any).init) await (gl as any).init()
-        if (!mounted) return
-        if ((gl as any).backend?.isWebGPUBackend !== true) return
-
-        // pass() handles MRT internally for all material types, including custom
-        // shaders — unlike renderer.setMRT() which crashes on non-NodeMaterials.
-        // pass() also respects camera.layers, so EDITOR_LAYER objects are filtered.
-        const scenePass = pass(scene, cam)
-        scenePass.setMRT(
-          mrt({
-            output,
-            normal: normalView,
-          }),
-        )
-
-        const scenePassColor = scenePass.getTextureNode('output')
-        const scenePassDepth = scenePass.getTextureNode('depth')
-        const scenePassNormal = scenePass.getTextureNode('normal')
-
-        const aoPass = gtao(scenePassDepth, scenePassNormal, cam as any)
-        aoPass.radius.value = GTAO_PARAMS.radius
-        aoPass.scale.value = GTAO_PARAMS.scale
-        aoPass.thickness.value = GTAO_PARAMS.thickness
-        aoPass.distanceFallOff.value = GTAO_PARAMS.distanceFallOff
-        aoPass.distanceExponent.value = GTAO_PARAMS.distanceExponent
-        aoPass.samples.value = GTAO_PARAMS.samples
-        aoPass.resolutionScale = GTAO_PARAMS.resolutionScale
-        aoPass.useTemporalFiltering = GTAO_PARAMS.useTemporalFiltering
-
-        const aoTexture = aoPass.getTextureNode()
-        const aoAsRgb = vec4(aoTexture.r, aoTexture.r, aoTexture.r, float(1))
-        const denoisePass = denoise(aoAsRgb, scenePassDepth, scenePassNormal, cam)
-        denoisePass.index.value = 0
-        denoisePass.radius.value = 4
-
-        const ao = (denoisePass as any).r
-        const finalOutput = vec4(scenePassColor.rgb.mul(ao), scenePassColor.a)
-
-        // FXAA requires a texture node as input; convertToTexture renders finalOutput
-        // into an intermediate RT so FXAA can sample it with neighbour UV offsets.
-        const aaOutput = fxaa(convertToTexture(finalOutput))
-
-        const pipeline = new RenderPipeline(gl as unknown as WebGPURenderer)
-        pipeline.outputNode = aaOutput
-        pipelineRef.current = pipeline
-
-        // Dedicated render target — pipeline outputs here instead of the canvas,
-        // so R3F's main render loop can never overwrite our capture.
-        const { width, height } = gl.domElement
-        renderTargetRef.current = new RenderTarget(width, height, { depthBuffer: true })
-      } catch (error) {
-        console.error(
-          '[thumbnail] Failed to build post-processing pipeline, will use fallback render.',
-          error,
-        )
+      const pipeline = await createSnapshotPipeline({
+        renderer: gl as unknown as WebGPURenderer,
+        scene,
+        camera: cam,
+      })
+      if (!mounted) {
+        pipeline?.dispose()
+        return
       }
+      pipelineRef.current = pipeline
     }
 
-    buildPipeline()
+    void buildPipeline()
 
     return () => {
       mounted = false
       pipelineRef.current?.dispose()
       pipelineRef.current = null
-      renderTargetRef.current?.dispose()
-      renderTargetRef.current = null
     }
   }, [gl, scene])
 
@@ -129,7 +84,11 @@ export const ThumbnailGenerator = ({ onThumbnailCapture }: ThumbnailGeneratorPro
       snapLevels: boolean,
       captureMode?: 'standard' | 'viewport' | 'area',
       cropRegion?: { x: number; y: number; width: number; height: number },
+      standardSize?: { w: number; h: number },
+      transparent = false,
     ) => {
+      const standardW = standardSize?.w ?? THUMBNAIL_WIDTH
+      const standardH = standardSize?.h ?? THUMBNAIL_HEIGHT
       if (isGenerating.current) return
       if (!onThumbnailCaptureRef.current) return
 
@@ -151,6 +110,20 @@ export const ThumbnailGenerator = ({ onThumbnailCapture }: ThumbnailGeneratorPro
         const { width, height } = gl.domElement
         thumbnailCamera.aspect = width / height
         thumbnailCamera.updateProjectionMatrix()
+        // The capture camera never joins the scene graph, so its matrixWorld
+        // is only refreshed by the render itself — too late for the backdrop
+        // uniforms below.
+        thumbnailCamera.updateMatrixWorld()
+
+        const pipeline = pipelineRef.current
+        pipeline?.applyEnvironment({
+          theme: useViewer.getState().sceneTheme,
+          transparent,
+          grade: useViewer.getState().shading === 'rendered',
+          // Preset/item captures stay clean; scene captures mirror the canvas.
+          edges: transparent ? 'off' : useViewer.getState().edges,
+          camera: thumbnailCamera,
+        })
 
         // Capture camera data for snapshot storage
         const pos = mainCamera.position
@@ -180,174 +153,82 @@ export const ThumbnailGenerator = ({ onThumbnailCapture }: ThumbnailGeneratorPro
           restoreLevels = snapLevelsToTruePositions()
         }
 
-        // Hide scan and guide nodes directly so they are excluded from the
-        // thumbnail regardless of whether ScanSystem/GuideSystem listeners are
-        // registered. Returns a function that restores the original visibility.
-        const restoreNodeVisibility = (() => {
-          const saved = new Map<THREE.Object3D, boolean>()
-          for (const type of ['scan', 'guide'] as const) {
-            const ids = sceneRegistry.byType[type]!
-            ids.forEach((id) => {
-              const node = sceneRegistry.nodes.get(id)
-              if (node) {
-                saved.set(node, node.visible)
-                node.visible = false
-              }
+        // Hide scan, guide, and spawn nodes directly so they are excluded from
+        // the thumbnail regardless of whether ScanSystem/GuideSystem listeners
+        // are registered. Spawn renders on SCENE_LAYER for occlusion, so the
+        // thumbnail camera's layer mask can't filter it either. Returns a
+        // function that restores the original visibility.
+        const restoreNodeVisibility = temporarilyHideNodeTypes(['scan', 'guide', 'spawn'])
+
+        // Auto-save shots don't copy the user's mid-edit camera — they re-pose
+        // onto the same computed hero angle the published thumbnail uses, so a
+        // project's card never shows a half-zoomed working view. Measured after
+        // the level snap so stacked positions frame correctly. User-driven
+        // captures (captureMode set) keep the exact viewport pose.
+        if (snapLevels) {
+          const framing = computeHeroFraming()
+          if (framing) {
+            const pose = heroCameraPose({
+              boxes: framing.boxes,
+              aim: framing.aim,
+              azimuthRad: framing.azimuthRad,
+              aspect: width / height,
             })
-          }
-          return () => {
-            saved.forEach((wasVisible, node) => {
-              node.visible = wasVisible
+            thumbnailCamera.position.set(pose.position[0], pose.position[1], pose.position[2])
+            thumbnailCamera.lookAt(pose.target[0], pose.target[1], pose.target[2])
+            thumbnailCamera.updateMatrixWorld()
+            pipeline?.applyEnvironment({
+              theme: useViewer.getState().sceneTheme,
+              transparent,
+              grade: useViewer.getState().shading === 'rendered',
+              edges: transparent ? 'off' : useViewer.getState().edges,
+              camera: thumbnailCamera,
             })
+            cameraData.position = pose.position
+            cameraData.target = pose.target
           }
-        })()
+        }
 
         let blob: Blob
 
-        if (pipelineRef.current && renderTargetRef.current) {
-          const rt = renderTargetRef.current
-
-          // Resize RT if the canvas dimensions changed
-          if (rt.width !== width || rt.height !== height) {
-            rt.setSize(width, height)
-          }
-
-          const renderer = gl as unknown as WebGPURenderer
+        if (pipeline) {
+          let capturePromise: ReturnType<SnapshotPipeline['capture']>
 
           // Notify other systems (wall cutouts, selection manager) to restore
           // their overrides before capture and re-apply them after.
-          emitter.emit('thumbnail:before-capture', undefined)
-          ;(renderer as any).setClearAlpha(0)
-          renderer.setRenderTarget(rt)
-          pipelineRef.current.render()
-          renderer.setRenderTarget(null)
-          emitter.emit('thumbnail:after-capture', undefined)
-
-          // Restore level positions, levelMode, and node visibility immediately after the
-          // render — before the async GPU readback.
-          restoreLevels()
-          restoreLevelMode?.()
-          restoreNodeVisibility()
-
-          // Read pixels from the RT asynchronously.
-          // WebGPU copyTextureToBuffer aligns each row to 256 bytes, so we must
-          // depad the rows before constructing ImageData.
-          const pixels = (await (renderer as any).readRenderTargetPixelsAsync(
-            rt,
-            0,
-            0,
-            width,
-            height,
-          )) as Uint8Array
-
-          const actualBytesPerRow = width * 4
-          const tightTotal = actualBytesPerRow * height
-          const paddedBytesPerRow = Math.ceil(actualBytesPerRow / 256) * 256
-          // Two readback shapes to handle:
-          // - WebGPU (`copyTextureToBuffer`): top-down + 256-byte row padding
-          //   when width*4 isn't already a multiple of 256.
-          // - WebGL2 fallback (iOS Chrome, etc.): tightly-packed but bottom-up
-          //   (OpenGL framebuffer convention).
-          // `isWebGPURenderer` lies — it stays true even when the renderer
-          // falls back to the WebGL backend. Inspect the actual backend
-          // instead (presence of a GPU device, or backend constructor name).
-          const backend = (renderer as any).backend
-          const isWebGPU =
-            !!backend?.device ||
-            backend?.isWebGPUBackend === true ||
-            backend?.constructor?.name === 'WebGPUBackend'
-          let tightPixels: Uint8ClampedArray
-          if (isWebGPU) {
-            // WebGPU: depad rows if needed; orientation is already top-down.
-            if (paddedBytesPerRow === actualBytesPerRow) {
-              tightPixels = new Uint8ClampedArray(
-                pixels.buffer,
-                pixels.byteOffset,
-                Math.min(pixels.byteLength, tightTotal),
-              )
-            } else {
-              tightPixels = new Uint8ClampedArray(tightTotal)
-              for (let row = 0; row < height; row++) {
-                tightPixels.set(
-                  pixels.subarray(
-                    row * paddedBytesPerRow,
-                    row * paddedBytesPerRow + actualBytesPerRow,
-                  ),
-                  row * actualBytesPerRow,
-                )
-              }
-            }
-          } else {
-            // WebGL2: tight buffer in bottom-up order — flip rows.
-            tightPixels = new Uint8ClampedArray(tightTotal)
-            for (let row = 0; row < height; row++) {
-              const srcStart = (height - 1 - row) * actualBytesPerRow
-              tightPixels.set(
-                pixels.subarray(srcStart, srcStart + actualBytesPerRow),
-                row * actualBytesPerRow,
-              )
-            }
+          try {
+            emitter.emit('thumbnail:before-capture', undefined)
+            capturePromise = pipeline.capture({
+              captureMode,
+              cropRegion,
+              standardSize,
+            })
+          } finally {
+            // Restore level positions, levelMode, and node visibility immediately
+            // after the render — before the async GPU readback. Runs in `finally`
+            // so a render failure can't leave helpers permanently hidden.
+            emitter.emit('thumbnail:after-capture', undefined)
+            restoreLevels()
+            restoreLevelMode?.()
+            restoreNodeVisibility()
           }
 
-          const imageData = new ImageData(
-            tightPixels as unknown as Uint8ClampedArray<ArrayBuffer>,
-            width,
-            height,
-          )
-          const srcCanvas = new OffscreenCanvas(width, height)
-          srcCanvas.getContext('2d')!.putImageData(imageData, 0, 0)
-
-          let outW: number
-          let outH: number
-
-          if (captureMode === 'viewport') {
-            outW = width
-            outH = height
-            const offscreen = new OffscreenCanvas(outW, outH)
-            offscreen.getContext('2d')!.drawImage(srcCanvas, 0, 0)
-            blob = await offscreen.convertToBlob({ type: 'image/png' })
-          } else if (captureMode === 'area' && cropRegion) {
-            const sx = Math.round(cropRegion.x * width)
-            const sy = Math.round(cropRegion.y * height)
-            outW = Math.round(cropRegion.width * width)
-            outH = Math.round(cropRegion.height * height)
-            const offscreen = new OffscreenCanvas(outW, outH)
-            offscreen.getContext('2d')!.drawImage(srcCanvas, sx, sy, outW, outH, 0, 0, outW, outH)
-            blob = await offscreen.convertToBlob({ type: 'image/png' })
-          } else {
-            // Standard: center-crop to 1920×1080 aspect ratio
-            const srcAspect = width / height
-            const dstAspect = THUMBNAIL_WIDTH / THUMBNAIL_HEIGHT
-            let sx = 0,
-              sy = 0,
-              sWidth = width,
-              sHeight = height
-            if (srcAspect > dstAspect) {
-              sWidth = Math.round(height * dstAspect)
-              sx = Math.round((width - sWidth) / 2)
-            } else if (srcAspect < dstAspect) {
-              sHeight = Math.round(width / dstAspect)
-              sy = Math.round((height - sHeight) / 2)
-            }
-            outW = THUMBNAIL_WIDTH
-            outH = THUMBNAIL_HEIGHT
-            const offscreen = new OffscreenCanvas(outW, outH)
-            offscreen
-              .getContext('2d')!
-              .drawImage(srcCanvas, sx, sy, sWidth, sHeight, 0, 0, outW, outH)
-            blob = await offscreen.convertToBlob({ type: 'image/png' })
-          }
+          const result = await capturePromise
+          blob = result.blob
 
           if (captureMode !== undefined) cameraData.captureMode = captureMode
-          cameraData.resolution = { w: outW, h: outH }
+          cameraData.resolution = { w: result.outW, h: result.outH }
         } else {
           // Fallback: plain render directly to the canvas
-          emitter.emit('thumbnail:before-capture', undefined)
-          gl.render(scene, thumbnailCamera)
-          emitter.emit('thumbnail:after-capture', undefined)
-          restoreLevels()
-          restoreLevelMode?.()
-          restoreNodeVisibility()
+          try {
+            emitter.emit('thumbnail:before-capture', undefined)
+            gl.render(scene, thumbnailCamera)
+          } finally {
+            emitter.emit('thumbnail:after-capture', undefined)
+            restoreLevels()
+            restoreLevelMode?.()
+            restoreNodeVisibility()
+          }
 
           let outW: number
           let outH: number
@@ -384,7 +265,7 @@ export const ThumbnailGenerator = ({ onThumbnailCapture }: ThumbnailGeneratorPro
             )
           } else {
             const srcAspect = width / height
-            const dstAspect = THUMBNAIL_WIDTH / THUMBNAIL_HEIGHT
+            const dstAspect = standardW / standardH
             let sx = 0,
               sy = 0,
               sWidth = width,
@@ -396,8 +277,8 @@ export const ThumbnailGenerator = ({ onThumbnailCapture }: ThumbnailGeneratorPro
               sHeight = Math.round(width / dstAspect)
               sy = Math.round((height - sHeight) / 2)
             }
-            outW = THUMBNAIL_WIDTH
-            outH = THUMBNAIL_HEIGHT
+            outW = standardW
+            outH = standardH
             const offscreen = document.createElement('canvas')
             offscreen.width = outW
             offscreen.height = outH
@@ -438,9 +319,20 @@ export const ThumbnailGenerator = ({ onThumbnailCapture }: ThumbnailGeneratorPro
     const handleGenerateThumbnail = async (event: {
       captureMode?: 'standard' | 'viewport' | 'area'
       cropRegion?: { x: number; y: number; width: number; height: number }
+      standardSize?: { w: number; h: number }
       snapLevels?: boolean
+      // Preset/item captures keep the alpha channel (their thumbnails compose
+      // onto arbitrary palette backgrounds); scene snapshots — studio renders
+      // and project thumbnails — composite the theme backdrop + sky.
+      transparent?: boolean
     }) => {
-      await generate(event.snapLevels === true, event.captureMode, event.cropRegion)
+      await generate(
+        event.snapLevels === true,
+        event.captureMode,
+        event.cropRegion,
+        event.standardSize,
+        event.transparent === true,
+      )
     }
 
     emitter.on('camera-controls:generate-thumbnail', handleGenerateThumbnail)
