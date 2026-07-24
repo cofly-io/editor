@@ -13,7 +13,7 @@
     "next": "16.2.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "three": "^0.184.0"
+    "three": "^0.185.0"
   },
   "devDependencies": { "@pascal/typescript-config": "*", "@types/node": "^22.19.12", "@types/react": "19.2.2", "@types/react-dom": "19.2.2", "typescript": "6.0.2" }
 }

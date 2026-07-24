@@ -1,25 +1,29 @@
 'use client'
 
 import { type AnyNodeId, type SiteNode, useRegistry, useScene } from '@pascal-app/core'
-import { getSceneTheme } from '@pascal-app/viewer/scene-themes'
-import { NodeRenderer } from '@pascal-app/viewer/node-renderer'
+import { backdropGradient, deepSkyColor, horizonHazeColor } from '@pascal-app/viewer'
 import { useNodeEvents } from '@pascal-app/viewer/node-events'
+import { NodeRenderer } from '@pascal-app/viewer/node-renderer'
 import { unionPolygons } from '@pascal-app/viewer/polygon-union'
 import { createSafeEmptyGeometry } from '@pascal-app/viewer/safe-geometry'
+import { getSceneTheme } from '@pascal-app/viewer/scene-themes'
 import useViewer from '@pascal-app/viewer/store'
 import { useEffect, useMemo, useRef } from 'react'
 import {
   BufferGeometry,
+  CircleGeometry,
   Float32BufferAttribute,
   type Group,
   Path,
   Shape,
   ShapeGeometry,
 } from 'three'
+import { cameraPosition, color, float, mix, positionWorld, smoothstep, vec2 } from 'three/tsl'
 import { MeshLambertNodeMaterial } from 'three/webgpu'
 import { collectRecessedSlabGroundHolePolygons } from './ground-holes'
 
 const Y_OFFSET = 0.01
+const noopRaycast = () => {}
 
 const signedArea2 = (polygon: ReadonlyArray<readonly [number, number]>) =>
   polygon.reduce((sum, point, index) => {
@@ -68,6 +72,36 @@ export const SiteRenderer = ({ node }: { node: SiteNode }) => {
   useRegistry(node.id, 'site', ref)
 
   const bgColor = useViewer((state) => getSceneTheme(state.sceneTheme).ground)
+  const backgroundColor = useViewer((state) => getSceneTheme(state.sceneTheme).background)
+  const skyColor = useViewer((state) => {
+    const theme = getSceneTheme(state.sceneTheme)
+    return theme.backgroundSky ?? theme.background
+  })
+  const appearance = useViewer((state) => getSceneTheme(state.sceneTheme).appearance)
+  const maxLightIntensity = useViewer((state) =>
+    Math.max(1, ...getSceneTheme(state.sceneTheme).lights.map((light) => light.intensity)),
+  )
+
+  const fadeBounds = useMemo(() => {
+    const points = node.polygon?.points
+    if (!points || points.length < 3) return null
+
+    let cx = 0
+    let cz = 0
+    for (const [x, z] of points) {
+      cx += x ?? 0
+      cz += z ?? 0
+    }
+    cx /= points.length
+    cz /= points.length
+
+    let radius = 0
+    for (const [x, z] of points) {
+      radius = Math.max(radius, Math.hypot((x ?? 0) - cx, (z ?? 0) - cz))
+    }
+    return { cx, cz, radius }
+  }, [node.polygon?.points])
+
   const groundMaterial = useMemo(() => {
     const material = new MeshLambertNodeMaterial({ color: bgColor })
     material.polygonOffset = true
@@ -75,6 +109,44 @@ export const SiteRenderer = ({ node }: { node: SiteNode }) => {
     material.polygonOffsetUnits = 1
     return material
   }, [bgColor])
+
+  const horizonMaterial = useMemo(() => {
+    if (!fadeBounds) return null
+
+    const material = new MeshLambertNodeMaterial({ color: bgColor })
+    const center = vec2(fadeBounds.cx, fadeBounds.cz)
+    const distance = positionWorld.xz.sub(center).length()
+    const fade = smoothstep(float(fadeBounds.radius * 1.05), float(fadeBounds.radius * 5), distance)
+    const vignetteStrength = Math.min(0.45, 0.13 * maxLightIntensity)
+    const halo = float(1)
+      .sub(smoothstep(float(fadeBounds.radius * 0.95), float(fadeBounds.radius * 2.6), distance))
+      .mul(vignetteStrength)
+    const haloFactor = float(1).sub(halo)
+    material.colorNode = mix(color(bgColor), color('#000000'), fade).mul(haloFactor)
+
+    const viewDirectionY = positionWorld.sub(cameraPosition).normalize().y
+    const backdrop = backdropGradient({
+      dirY: viewDirectionY,
+      background: color(backgroundColor),
+      haze: color(horizonHazeColor(skyColor, appearance)),
+      sky: color(skyColor),
+      skyDeep: color(deepSkyColor(skyColor)),
+    })
+    ;(material as unknown as { emissiveNode: unknown }).emissiveNode = mix(
+      color('#000000'),
+      backdrop,
+      fade,
+    ).mul(haloFactor)
+    material.polygonOffset = true
+    material.polygonOffsetFactor = 2
+    material.polygonOffsetUnits = 2
+    return material
+  }, [appearance, backgroundColor, bgColor, fadeBounds, maxLightIntensity, skyColor])
+
+  const horizonGeometry = useMemo(() => {
+    if (!fadeBounds) return null
+    return new CircleGeometry(Math.max(fadeBounds.radius * 8, 400), 64)
+  }, [fadeBounds])
 
   const slabPolygons = useScene((state) => {
     const next = collectRecessedSlabGroundHolePolygons(state.nodes)
@@ -140,8 +212,9 @@ export const SiteRenderer = ({ node }: { node: SiteNode }) => {
     return () => {
       groundGeometry?.dispose()
       lineGeometry?.dispose()
+      horizonGeometry?.dispose()
     }
-  }, [groundGeometry, lineGeometry])
+  }, [groundGeometry, horizonGeometry, lineGeometry])
 
   const handlers = useNodeEvents(node, 'site')
 

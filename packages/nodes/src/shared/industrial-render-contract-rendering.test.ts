@@ -40,14 +40,35 @@ describe('industrial render contract rendering', () => {
       fallback,
     )
 
-    expect(material).toBeInstanceOf(THREE.MeshStandardMaterial)
     expect(material).not.toBe(fallback)
-    expect((material as THREE.MeshStandardMaterial).metalness).toBeGreaterThan(0.5)
+    expect(
+      (material as THREE.Material & { isMeshPhysicalNodeMaterial?: boolean })
+        .isMeshPhysicalNodeMaterial,
+    ).toBe(true)
+    expect((material as THREE.MeshStandardMaterial).metalness).toBeGreaterThan(0.1)
+    expect((material as THREE.MeshStandardMaterial).envMapIntensity).toBeGreaterThan(1)
+    expect(
+      (material as THREE.MeshStandardMaterial & { clearcoat?: number }).clearcoat,
+    ).toBeGreaterThan(0)
     expect((material as THREE.MeshStandardMaterial).color.getHexString()).toBe('ff0000')
     expect((material as THREE.MeshStandardMaterial).opacity).toBe(0.8)
     expect(material.userData.pascalIndustrialRenderContract).toMatchObject({
       kernel: 'painted-cylindrical-shell',
     })
+  })
+
+  test('uses the named PBR profile for generic generated industrial parts', () => {
+    const material = createIndustrialMaterial(
+      {
+        kernel: 'generic-industrial-part',
+        material: 'brushed-metal',
+      },
+      new THREE.MeshStandardMaterial({ color: '#94a3b8', metalness: 0, roughness: 1 }),
+    ) as THREE.MeshStandardMaterial
+
+    expect(material.metalness).toBe(0.86)
+    expect(material.roughness).toBe(0.28)
+    expect(material.envMapIntensity).toBe(1.35)
   })
 
   test('preserves user opacity when the source material already declared transparency', () => {

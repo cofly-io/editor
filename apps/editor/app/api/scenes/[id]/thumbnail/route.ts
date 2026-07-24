@@ -2,6 +2,9 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { NextRequest } from 'next/server'
 import {
+  resolveSceneThumbnailDir,
+} from '@/lib/scene-thumbnail-storage'
+import {
   guardSceneApiRequest,
   sceneApiJson,
   sceneApiPreflight,
@@ -37,7 +40,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return sceneApiJson(request, { error: 'unsupported_thumbnail_type' }, { status: 415 })
   }
 
-  const bytes = Buffer.from(await request.arrayBuffer())
+  const contentLength = request.headers.get('content-length')
+  if (contentLength !== null) {
+    const parsedContentLength = Number.parseInt(contentLength, 10)
+    if (!Number.isFinite(parsedContentLength) || parsedContentLength < 0) {
+      return sceneApiJson(request, { error: 'invalid_content_length' }, { status: 400 })
+    }
+    if (parsedContentLength > MAX_THUMBNAIL_BYTES) {
+      return sceneApiJson(request, { error: 'thumbnail_too_large' }, { status: 413 })
+    }
+  }
+
+  const bytes = await readThumbnailBody(request)
+  if (!bytes) {
+    return sceneApiJson(request, { error: 'thumbnail_too_large' }, { status: 413 })
+  }
   if (bytes.length === 0) {
     return sceneApiJson(request, { error: 'empty_thumbnail' }, { status: 400 })
   }
@@ -52,12 +69,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   }
 
   const safeId = id.replace(/[^a-zA-Z0-9_-]/g, '_')
-  const publicDir = resolveEditorPublicDir()
-  const thumbnailDir = path.join(publicDir, 'scene-thumbnails')
+  const thumbnailDir = resolveSceneThumbnailDir()
+  const thumbnailFile = `${safeId}.${extension}`
   await mkdir(thumbnailDir, { recursive: true })
-  await writeFile(path.join(thumbnailDir, `${safeId}.${extension}`), bytes)
+  await writeFile(path.join(thumbnailDir, thumbnailFile), bytes)
 
-  const thumbnailUrl = `/scene-thumbnails/${safeId}.${extension}?v=${Date.now()}`
+  const thumbnailUrl = `/scene-thumbnails/${thumbnailFile}`
   const meta = await operations.saveScene({
     id,
     name: existing.name,
@@ -71,10 +88,29 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   return sceneApiJson(request, { thumbnailUrl: meta.thumbnailUrl, version: meta.version })
 }
 
-function resolveEditorPublicDir(): string {
-  const cwd = process.cwd()
-  if (cwd.endsWith(`${path.sep}apps${path.sep}editor`)) {
-    return path.join(cwd, 'public')
+async function readThumbnailBody(request: Request): Promise<Buffer | null> {
+  if (!request.body) return Buffer.alloc(0)
+
+  const reader = request.body.getReader()
+  const chunks: Uint8Array[] = []
+  let totalBytes = 0
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (!value) continue
+
+      totalBytes += value.byteLength
+      if (totalBytes > MAX_THUMBNAIL_BYTES) {
+        await reader.cancel()
+        return null
+      }
+      chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
   }
-  return path.join(cwd, 'apps', 'editor', 'public')
+
+  return Buffer.concat(chunks, totalBytes)
 }

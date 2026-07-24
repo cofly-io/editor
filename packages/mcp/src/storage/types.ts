@@ -40,10 +40,12 @@ export interface SceneWithGraph extends SceneMeta {
 export interface SceneEvent {
   eventId: number
   sceneId: SceneId
+  baseVersion: number | null
   version: number
   kind: string
   createdAt: string
-  graph: SceneGraph
+  graph?: SceneGraph
+  patch?: SceneGraphPatch
 }
 
 export interface SceneSaveOptions {
@@ -63,6 +65,14 @@ export interface SceneSaveOptions {
   agentSessionId?: string
   /** Optional high-level operation name for presence/debug metadata. */
   operation?: string
+  /** Persisted atomically with the scene snapshot when live sync is enabled. */
+  event?: SceneSaveEvent
+}
+
+export interface SceneSaveEvent {
+  kind: string
+  baseVersion?: number | null
+  patch?: SceneGraphPatch
 }
 
 export type SceneSaveMode = 'draft' | 'checkpoint'
@@ -79,14 +89,43 @@ export interface SceneMutateOptions {
 
 export interface SceneEventAppendOptions {
   sceneId: SceneId
+  baseVersion?: number | null
   version: number
   kind: string
-  graph: SceneGraph
+  graph?: SceneGraph
+  patch?: SceneGraphPatch
 }
 
 export interface SceneEventListOptions {
   afterEventId?: number
+  /** Excludes events already represented by the caller's loaded snapshot. */
+  afterVersion?: number
   limit?: number
+}
+
+export interface SceneGraphPatch {
+  nodes: {
+    upsert: Record<string, unknown>
+    remove: string[]
+  }
+  rootNodeIds?: string[]
+  collections?: Record<string, unknown>
+}
+
+export interface SceneEventCursorRange {
+  earliestEventId: number
+  latestEventId: number
+  snapshotEventId: number
+  snapshotVersion: number
+}
+
+export interface SceneEventCompactionOptions {
+  keepEvents?: number
+}
+
+export interface SceneEventCompactionResult extends SceneEventCursorRange {
+  deletedEvents: number
+  remainingEvents: number
 }
 
 export interface ProjectCreateOptions {
@@ -128,7 +167,14 @@ export interface SceneStore {
   delete(id: SceneId, opts?: SceneMutateOptions): Promise<boolean>
   rename(id: SceneId, newName: string, opts?: SceneMutateOptions): Promise<SceneMeta>
   appendSceneEvent?(opts: SceneEventAppendOptions): Promise<SceneEvent>
+  /** Returns the latest durable event cursor without loading an event payload. */
+  getLatestSceneEventId?(sceneId: SceneId): Promise<number>
+  getSceneEventCursorRange?(sceneId: SceneId): Promise<SceneEventCursorRange>
   listSceneEvents?(sceneId: SceneId, opts?: SceneEventListOptions): Promise<SceneEvent[]>
+  compactSceneEvents?(
+    sceneId: SceneId,
+    opts?: SceneEventCompactionOptions,
+  ): Promise<SceneEventCompactionResult>
 }
 
 export class SceneNotFoundError extends Error {

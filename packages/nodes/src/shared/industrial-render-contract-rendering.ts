@@ -1,5 +1,9 @@
-import { INDUSTRIAL_RENDER_KERNELS } from '@pascal-app/core/registry'
+import {
+  getIndustrialMaterialPbrProfile,
+  INDUSTRIAL_RENDER_KERNELS,
+} from '@pascal-app/core/registry'
 import type * as THREE from 'three'
+import { MeshPhysicalNodeMaterial } from 'three/webgpu'
 
 export type IndustrialRenderContract = {
   kernel?: string
@@ -22,12 +26,29 @@ type MaterialWithSurfaceProps = THREE.Material & {
   color?: THREE.Color
   emissive?: THREE.Color
   emissiveIntensity?: number
+  clearcoat?: number
+  clearcoatRoughness?: number
+  envMapIntensity?: number
   metalness?: number
   roughness?: number
   opacity: number
   transparent: boolean
   depthWrite: boolean
   needsUpdate: boolean
+}
+
+type IndustrialSurfaceParams = {
+  color: string
+  emissive?: string
+  emissiveIntensity?: number
+  clearcoat?: number
+  clearcoatRoughness?: number
+  envMapIntensity?: number
+  metalness?: number
+  opacity?: number
+  roughness?: number
+  transparent?: boolean
+  depthWrite?: boolean
 }
 
 const CANONICAL_INDUSTRIAL_KERNELS = new Set<string>(INDUSTRIAL_RENDER_KERNELS)
@@ -71,16 +92,30 @@ export function isCanonicalIndustrialRenderKernel(kernel: string | undefined): b
   return typeof kernel === 'string' && CANONICAL_INDUSTRIAL_KERNELS.has(kernel)
 }
 
-function materialParamsForContract(contract: IndustrialRenderContract) {
+function materialParamsForContract(contract: IndustrialRenderContract): IndustrialSurfaceParams {
   const material = typeof contract.material === 'object' ? contract.material : undefined
   const materialName = typeof contract.material === 'string' ? contract.material : undefined
   const opacity = material?.opacity
+  const profile = getIndustrialMaterialPbrProfile(materialName)
+  const profileParams: IndustrialSurfaceParams = {
+    color: '#b6bec8',
+    clearcoat: profile?.clearcoat,
+    clearcoatRoughness: profile?.clearcoatRoughness,
+    depthWrite: profile?.depthWrite,
+    envMapIntensity: profile?.envMapIntensity,
+    metalness: profile?.metalness,
+    opacity: profile?.opacity,
+    roughness: profile?.roughness,
+    transparent: profile?.transparent,
+  }
   switch (contract.kernel) {
     case 'liquid-surface':
       return {
+        ...profileParams,
         color: '#38bdf8',
         emissive: '#0ea5e9',
         emissiveIntensity: 0.08,
+        envMapIntensity: 0.85,
         metalness: 0,
         opacity: opacity ?? 0.42,
         roughness: 0.05,
@@ -90,8 +125,10 @@ function materialParamsForContract(contract: IndustrialRenderContract) {
     case 'translucent-fill-volume':
     case 'transparent-volume':
       return {
+        ...profileParams,
         color: materialName === 'granular-solid' ? '#c8b88a' : '#38bdf8',
         metalness: 0,
+        envMapIntensity: 0.15,
         opacity: opacity ?? (materialName === 'granular-solid' ? 0.58 : 0.24),
         roughness: 0.16,
         transparent: true,
@@ -100,27 +137,51 @@ function materialParamsForContract(contract: IndustrialRenderContract) {
     case 'solid-surface':
     case 'solid-level':
       return {
+        ...profileParams,
         color: '#c8b88a',
         metalness: 0,
+        envMapIntensity: 0.35,
         opacity: opacity ?? 0.72,
         roughness: 0.88,
         transparent: opacity != null && opacity < 1,
       }
     case 'gas-volume':
       return {
+        ...profileParams,
         color: '#dbeafe',
         metalness: 0,
+        envMapIntensity: 0.1,
         opacity: opacity ?? 0.12,
         roughness: 0.18,
         transparent: true,
         depthWrite: false,
       }
     case 'painted-cylindrical-shell':
+      return {
+        ...profileParams,
+        color: '#cbd5e1',
+        clearcoat: 0.3,
+        clearcoatRoughness: 0.28,
+        envMapIntensity: 1.2,
+        metalness: 0.16,
+        roughness: 0.34,
+      }
     case 'horizontal-vessel-shell':
     case 'distillation-column-shell':
+      return {
+        ...profileParams,
+        color: '#cbd5e1',
+        clearcoat: 0.22,
+        clearcoatRoughness: 0.3,
+        envMapIntensity: 1.2,
+        metalness: 0.2,
+        roughness: 0.33,
+      }
     case 'metal-shell':
       return {
+        ...profileParams,
         color: '#cbd5e1',
+        envMapIntensity: 1.2,
         metalness: 0.68,
         roughness: 0.31,
       }
@@ -129,7 +190,9 @@ function materialParamsForContract(contract: IndustrialRenderContract) {
     case 'flanged-connection':
     case 'shell-and-tube-exchanger':
       return {
+        ...profileParams,
         color: '#aeb7c2',
+        envMapIntensity: 1.35,
         metalness: 0.74,
         roughness: 0.26,
       }
@@ -139,42 +202,54 @@ function materialParamsForContract(contract: IndustrialRenderContract) {
     case 'access-stair-or-ladder':
     case 'skid-mounted-pump':
       return {
+        ...profileParams,
         color: '#7f8a96',
+        envMapIntensity: 0.85,
         metalness: 0.62,
         roughness: 0.39,
       }
     case 'fired-heater-body':
     case 'thermal-shell':
       return {
+        ...profileParams,
         color: '#4b5563',
+        envMapIntensity: 0.5,
         metalness: 0.38,
         roughness: 0.58,
       }
     case 'ribbed-motor':
     case 'rubber-coupling':
       return {
+        ...profileParams,
         color: '#111827',
+        envMapIntensity: 0.45,
         metalness: 0.28,
         roughness: 0.74,
       }
     case 'lattice-or-stack-emission':
     case 'fire-flare':
       return {
+        ...profileParams,
         color: '#9ca3af',
+        envMapIntensity: 0.9,
         metalness: 0.7,
         roughness: 0.34,
       }
     case 'volute-pump-casing':
       return {
+        ...profileParams,
         color: '#4f7f93',
+        envMapIntensity: 0.75,
         metalness: 0.54,
         roughness: 0.36,
       }
     default:
       return {
+        ...profileParams,
         color: '#b6bec8',
-        metalness: 0.46,
-        roughness: 0.42,
+        envMapIntensity: profile?.envMapIntensity ?? 0.7,
+        metalness: profile?.metalness ?? 0.46,
+        roughness: profile?.roughness ?? 0.42,
       }
   }
 }
@@ -198,6 +273,18 @@ function applyIndustrialEnhancement(
   }
   if (typeof params.roughness === 'number' && 'roughness' in surface) {
     surface.roughness = Math.min(surface.roughness ?? params.roughness, params.roughness)
+  }
+  if (typeof params.envMapIntensity === 'number' && 'envMapIntensity' in surface) {
+    surface.envMapIntensity = Math.max(surface.envMapIntensity ?? 0, params.envMapIntensity)
+  }
+  if (typeof params.clearcoat === 'number' && 'clearcoat' in surface) {
+    surface.clearcoat = Math.max(surface.clearcoat ?? 0, params.clearcoat)
+  }
+  if (typeof params.clearcoatRoughness === 'number' && 'clearcoatRoughness' in surface) {
+    surface.clearcoatRoughness = Math.min(
+      surface.clearcoatRoughness ?? params.clearcoatRoughness,
+      params.clearcoatRoughness,
+    )
   }
   if (typeof params.opacity === 'number') {
     surface.opacity = surface.opacity < 1 ? surface.opacity : params.opacity
@@ -224,7 +311,13 @@ export function createIndustrialMaterial(
   fallback: THREE.Material,
 ): THREE.Material {
   if (!contract?.kernel) return fallback
-  return applyIndustrialEnhancement(fallback.clone(), contract)
+  const params = materialParamsForContract(contract)
+  const material = fallback.clone()
+  const needsPhysicalCoat = params.clearcoat != null && !('clearcoat' in material)
+  const enhancedMaterial = needsPhysicalCoat
+    ? new MeshPhysicalNodeMaterial().copy(material)
+    : material
+  return applyIndustrialEnhancement(enhancedMaterial, contract)
 }
 
 export function industrialSurfaceEffectKind(

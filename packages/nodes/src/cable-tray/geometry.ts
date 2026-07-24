@@ -1,9 +1,27 @@
-import { getWallCurveFrameAt, getWallCurveLength, sampleWallCenterline } from '@pascal-app/core'
+import {
+  getWallCurveFrameAt,
+  getWallCurveLength,
+  isCurvedWall,
+  sampleWallCenterline,
+} from '@pascal-app/core'
 import { BoxGeometry, Group, Mesh, MeshStandardMaterial } from 'three'
 import type { CableTrayNode } from './schema'
 
 function material(color: string) {
   return new MeshStandardMaterial({ color, metalness: 0.25, roughness: 0.58 })
+}
+
+/**
+ * Straight trays are a single extrusion. Sampling each one into 32 pieces
+ * created 93 mesh objects per route without adding any visible detail.
+ * Curves retain an adaptive tessellation so their silhouette stays smooth.
+ */
+export function getCableTraySegmentCount(node: CableTrayNode) {
+  const curveNode = node as Parameters<typeof isCurvedWall>[0]
+  if (!isCurvedWall(curveNode)) return 1
+
+  const length = getWallCurveLength(curveNode)
+  return Math.max(6, Math.min(24, Math.ceil(length / 0.5)))
 }
 
 function addBoxSegment(
@@ -43,7 +61,8 @@ function addBoxSegment(
 
 export function buildCableTrayGeometry(node: CableTrayNode): Group {
   const group = new Group()
-  const points = sampleWallCenterline(node, 32)
+  const segmentCount = getCableTraySegmentCount(node)
+  const points = sampleWallCenterline(node, segmentCount)
   if (points.length < 2) return group
 
   const mat = material(node.color)
@@ -85,7 +104,11 @@ export function buildCableTrayGeometry(node: CableTrayNode): Group {
     for (let index = 0; index <= count; index += 1) {
       const frame = getWallCurveFrameAt(node, index / count)
       const rung = new Mesh(new BoxGeometry(node.thickness, node.thickness, node.width), mat)
-      rung.position.set(frame.point.x, node.elevation + node.sideHeight + node.thickness / 2, frame.point.y)
+      rung.position.set(
+        frame.point.x,
+        node.elevation + node.sideHeight + node.thickness / 2,
+        frame.point.y,
+      )
       rung.rotation.y = -Math.atan2(frame.tangent.y, frame.tangent.x)
       rung.castShadow = true
       rung.receiveShadow = true
@@ -95,4 +118,3 @@ export function buildCableTrayGeometry(node: CableTrayNode): Group {
 
   return group
 }
-

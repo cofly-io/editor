@@ -267,10 +267,96 @@ describe('SqliteSceneStore', () => {
       'save_scene',
       'create_wall',
     ])
+    expect(await store.getLatestSceneEventId('live')).toBe(second.eventId)
+    expect(await store.getLatestSceneEventId('missing')).toBe(0)
     const afterFirst = await store.listSceneEvents('live', { afterEventId: first.eventId })
     expect(afterFirst).toHaveLength(1)
     expect(afterFirst[0]!.eventId).toBe(second.eventId)
-    expect(afterFirst[0]!.graph.nodes.wall_new).toBeDefined()
+    expect(afterFirst[0]!.graph?.nodes.wall_new).toBeDefined()
+    expect(await store.listSceneEvents('live', { afterVersion: meta.version })).toEqual([])
+  })
+
+  test('stores version-contiguous patches and compacts per-scene event windows', async () => {
+    const graph = makeGraph()
+    const firstVersion = await store.save({ id: 'patch-live', name: 'Patch Live', graph })
+    const secondVersion = await store.save({
+      id: firstVersion.id,
+      name: firstVersion.name,
+      graph,
+      expectedVersion: firstVersion.version,
+    })
+    const patch = { nodes: { upsert: {}, remove: [] as string[] } }
+    const patchEvent = await store.appendSceneEvent({
+      sceneId: secondVersion.id,
+      baseVersion: firstVersion.version,
+      version: secondVersion.version,
+      kind: 'editor_patch',
+      patch,
+    })
+    expect(patchEvent.graph).toBeUndefined()
+    expect(patchEvent.patch).toEqual(patch)
+
+    await store.save({ id: 'other', name: 'Other', graph })
+    for (let index = 0; index < 3; index++) {
+      await store.appendSceneEvent({
+        sceneId: secondVersion.id,
+        version: secondVersion.version,
+        kind: `snapshot_${index}`,
+        graph,
+      })
+      await store.appendSceneEvent({ sceneId: 'other', version: 1, kind: `other_${index}`, graph })
+    }
+
+    const before = await store.getSceneEventCursorRange(secondVersion.id)
+    expect(before.snapshotVersion).toBe(secondVersion.version)
+    expect(before.latestEventId).toBeGreaterThan(before.earliestEventId)
+
+    const compacted = await store.compactSceneEvents(secondVersion.id, { keepEvents: 2 })
+    expect(compacted.deletedEvents).toBe(2)
+    expect(compacted.remainingEvents).toBe(2)
+    expect((await store.listSceneEvents(secondVersion.id)).map((event) => event.kind)).toEqual([
+      'snapshot_1',
+      'snapshot_2',
+    ])
+    expect((await store.listSceneEvents('other')).map((event) => event.kind)).toEqual([
+      'other_0',
+      'other_1',
+      'other_2',
+    ])
+  })
+
+  test('rolls back a scene save when its atomic patch event is invalid', async () => {
+    const graph = makeGraph()
+    const initial = await store.save({ id: 'atomic', name: 'Atomic', graph })
+    const patch = { nodes: { upsert: {}, remove: [] as string[] } }
+
+    await expect(
+      store.save({
+        id: initial.id,
+        name: initial.name,
+        graph,
+        expectedVersion: initial.version,
+        event: { baseVersion: 999, kind: 'patch_scene', patch },
+      }),
+    ).rejects.toThrow(SceneVersionConflictError)
+    expect((await store.load(initial.id))?.version).toBe(initial.version)
+    expect(await store.listSceneEvents(initial.id)).toEqual([])
+
+    const saved = await store.save({
+      id: initial.id,
+      name: initial.name,
+      graph,
+      expectedVersion: initial.version,
+      event: { baseVersion: initial.version, kind: 'patch_scene', patch },
+    })
+    const [event] = await store.listSceneEvents(initial.id)
+    expect(saved.version).toBe(initial.version + 1)
+    expect(event).toMatchObject({
+      baseVersion: initial.version,
+      version: saved.version,
+      kind: 'patch_scene',
+      patch,
+    })
   })
 
   test('validates name and scene size', async () => {

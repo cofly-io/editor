@@ -4,6 +4,7 @@ import {
   type PrimitiveShapeInput,
   type Vec3,
 } from '@pascal-app/core/lib/primitive-compose'
+import { isIndustrialRenderMaterial } from '@pascal-app/core/registry'
 import {
   type AnyNode,
   type AnyNodeId,
@@ -276,7 +277,16 @@ function generatedShapeMetadata(input: {
   patternInstances?: Array<{ position?: Vec3; rotation?: Vec3; scale?: Vec3; name?: string }>
 }) {
   const primitiveContract = localPrimitiveContract(input)
-  const renderContract = (input.shape as unknown as Record<string, unknown>).renderContract
+  const explicitRenderContract = (input.shape as unknown as Record<string, unknown>).renderContract
+  const materialProfile = input.shape.material?.profile
+  const renderContract =
+    explicitRenderContract ??
+    (isIndustrialRenderMaterial(materialProfile)
+      ? {
+          kernel: 'generic-industrial-part',
+          material: materialProfile,
+        }
+      : undefined)
   const selector = compactRecord({
     index: input.shapeIndex,
     semanticRole: input.shape.semanticRole,

@@ -2452,6 +2452,7 @@ function inferTexturedMaterialSolidColor(item: MaterialCatalogItem): string | nu
 }
 
 export const LIBRARY_MATERIAL_REF_PREFIX = 'library:'
+export const SCENE_MATERIAL_REF_PREFIX = 'scene:'
 
 export function toLibraryMaterialRef(id: string) {
   return `${LIBRARY_MATERIAL_REF_PREFIX}${id}`

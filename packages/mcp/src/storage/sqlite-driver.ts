@@ -24,6 +24,41 @@ type BunSqliteModule = {
   ) => SqliteDatabase
 }
 
+export function adaptBunDatabase(db: SqliteDatabase): SqliteDatabase {
+  // Same rationale as adaptNodeDatabase: hot paths prepare the same SQL
+  // repeatedly; cache one statement per SQL string per connection.
+  const statementCache = new Map<string, SqliteStatement>()
+  let closed = false
+
+  return {
+    exec(sql: string): void {
+      db.exec(sql)
+    },
+    query(sql: string): SqliteStatement {
+      if (closed) {
+        throw new Error('SQLite database is closed')
+      }
+      let stmt = statementCache.get(sql)
+      if (!stmt) {
+        const prepared = db.query(sql)
+        stmt = {
+          all: (...params) => prepared.all(...params),
+          get: (...params) => prepared.get(...params),
+          run: (...params) => prepared.run(...params),
+        }
+        statementCache.set(sql, stmt)
+      }
+      return stmt
+    },
+    close(): void {
+      if (closed) return
+      closed = true
+      statementCache.clear()
+      db.close()
+    },
+  }
+}
+
 type NodeStatementSync = {
   all(...params: SqliteBinding[]): unknown[]
   get(...params: SqliteBinding[]): unknown
@@ -74,7 +109,7 @@ async function importNodeSqlite(): Promise<NodeSqliteModule> {
 export async function openSqliteDatabase(filename: string): Promise<SqliteDatabase> {
   if ('Bun' in globalThis) {
     const mod = (await import('bun:sqlite')) as BunSqliteModule
-    return new mod.Database(filename, { create: true, readwrite: true })
+    return adaptBunDatabase(new mod.Database(filename, { create: true, readwrite: true }))
   }
 
   try {
@@ -88,20 +123,41 @@ export async function openSqliteDatabase(filename: string): Promise<SqliteDataba
   }
 }
 
-function adaptNodeDatabase(db: NodeDatabaseSync): SqliteDatabase {
+export function adaptNodeDatabase(db: NodeDatabaseSync): SqliteDatabase {
+  // Statements are cached by SQL text: callers (e.g. the SSE scene-events
+  // poller) issue the same queries many times per second, and node:sqlite's
+  // StatementSync has no explicit finalize — native resources are only
+  // released by GC or db.close(). Preparing a fresh statement per call leaks
+  // native memory for the lifetime of the process.
+  // The cache stores bound wrappers because StatementSync methods require a
+  // receiver (`stmt.run(...)` throws "Illegal invocation" when detached).
+  const statementCache = new Map<string, SqliteStatement>()
+  let closed = false
+
   return {
     exec(sql: string): void {
       db.exec(sql)
     },
     query(sql: string): SqliteStatement {
-      const stmt = db.prepare(sql)
-      return {
-        all: (...params) => stmt.all(...params),
-        get: (...params) => stmt.get(...params),
-        run: (...params) => stmt.run(...params),
+      if (closed) {
+        throw new Error('SQLite database is closed')
       }
+      let stmt = statementCache.get(sql)
+      if (!stmt) {
+        const prepared = db.prepare(sql)
+        stmt = {
+          all: (...params) => prepared.all(...params),
+          get: (...params) => prepared.get(...params),
+          run: (...params) => prepared.run(...params),
+        }
+        statementCache.set(sql, stmt)
+      }
+      return stmt
     },
     close(): void {
+      if (closed) return
+      closed = true
+      statementCache.clear()
       db.close()
     },
   }

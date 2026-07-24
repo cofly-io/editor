@@ -1,3 +1,4 @@
+import type { IndustrialRenderMaterial } from '../registry/industrial-render-vocabulary'
 import type { MaterialGradient } from '../schema/material'
 
 export type Vec3 = [number, number, number]
@@ -25,6 +26,7 @@ export type PrimitiveAxis = 'x' | 'y' | 'z'
 export interface PrimitiveMaterialInput {
   id?: string
   preset?: string
+  profile?: IndustrialRenderMaterial
   gradient?: MaterialGradient
   properties?: {
     color?: string

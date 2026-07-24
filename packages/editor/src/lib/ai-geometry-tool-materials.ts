@@ -1,4 +1,5 @@
 import type { PrimitiveMaterialInput } from '@pascal-app/core/lib/primitive-compose'
+import { isIndustrialRenderMaterial } from '@pascal-app/core/registry'
 import { MATERIAL_PRESETS, type RawGeometryToolShape } from './ai-geometry-tool-constants'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -56,9 +57,18 @@ export function normalizePrimitiveMaterial(
     if (typeof rawMaterial.preset === 'string' && MATERIAL_PRESETS.has(rawMaterial.preset)) {
       material.preset = rawMaterial.preset
     }
+    if (isIndustrialRenderMaterial(rawMaterial.profile)) material.profile = rawMaterial.profile
     if (Object.keys(properties).length > 0) material.properties = properties
     if (gradient) material.gradient = gradient
-    if (material.id || material.preset || material.properties || material.gradient) return material
+    if (
+      material.id ||
+      material.preset ||
+      material.profile ||
+      material.properties ||
+      material.gradient
+    ) {
+      return material
+    }
   }
 
   if (typeof materialColor === 'string') return { properties: { color: materialColor } }

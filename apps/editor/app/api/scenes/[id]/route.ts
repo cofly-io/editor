@@ -1,4 +1,8 @@
-import { applySceneGraphPatch, type PatchableSceneGraph } from '@pascal-app/editor/scene-patch'
+import {
+  applySceneGraphPatch,
+  createSceneGraphPatch,
+  type PatchableSceneGraph,
+} from '@pascal-app/editor/scene-patch'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { apiGraphSchema, diagnoseApiGraph } from '@/lib/graph-schema'
@@ -111,6 +115,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (!existing) {
       return sceneApiJson(request, { error: 'not_found' }, { status: 404 })
     }
+    const graphPatch = createSceneGraphPatch(
+      existing.graph as PatchableSceneGraph,
+      parsed.data.graph as PatchableSceneGraph,
+    )
     const meta = await operations.saveScene({
       id,
       name: parsed.data.name ?? existing.name,
@@ -120,6 +128,15 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       thumbnailUrl:
         parsed.data.thumbnailUrl === undefined ? existing.thumbnailUrl : parsed.data.thumbnailUrl,
       expectedVersion: expectedVersion ?? existing.version,
+      ...(operations.canAppendSceneEvents
+        ? {
+            event: {
+              baseVersion: existing.version,
+              kind: 'save_scene',
+              patch: graphPatch,
+            },
+          }
+        : {}),
     })
     return sceneApiJson(request, meta, {
       headers: { ETag: `"${meta.version}"` },
@@ -222,6 +239,15 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       graph: validatedGraph.data as never,
       thumbnailUrl: existing.thumbnailUrl,
       expectedVersion: expectedVersion ?? existing.version,
+      ...(operations.canAppendSceneEvents
+        ? {
+            event: {
+              baseVersion: existing.version,
+              kind: 'patch_scene',
+              patch: graphPatch,
+            },
+          }
+        : {}),
     })
     return sceneApiJson(request, meta, {
       headers: { ETag: `"${meta.version}"` },

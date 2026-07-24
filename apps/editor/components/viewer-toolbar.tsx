@@ -15,8 +15,9 @@ import {
 import useEditor, { type ViewMode } from '@pascal-app/editor/store'
 import type { EdgeMode } from '@pascal-app/viewer/edge-style'
 import type { RenderShading } from '@pascal-app/viewer/materials'
-import { getSceneTheme, SCENE_THEMES, type SceneSurfaceRole } from '@pascal-app/viewer/scene-themes'
+import { getSceneTheme, SCENE_THEMES } from '@pascal-app/viewer/scene-themes'
 import useViewer from '@pascal-app/viewer/store'
+import type { SurfaceRole } from '@pascal-app/core'
 import {
   Box,
   Check,
@@ -203,8 +204,8 @@ const EDGE_OPTIONS = [
 }[]
 
 const SUBMENU_CONTENT_CLASS = 'min-w-56 rounded-xl border-border/45 bg-popover/95 backdrop-blur-xl'
-const THEME_SWATCH_ROLES: SceneSurfaceRole[] = ['wall', 'roof', 'floor', 'glazing']
-const THEME_SWATCH_FALLBACKS: Record<SceneSurfaceRole, string> = {
+const THEME_SWATCH_ROLES: SurfaceRole[] = ['wall', 'roof', 'floor', 'glazing']
+const THEME_SWATCH_FALLBACKS: Record<SurfaceRole, string> = {
   wall: '#dcd6c7',
   floor: '#cfc8b6',
   ceiling: '#e4ded0',

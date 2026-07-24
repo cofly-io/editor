@@ -1,8 +1,8 @@
 import { getPipeEndpoint3D, isPipeNearlyVertical, type NodeDefinition } from '@pascal-app/core'
 import {
   nudgeSegmentPlan,
-  routeEndpointLabel,
   ROUTE_ENDPOINT_Y_OFFSET,
+  routeEndpointLabel,
 } from '../shared/route-edit-actions'
 import { buildPipeFloorplan } from './floorplan'
 import { buildPipeGeometry } from './geometry'
@@ -52,6 +52,10 @@ export const pipeDefinition: NodeDefinition<typeof PipeNode> = {
   tool: () => import('./tool'),
 
   geometry: buildPipeGeometry,
+  system: {
+    module: () => import('./hanger-batch-system'),
+    priority: 7,
+  },
   floorplan: buildPipeFloorplan,
 
   affordanceTools: {

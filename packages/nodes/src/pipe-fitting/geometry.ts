@@ -12,6 +12,10 @@ import {
 } from 'three'
 import type { PipeFittingNode } from './schema'
 
+const PIPE_FITTING_RADIAL_SEGMENTS = 12
+const PIPE_FITTING_HUB_WIDTH_SEGMENTS = 12
+const PIPE_FITTING_HUB_HEIGHT_SEGMENTS = 6
+
 function createPipeMaterial(color: string, opacity = 1) {
   return new MeshStandardMaterial({
     color,
@@ -37,17 +41,23 @@ function addTube(
   points: Vector3[],
   radius: number,
   material: MeshStandardMaterial,
-  tubularSegments = 24,
+  tubularSegments = 1,
 ) {
   const curve = new CatmullRomCurve3(points)
-  const mesh = new Mesh(new TubeGeometry(curve, tubularSegments, radius, 16, false), material)
+  const mesh = new Mesh(
+    new TubeGeometry(curve, tubularSegments, radius, PIPE_FITTING_RADIAL_SEGMENTS, false),
+    material,
+  )
   mesh.castShadow = true
   mesh.receiveShadow = true
   group.add(mesh)
 }
 
 function addCenterHub(group: Group, radius: number, material: MeshStandardMaterial) {
-  const hub = new Mesh(new SphereGeometry(radius, 24, 12), material)
+  const hub = new Mesh(
+    new SphereGeometry(radius, PIPE_FITTING_HUB_WIDTH_SEGMENTS, PIPE_FITTING_HUB_HEIGHT_SEGMENTS),
+    material,
+  )
   hub.castShadow = true
   hub.receiveShadow = true
   group.add(hub)
@@ -86,15 +96,20 @@ function addBox(
   return mesh
 }
 
-function buildElbow(group: Group, node: PipeFittingNode, radius: number, material: MeshStandardMaterial) {
+function buildElbow(
+  group: Group,
+  node: PipeFittingNode,
+  radius: number,
+  material: MeshStandardMaterial,
+) {
   const legLength = Math.max(node.diameter * 3, node.diameter * node.bendRadiusMultiplier)
   const angle = (Math.min(180, Math.max(15, node.angleDegrees)) * Math.PI) / 180
   const first = new Vector3(-legLength, 0, 0)
   const center = new Vector3(0, 0, 0)
   const second = new Vector3(Math.cos(angle) * legLength, 0, Math.sin(angle) * legLength)
 
-  addTube(group, [first, center], radius, material, 12)
-  addTube(group, [center, second], radius, material, 12)
+  addTube(group, [first, center], radius, material)
+  addTube(group, [center, second], radius, material)
   addCenterHub(group, radius * 1.15, material)
 }
 
@@ -105,10 +120,10 @@ function buildBranchFitting(
   material: MeshStandardMaterial,
 ) {
   const len = Math.max(node.branchLength, node.diameter * 3)
-  addTube(group, [new Vector3(-len, 0, 0), new Vector3(len, 0, 0)], radius, material, 24)
-  addTube(group, [new Vector3(0, 0, 0), new Vector3(0, 0, len)], radius, material, 16)
+  addTube(group, [new Vector3(-len, 0, 0), new Vector3(len, 0, 0)], radius, material)
+  addTube(group, [new Vector3(0, 0, 0), new Vector3(0, 0, len)], radius, material)
   if (node.fittingKind === 'cross') {
-    addTube(group, [new Vector3(0, 0, 0), new Vector3(0, 0, -len)], radius, material, 16)
+    addTube(group, [new Vector3(0, 0, 0), new Vector3(0, 0, -len)], radius, material)
   }
   addCenterHub(group, radius * 1.15, material)
 }
@@ -189,7 +204,12 @@ function buildValve(
   }
 }
 
-function addFittingLayer(group: Group, node: PipeFittingNode, radius: number, material: MeshStandardMaterial) {
+function addFittingLayer(
+  group: Group,
+  node: PipeFittingNode,
+  radius: number,
+  material: MeshStandardMaterial,
+) {
   if (node.fittingKind === 'elbow') buildElbow(group, node, radius, material)
   else if (node.fittingKind === 'tee' || node.fittingKind === 'cross') {
     buildBranchFitting(group, node, radius, material)

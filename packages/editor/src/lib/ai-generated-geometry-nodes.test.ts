@@ -212,6 +212,33 @@ describe('ai generated geometry nodes', () => {
     })
   })
 
+  test('turns a generated industrial material profile into a renderer contract', () => {
+    const { createdNodes } = buildGeneratedGeometryNodes(
+      artifact({
+        shapes: [
+          {
+            kind: 'cylinder',
+            name: 'brushed process pipe',
+            position: [10, 0.5, 20],
+            rotation: [0, 0, 0],
+            radius: 0.12,
+            height: 2,
+            material: { profile: 'brushed-metal' },
+          },
+        ],
+        transforms: [{ position: [10, 0.5, 20], rotation: [0, 0, 0] }],
+        createdNames: ['brushed process pipe'],
+      }),
+    )
+
+    expect(createdNodes[0]?.metadata).toMatchObject({
+      renderContract: {
+        kernel: 'generic-industrial-part',
+        material: 'brushed-metal',
+      },
+    })
+  })
+
   test('preserves primitive geometry contracts on generated node metadata', () => {
     const { createdNodes } = buildGeneratedGeometryNodes(
       artifact({

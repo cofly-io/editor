@@ -1,5 +1,6 @@
 'use client'
 
+import type { SurfaceRole } from '@pascal-app/core'
 import {
   type AnyNode,
   type AnyNodeId,
@@ -22,7 +23,6 @@ import {
   type RenderShading,
 } from '../../lib/materials'
 import { ensureObjectWebGPUCompatibleGeometry } from '../../lib/safe-geometry'
-import type { SceneSurfaceRole as SurfaceRole } from '../../lib/scene-themes'
 
 import useViewer from '../../store/use-viewer'
 
@@ -94,10 +94,6 @@ type GeometryDefinitionExtras = {
  */
 
 export const GeometrySystem = () => {
-  const dirtyNodes = useScene((s) => s.dirtyNodes)
-
-  const clearDirty = useScene((s) => s.clearDirty)
-
   const shading = useViewer((s) => s.shading)
 
   const textures = useViewer((s) => s.textures)
@@ -132,9 +128,15 @@ export const GeometrySystem = () => {
   }, [renderSettingsKey])
 
   useFrame(() => {
+    // `setScene` / `unloadScene` replace the dirty Set, while `markDirty`
+    // mutates its current Set in place. Reading the store here prevents this
+    // long-lived frame callback from retaining the pre-load Set.
+    const state = useScene.getState()
+    const dirtyNodes = state.dirtyNodes
+
     if (dirtyNodes.size === 0) return
 
-    const nodes = useScene.getState().nodes
+    const { nodes, clearDirty } = state
 
     // Phase 1 — group dirty nodes by (kind, parentId). Kinds that
 

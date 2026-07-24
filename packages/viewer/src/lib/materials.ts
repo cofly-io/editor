@@ -13,7 +13,8 @@ import { color, float, mix, modelRadius, positionLocal, positionWorld, uv } from
 import { MeshLambertNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu'
 
 import { resolveCdnUrl } from './asset-url'
-import { getSceneTheme, type SceneSurfaceRole as SurfaceRole } from './scene-themes'
+import type { SurfaceRole } from '@pascal-app/core'
+import { getSceneTheme } from './scene-themes'
 
 export type RenderShading = 'solid' | 'rendered'
 export type ColorPreset = 'clay' | 'white' | 'mono' | 'blueprint'

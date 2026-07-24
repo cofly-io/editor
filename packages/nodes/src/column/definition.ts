@@ -28,6 +28,7 @@ export const columnDefinition: NodeDefinition<typeof ColumnNode> = {
   schemaVersion: 1,
   schema: ColumnNode,
   category: 'structure',
+  dirtyTracking: false,
 
   defaults: () => {
     const stub = ColumnNodeSchema.parse({ id: 'column_default' as never, type: 'column' })

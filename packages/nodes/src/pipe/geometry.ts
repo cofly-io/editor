@@ -1,13 +1,5 @@
-import { getWallCurveLength, isPipeNearlyVertical, samplePipeCenterline3D } from '@pascal-app/core'
-import {
-  CatmullRomCurve3,
-  Group,
-  Mesh,
-  MeshStandardMaterial,
-  TorusGeometry,
-  TubeGeometry,
-  Vector3,
-} from 'three'
+import { getWallCurveLength, isCurvedWall, samplePipeCenterline3D } from '@pascal-app/core'
+import { CatmullRomCurve3, Group, Mesh, MeshStandardMaterial, TubeGeometry, Vector3 } from 'three'
 import type { PipeNode } from './schema'
 
 function createPipeMaterial(color: string, opacity = 1) {
@@ -28,6 +20,17 @@ function createInsulationMaterial(color: string) {
     transparent: true,
     opacity: 0.72,
   })
+}
+
+/** A straight tube has no curvature to approximate, so one longitudinal
+ * segment renders identically to a densely sampled path. */
+export function getPipePathSegmentCount(node: PipeNode) {
+  return isCurvedWall(node) ? 16 : 1
+}
+
+export function getPipeTubularSegmentCount(node: PipeNode) {
+  if (!isCurvedWall(node)) return 1
+  return Math.max(12, Math.ceil(getWallCurveLength(node) / 0.2))
 }
 
 function addInsulationShell(
@@ -54,12 +57,12 @@ function addInsulationShell(
 }
 
 function buildPipeMeshes(node: PipeNode, group: Group) {
-  const samples = samplePipeCenterline3D(node, 32)
+  const samples = samplePipeCenterline3D(node, getPipePathSegmentCount(node))
   if (samples.length < 2) return
 
   const points = samples.map((point) => new Vector3(point.x, point.y, point.z))
   const curve = new CatmullRomCurve3(points)
-  const tubularSegments = Math.max(12, Math.ceil(getWallCurveLength(node) / 0.2))
+  const tubularSegments = getPipeTubularSegmentCount(node)
   const radius = node.diameter / 2
 
   addInsulationShell(group, node, radius, (pipeRadius) => {
@@ -69,24 +72,6 @@ function buildPipeMeshes(node: PipeNode, group: Group) {
     mesh.receiveShadow = true
     return mesh
   })
-
-  if (!node.showHangers || node.hangerSpacing <= 0 || isPipeNearlyVertical(node)) return
-
-  const length = getWallCurveLength(node)
-  const hangerCount = Math.max(1, Math.floor(length / node.hangerSpacing))
-  const hangerMaterial = createPipeMaterial('#8a9098', node.opacity)
-
-  for (let index = 0; index <= hangerCount; index += 1) {
-    const t = index / hangerCount
-    const point = points[Math.min(points.length - 1, Math.round(t * (points.length - 1)))]!
-    const hanger = new Mesh(
-      new TorusGeometry(radius * 1.35, Math.max(radius * 0.06, 0.008), 8, 20),
-      hangerMaterial,
-    )
-    hanger.position.copy(point)
-    hanger.rotation.x = Math.PI / 2
-    group.add(hanger)
-  }
 }
 
 /** Tube along the tilted 3D centerline — rotate 0° horizontal, 90° vertical. */

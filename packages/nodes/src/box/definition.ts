@@ -8,6 +8,7 @@ export const boxDefinition: NodeDefinition<typeof BoxNode> = {
   schemaVersion: 1,
   schema: BoxNode,
   category: 'structure',
+  dirtyTracking: false,
 
   defaults: () => {
     const stub = BoxNodeSchema.parse({ id: 'box_default' as never, type: 'box' })

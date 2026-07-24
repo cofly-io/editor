@@ -7,6 +7,29 @@ export const RoofType = z.enum(['hip', 'gable', 'shed', 'gambrel', 'dutch', 'man
 
 export type RoofType = z.infer<typeof RoofType>
 
+export function getActiveRoofHeight({
+  roofType,
+  pitch,
+  width,
+  depth,
+}: {
+  roofType: RoofType
+  pitch: number
+  width: number
+  depth: number
+}): number {
+  if (roofType === 'flat') return 0
+
+  const span =
+    roofType === 'gable' || roofType === 'gambrel'
+      ? depth
+      : roofType === 'shed'
+        ? width
+        : Math.min(width, depth)
+
+  return Math.max(0, Math.tan((Math.max(0, pitch) * Math.PI) / 180) * (span / 2))
+}
+
 export const RoofSegmentNode = BaseNode.extend({
   id: objectId('rseg'),
   type: nodeType('roof-segment'),

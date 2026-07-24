@@ -3,6 +3,7 @@
 import {
   type AnimationEffect,
   type AnyNodeId,
+  getScaledDimensions,
   type Interactive,
   type ItemNode,
   type LightEffect,
@@ -18,6 +19,7 @@ import {
   createMaterialFromPresetRef,
   createSurfaceRoleMaterial,
   ErrorBoundary,
+  getDracoDecoderPath,
   glassMaterial,
   NodeRenderer,
   type RenderShading,
@@ -33,8 +35,12 @@ import { useFrame, useLoader, useThree } from '@react-three/fiber'
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AnimationAction, AnimationClip, Group, Material, Mesh, Object3D } from 'three'
 import { MathUtils } from 'three'
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
+import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { positionLocal, smoothstep, time } from 'three/tsl'
 import { getItemColorOverride, isImportedGlbAsset } from './color-metadata'
+import { cancelItemModelLoad, ItemGLTFLoader } from './model-loader'
 
 type MutableMaterial = Material & {
   depthTest?: boolean
@@ -92,11 +98,13 @@ function resolveItemModelUrl(node: ItemNode) {
   return `${src}${src.includes('?') ? '&' : '?'}pascalImportedGlb=1`
 }
 
+let itemDracoLoader: DRACOLoader | null = null
+
 const configureItemModelLoader = (loader: ItemGLTFLoader, renderer: unknown) => {
   configureKtx2Support(loader, renderer)
   if (!itemDracoLoader) {
     itemDracoLoader = new DRACOLoader(loader.manager)
-    itemDracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.5/')
+    itemDracoLoader.setDecoderPath(getDracoDecoderPath())
   }
   loader.setDRACOLoader(itemDracoLoader)
   loader.setMeshoptDecoder(MeshoptDecoder)
@@ -195,7 +203,7 @@ const ModelWithRetry = ({
 }: {
   node: ItemNode
   setSettled: (value: boolean) => void
-}) {
+}) => {
   const [failures, setFailures] = useState(0)
   const [epoch, setEpoch] = useState(0)
   const modelUrl = resolveItemModelUrl(node)
@@ -295,16 +303,21 @@ function getPreviewMaterial(shading: RenderShading) {
   return material
 }
 
-const PreviewModel = ({ node }: { node: ItemNode }) => {
+const PreviewModel = ({
+  node,
+  hideDuringExport = true,
+}: {
+  node: ItemNode
+  hideDuringExport?: boolean
+}) => {
   const shading = useViewer((s) => s.shading)
   const isExporting = useViewer((s) => s.isExporting)
   const [w, h, d] = getScaledDimensions(node)
   // Loading placeholder — must never land in an exported GLB.
-  if (isExporting) return null
+  if (hideDuringExport && isExporting) return null
   return (
     <mesh material={getPreviewMaterial(shading)} position-y={h / 2}>
       <boxGeometry args={[w, h, d]} />
-    </mesh>
     </mesh>
   )
 }

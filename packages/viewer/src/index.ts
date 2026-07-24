@@ -15,13 +15,15 @@ export { default as Viewer, type ViewerHandle } from './components/viewer'
 export type { HoverStyle, HoverStyles } from './components/viewer/post-processing'
 export {
   DEFAULT_HOVER_STYLES,
-  SSGI_PARAMS,
+  GTAO_PARAMS,
 } from './components/viewer/post-processing'
 export { WalkthroughControls } from './components/viewer/walkthrough-controls'
 export { useAssetUrl } from './hooks/use-asset-url'
 export { useGLTFKTX2 } from './hooks/use-gltf-ktx2'
 export { useNodeEvents } from './hooks/use-node-events'
 export { ASSETS_CDN_URL, resolveAssetUrl, resolveCdnUrl } from './lib/asset-url'
+export { backdropGradient, deepSkyColor, horizonHazeColor } from './lib/backdrop'
+export { getDracoDecoderPath, getKtx2TranscoderPath } from './lib/decoder-paths'
 export { createCylinderGeometry } from './lib/create-cylinder-geometry'
 export {
   Brush,
@@ -77,10 +79,10 @@ export {
   type SceneComplexityBudget,
   type SceneComplexityTier,
 } from './lib/scene-complexity'
+export { SceneEnvironment } from './components/viewer/scene-environment'
 export {
   getSceneTheme,
   SCENE_THEMES,
-  type SceneSurfaceRole,
   type SceneTheme,
 } from './lib/scene-themes'
 export { useItemLightPool } from './store/use-item-light-pool'

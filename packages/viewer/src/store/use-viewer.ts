@@ -253,6 +253,27 @@ function normalizePersistedViewerState(value: unknown): PersistedViewerState {
   }
 }
 
+function migrateViewerPreferences(value: unknown, version: number): unknown {
+  if (version >= 1 || !value || typeof value !== 'object' || Array.isArray(value)) return value
+
+  const state = value as Record<string, unknown>
+  const preferences = state.projectPreferences
+  if (!preferences || typeof preferences !== 'object' || Array.isArray(preferences)) return value
+
+  return {
+    ...state,
+    projectPreferences: Object.fromEntries(
+      Object.entries(preferences).map(([projectId, preference]) => {
+        if (!preference || typeof preference !== 'object' || Array.isArray(preference)) {
+          return [projectId, preference]
+        }
+        const { showGrid: _, ...rest } = preference as Record<string, unknown>
+        return [projectId, rest]
+      }),
+    ),
+  }
+}
+
 const useViewer = create<ViewerState>()(
   persist(
     (set) => ({
@@ -375,7 +396,7 @@ const useViewer = create<ViewerState>()(
           return { showZoneLabels: show, projectPreferences }
         }),
 
-      showGrid: true,
+      showGrid: false,
       setShowGrid: (show) =>
         set((state) => {
           const projectPreferences = { ...(state.projectPreferences || {}) }
@@ -406,7 +427,7 @@ const useViewer = create<ViewerState>()(
             projectId: id,
             showScans: prefs.showScans ?? true,
             showGuides: prefs.showGuides ?? true,
-            showGrid: prefs.showGrid ?? true,
+            showGrid: prefs.showGrid ?? false,
             showZoneLabels: prefs.showZoneLabels ?? false,
           }
         }),
@@ -480,6 +501,8 @@ const useViewer = create<ViewerState>()(
     }),
     {
       name: 'viewer-preferences',
+      version: 1,
+      migrate: migrateViewerPreferences,
       merge: (persistedState, currentState) => ({
         ...currentState,
         ...normalizePersistedViewerState(persistedState),

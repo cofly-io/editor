@@ -249,7 +249,7 @@ export const COMPOSE_PRIMITIVE_TOOL = {
               material: {
                 type: 'object',
                 description:
-                  'Optional material. Prefer {properties:{color:"#C4956A", roughness:0.6, metalness:0, opacity:0.8, transparent:true}}. For gradients use {properties:{color:"#ef4444", opacity:0.8, transparent:true}, gradient:{type:"linear", space:"uv", axis:"y", stops:[{offset:0,color:"#ef4444",opacity:1},{offset:1,color:"#111827",opacity:1}]}}. Also accepted: {color:"#C4956A"} or {preset:"wood"}.',
+                  'Optional material. For industrial equipment, prefer {profile:"painted-metal"}, {profile:"galvanized-steel"}, {profile:"brushed-metal"}, {profile:"translucent-liquid"}, {profile:"granular-solid"}, {profile:"low-opacity-gas"}, {profile:"hot-refractory"}, or {profile:"dark-machinery"}; profiles supply the PBR baseline, and properties.color is only for a requested color override. For non-industrial surfaces use properties or preset. Use gradients only when the request needs an intentional painted transition.',
               },
               materialPreset: { type: 'string', description: 'Optional material preset id.' },
               name: { type: 'string', description: 'Shape name.' },
@@ -947,7 +947,7 @@ export const COMPOSE_PARTS_TOOL = {
               material: {
                 type: 'object',
                 description:
-                  'Optional part material, same shape as primitive material, including properties.opacity/transparent and optional gradient stops.',
+                  'Optional part material. For industrial parts, set profile to one of painted-metal, galvanized-steel, brushed-metal, translucent-liquid, granular-solid, low-opacity-gas, hot-refractory, or dark-machinery. The profile supplies the PBR metalness/roughness baseline; only provide properties.color when the requested color must differ. Use properties.opacity/transparent and optional gradient stops only when needed.',
               },
               materialPreset: { type: 'string', description: 'Optional material preset id.' },
               color: { type: 'string', description: 'Optional CSS color shortcut.' },
@@ -1127,7 +1127,7 @@ const REVISION_SHAPE_SCHEMA = {
     material: {
       type: 'object',
       description:
-        'Optional material, e.g. {properties:{color:"#1e3a8a", opacity:0.75, transparent:true}}. For gradients use {properties:{color:"#ef4444", opacity:0.8, transparent:true}, gradient:{type:"linear", space:"uv", axis:"y", stops:[{offset:0,color:"#ef4444",opacity:1},{offset:1,color:"#111827",opacity:1}]}}.',
+        'Optional material. For industrial parts, preserve or set a supported profile (painted-metal, galvanized-steel, brushed-metal, translucent-liquid, granular-solid, low-opacity-gas, hot-refractory, or dark-machinery) instead of inventing metalness/roughness values. Use properties.color only for a color override; gradients are for deliberate painted transitions.',
     },
     materialPreset: { type: 'string' },
   },

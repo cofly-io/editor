@@ -86,7 +86,7 @@ function getSound(name: SFXName): Howl {
   if (cached) return cached
 
   const sound = new Howl({
-    src: [SFX[name].src],
+    src: [SFX[name]!.src],
     preload: true,
     volume: 0.5, // Will be adjusted by the bus
   })

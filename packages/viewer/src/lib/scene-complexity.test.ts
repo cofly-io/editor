@@ -13,7 +13,8 @@ describe('scene complexity budget', () => {
     expect(assessSceneComplexity(nodes(899))).toMatchObject({
       tier: 'normal',
       maxDpr: 1.5,
-      disableSsgi: false,
+      disableAo: false,
+      disableInk: false,
       disableOutline: false,
     })
   })
@@ -22,7 +23,8 @@ describe('scene complexity budget', () => {
     expect(assessSceneComplexity(nodes(900))).toMatchObject({
       tier: 'constrained',
       maxDpr: 1,
-      disableSsgi: true,
+      disableAo: true,
+      disableInk: true,
       disableOutline: false,
     })
   })
@@ -38,6 +40,7 @@ describe('scene complexity budget', () => {
     expect(assessSceneComplexity(imported)).toMatchObject({
       tier: 'critical',
       importedModelCount: 67,
+      disableInk: true,
       disableOutline: true,
       useImportedModelProxy: true,
     })

@@ -30,7 +30,7 @@
     "next": ">=15",
     "react": "^18 || ^19",
     "react-dom": "^18 || ^19",
-    "three": "^0.184"
+    "three": "^0.185"
   },
   "dependencies": {
     "@pascal-app/articraft-bridge": "*",
@@ -75,7 +75,7 @@
     "@types/howler": "^2.2.12",
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
-    "@types/three": "^0.184.0",
+    "@types/three": "^0.185.0",
     "typescript": "6.0.2"
   }
 }

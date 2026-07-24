@@ -72,6 +72,7 @@ export const ParametricNodeRenderer = ({ node }: { node: AnyNode }) => {
 
   return (
     <group
+      name={`node:${node.type}`}
       position={position}
       ref={ref}
       rotation={rotation}

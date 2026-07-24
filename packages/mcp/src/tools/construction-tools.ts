@@ -390,6 +390,7 @@ export function registerConstructionTools(server: McpServer, bridge: SceneOperat
         width,
         depth,
         wallHeight,
+        roofHeight: peakHeight,
         pitch,
         wallThickness,
         overhang,

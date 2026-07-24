@@ -16,13 +16,19 @@ export type {
   TranslateHandle,
 } from './handles'
 export {
+  getIndustrialMaterialPbrProfile,
+  INDUSTRIAL_MATERIAL_MAP_SLOTS,
+  INDUSTRIAL_MATERIAL_PBR_PROFILES,
   INDUSTRIAL_RENDER_INSTANCING_HINTS,
   INDUSTRIAL_RENDER_KERNELS,
   INDUSTRIAL_RENDER_MATERIALS,
+  type IndustrialMaterialMapSlot,
+  type IndustrialMaterialPbrProfile,
   type IndustrialRenderContract,
   type IndustrialRenderInstancingHint,
   type IndustrialRenderKernel,
   type IndustrialRenderMaterial,
+  isIndustrialRenderMaterial,
 } from './industrial-render-vocabulary'
 export {
   bakePolicyOf,
@@ -134,6 +140,7 @@ export type {
   SnapServicesLike,
   SurfacePoint,
   SurfaceQuery,
+  SurfaceRole,
   SurfacesConfig,
   SystemContribution,
   ToolHint,

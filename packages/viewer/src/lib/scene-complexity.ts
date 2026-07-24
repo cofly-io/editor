@@ -6,7 +6,8 @@ export type SceneComplexityBudget = {
   weightedCost: number
   tier: SceneComplexityTier
   maxDpr: number
-  disableSsgi: boolean
+  disableAo: boolean
+  disableInk: boolean
   disableOutline: boolean
   useImportedModelProxy: boolean
 }
@@ -39,7 +40,8 @@ export const DEFAULT_SCENE_COMPLEXITY: SceneComplexityBudget = {
   weightedCost: 0,
   tier: 'normal',
   maxDpr: 1.5,
-  disableSsgi: false,
+  disableAo: false,
+  disableInk: false,
   disableOutline: false,
   useImportedModelProxy: false,
 }
@@ -71,7 +73,8 @@ export function assessSceneComplexity(
       weightedCost,
       tier: 'critical',
       maxDpr: 1,
-      disableSsgi: true,
+      disableAo: true,
+      disableInk: true,
       disableOutline: true,
       useImportedModelProxy: true,
     }
@@ -84,7 +87,8 @@ export function assessSceneComplexity(
       weightedCost,
       tier: 'constrained',
       maxDpr: 1,
-      disableSsgi: true,
+      disableAo: true,
+      disableInk: true,
       disableOutline: false,
       useImportedModelProxy: false,
     }
@@ -106,6 +110,7 @@ export function sameSceneComplexity(
     left.nodeCount === right.nodeCount &&
     left.importedModelCount === right.importedModelCount &&
     left.weightedCost === right.weightedCost &&
-    left.tier === right.tier
+    left.tier === right.tier &&
+    left.disableInk === right.disableInk
   )
 }

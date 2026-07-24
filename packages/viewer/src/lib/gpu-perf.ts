@@ -1,26 +1,35 @@
-// GPU work-time measurement, gated by `?perf` in the URL.
+// WebGPU queue-completion telemetry, gated by `?perf` in the URL.
 //
-// We can't use WebGPU timestamp queries here because the editor renders via
-// a custom `RenderPipeline.render()` path that bypasses three.js's built-in
-// timestamp infrastructure. Instead we use `device.queue.onSubmittedWorkDone()`,
-// which resolves when the GPU finishes all submitted work — measuring the
-// CPU→GPU-done delta gives a clean approximation of per-frame GPU duration
-// regardless of which render path produced it.
+// `device.queue.onSubmittedWorkDone()` reports when work already submitted to
+// the queue has completed. It is useful for detecting queue pressure, but is
+// not a timestamp-query measurement of one frame's GPU execution time.
 
-export const PERF_OVERLAY_ENABLED =
-  typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('perf')
+const DEFAULT_PERF_TARGET_FPS = 120
+const MAX_PERF_TARGET_FPS = 240
+
+const perfParams =
+  typeof window === 'undefined' ? null : new URLSearchParams(window.location.search)
+
+export const PERF_OVERLAY_ENABLED = perfParams?.has('perf') ?? false
+export const PERF_TARGET_FPS = getPerfTargetFps(perfParams?.get('perfFps') ?? null)
 
 const MAX_SAMPLES = 256
-const samples: number[] = []
+const queueWaitSamples: number[] = []
 
-export function pushGpuSample(ms: number): void {
-  samples.push(ms)
-  if (samples.length > MAX_SAMPLES) samples.shift()
+export function getPerfTargetFps(raw: string | null): number {
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_PERF_TARGET_FPS
+  return Math.min(Math.round(parsed), MAX_PERF_TARGET_FPS)
 }
 
-export function drainGpuSamples(): number[] {
-  if (samples.length === 0) return []
-  const out = samples.slice()
-  samples.length = 0
+export function pushQueueWaitSample(ms: number): void {
+  queueWaitSamples.push(ms)
+  if (queueWaitSamples.length > MAX_SAMPLES) queueWaitSamples.shift()
+}
+
+export function drainQueueWaitSamples(): number[] {
+  if (queueWaitSamples.length === 0) return []
+  const out = queueWaitSamples.slice()
+  queueWaitSamples.length = 0
   return out
 }

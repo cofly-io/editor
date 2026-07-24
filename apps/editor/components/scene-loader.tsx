@@ -1,12 +1,12 @@
 'use client'
 
-import { emitter } from '@pascal-app/core'
+import { emitter, useScene } from '@pascal-app/core'
 import '@/lib/bootstrap'
 import Editor from '@pascal-app/editor/components/editor'
 import { useSidebarStore } from '@pascal-app/editor/components/sidebar/store'
 import type { SidebarTab } from '@pascal-app/editor/components/sidebar/types'
 import { applySceneGraphToEditor, type SceneGraph } from '@pascal-app/editor/scene'
-import type { SceneGraphPatch } from '@pascal-app/editor/scene-patch'
+import { applySceneGraphPatch, type SceneGraphPatch } from '@pascal-app/editor/scene-patch'
 import useEditor from '@pascal-app/editor/store'
 import useViewer from '@pascal-app/viewer/store'
 import { Database, Layers, MessageCircle, Package, Settings } from 'lucide-react'
@@ -111,10 +111,19 @@ const EMPTY_GRAPH: SceneGraph = {
 interface LiveSceneEvent {
   eventId: number
   sceneId: string
+  baseVersion: number | null
   version: number
   kind: string
   createdAt: string
-  graph: SceneGraphWithCollections
+  graph?: SceneGraphWithCollections
+  patch?: SceneGraphPatch
+}
+
+interface SnapshotRequiredEvent {
+  sceneId: string
+  snapshotUrl: string
+  snapshotVersion: number
+  snapshotEventId: number
 }
 
 function sceneGraphSignature(graph: SceneGraphWithCollections): string {
@@ -163,6 +172,7 @@ export function SceneLoader({ initialScene, meta }: SceneLoaderProps) {
   const router = useRouter()
   const sidebarTabs = useMemo(() => SIDEBAR_TABS(meta.id), [meta.id])
   const versionRef = useRef(meta.version)
+  const eventCursorRef = useRef(0)
   const thumbnailUrlRef = useRef(meta.thumbnailUrl)
   const lastRemoteGraphJsonRef = useRef<string | null>(null)
   const suppressRemoteSaveUntilRef = useRef(0)
@@ -271,33 +281,116 @@ export function SceneLoader({ initialScene, meta }: SceneLoaderProps) {
   )
 
   useEffect(() => {
-    const source = new EventSource(`/api/scenes/${meta.id}/events`)
+    let active = true
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined
+    let source: EventSource | null = null
 
-    source.addEventListener('scene', (event) => {
+    const applySnapshot = (snapshot: (SceneMeta & { graph: SceneGraphWithCollections }) | null) => {
+      if (!snapshot?.graph) return false
+      versionRef.current = snapshot.version
+      lastRemoteGraphJsonRef.current = sceneGraphSignature(snapshot.graph)
+      suppressRemoteSaveUntilRef.current = Date.now() + 2500
+      applySceneGraphToEditor(snapshot.graph)
+      setConflict(false)
+      setSaveError(null)
+      return true
+    }
+
+    const reconnect = () => {
+      if (!active) return
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      reconnectTimer = setTimeout(connect, 1_000)
+    }
+
+    const connect = () => {
+      if (!active) return
+      source = new EventSource(
+        `/api/scenes/${meta.id}/events?after=${eventCursorRef.current}&version=${versionRef.current}`,
+      )
+
+      source.addEventListener('scene', (event) => {
+        const message = event as MessageEvent<string>
+        const eventId = Number.parseInt(message.lastEventId, 10)
+        if (Number.isFinite(eventId) && eventId > 0) eventCursorRef.current = eventId
       let payload: LiveSceneEvent
       try {
-        payload = JSON.parse((event as MessageEvent<string>).data) as LiveSceneEvent
+        payload = JSON.parse(message.data) as LiveSceneEvent
       } catch {
         return
       }
       if (payload.sceneId !== meta.id) return
       if (payload.version <= versionRef.current) return
+      if (payload.patch && payload.baseVersion !== versionRef.current) {
+        source?.close()
+        void fetch(`/api/scenes/${meta.id}`)
+          .then((response) => (response.ok ? response.json() : null))
+          .then((snapshot: (SceneMeta & { graph: SceneGraphWithCollections }) | null) => {
+            applySnapshot(snapshot)
+          })
+          .catch(() => {
+            setSaveError(t('scene.liveConnectionClosed', 'Live scene connection closed'))
+          })
+          .finally(reconnect)
+        return
+      }
+
+      const graph =
+        payload.graph ??
+        (payload.patch
+          ? applySceneGraphPatch(
+              {
+                nodes: useScene.getState().nodes as Record<string, unknown>,
+                rootNodeIds: useScene.getState().rootNodeIds as string[],
+                collections: useScene.getState().collections as Record<string, unknown> | undefined,
+              },
+              payload.patch,
+            )
+          : null)
+      if (!graph) return
 
       versionRef.current = payload.version
-      lastRemoteGraphJsonRef.current = sceneGraphSignature(payload.graph)
+      lastRemoteGraphJsonRef.current = sceneGraphSignature(graph)
       suppressRemoteSaveUntilRef.current = Date.now() + 2500
-      applySceneGraphToEditor(payload.graph)
+      applySceneGraphToEditor(graph)
       setConflict(false)
       setSaveError(null)
-    })
+      })
 
-    source.addEventListener('error', () => {
-      if (source.readyState === EventSource.CLOSED) {
-        setSaveError(t('scene.liveConnectionClosed', 'Live scene connection closed'))
+      source.addEventListener('snapshot-required', (event) => {
+      let payload: SnapshotRequiredEvent
+      try {
+        payload = JSON.parse((event as MessageEvent<string>).data) as SnapshotRequiredEvent
+      } catch {
+        return
       }
-    })
+      if (payload.sceneId !== meta.id) return
+      eventCursorRef.current = Math.max(eventCursorRef.current, payload.snapshotEventId)
+      source?.close()
+      void fetch(payload.snapshotUrl)
+        .then((response) => (response.ok ? response.json() : null))
+        .then((snapshot: (SceneMeta & { graph: SceneGraphWithCollections }) | null) => {
+          applySnapshot(snapshot)
+        })
+        .catch(() => {
+          setSaveError(t('scene.liveConnectionClosed', 'Live scene connection closed'))
+        })
+        .finally(reconnect)
+      })
 
-    return () => source.close()
+      source.addEventListener('error', () => {
+        if (!active) return
+        source?.close()
+        reconnect()
+      })
+    }
+
+    connect()
+
+    return () => {
+      active = false
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      source?.close()
+    }
   }, [meta.id])
 
   const handleThumb = useCallback(

@@ -1,8 +1,44 @@
 import type { SceneGraph } from '@pascal-app/core/clone-scene-graph'
 import { syncAutoStairOpenings } from '@pascal-app/core/stair-openings'
 import type { SceneOperations } from '../operations'
-import { SceneVersionConflictError } from '../storage/types'
+import { SceneVersionConflictError, type SceneGraphPatch } from '../storage/types'
 import { ErrorCode, throwMcpError } from './errors'
+
+type PatchableSceneGraph = {
+  nodes: Record<string, unknown>
+  rootNodeIds: string[]
+  collections?: Record<string, unknown>
+}
+
+function sameJson(left: unknown, right: unknown): boolean {
+  if (left === right) return true
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
+function createSceneGraphPatch(
+  previous: PatchableSceneGraph,
+  next: PatchableSceneGraph,
+): SceneGraphPatch {
+  const upsert: Record<string, unknown> = {}
+  const remove: string[] = []
+
+  for (const [id, node] of Object.entries(next.nodes)) {
+    if (!(id in previous.nodes) || !sameJson(previous.nodes[id], node)) upsert[id] = node
+  }
+  for (const id of Object.keys(previous.nodes)) {
+    if (!(id in next.nodes)) remove.push(id)
+  }
+
+  return {
+    nodes: { upsert, remove },
+    ...(!sameJson(previous.rootNodeIds, next.rootNodeIds)
+      ? { rootNodeIds: [...next.rootNodeIds] }
+      : {}),
+    ...(!sameJson(previous.collections, next.collections)
+      ? { collections: { ...(next.collections ?? {}) } }
+      : {}),
+  }
+}
 
 export function syncDerivedStairOpenings(operations: SceneOperations): number {
   const updates = syncAutoStairOpenings(operations.getNodes())
@@ -34,6 +70,11 @@ export async function publishLiveSceneSnapshot(
   const graph = operations.exportSceneGraph()
 
   try {
+    const previous = await operations.loadStoredScene(active.id)
+    const baseVersion = previous?.version ?? active.version
+    const patch = previous
+      ? createSceneGraphPatch(previous.graph as PatchableSceneGraph, graph as PatchableSceneGraph)
+      : undefined
     const meta = await operations.saveScene({
       id: active.id,
       name: active.name,
@@ -45,14 +86,13 @@ export async function publishLiveSceneSnapshot(
       saveMode: 'draft',
       publish: false,
       operation: kind,
+      event: {
+        baseVersion,
+        kind,
+        ...(patch ? { patch } : {}),
+      },
     })
     operations.setActiveScene(meta)
-    await operations.appendSceneEvent({
-      sceneId: meta.id,
-      version: meta.version,
-      kind,
-      graph,
-    })
   } catch (error) {
     if (error instanceof SceneVersionConflictError) {
       throwMcpError(ErrorCode.InvalidRequest, 'live_sync_version_conflict', {

@@ -10,15 +10,20 @@ import {
 import { Html } from '@react-three/drei'
 import { Canvas, extend, type ThreeToJSXElements, useFrame, useThree } from '@react-three/fiber'
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef } from 'react'
+import { ClusteredLighting } from 'three/addons/lighting/ClusteredLighting.js'
 import * as THREE from 'three/webgpu'
-import { PERF_OVERLAY_ENABLED, pushGpuSample } from '../../lib/gpu-perf'
+import { PERF_OVERLAY_ENABLED, PERF_TARGET_FPS, pushQueueWaitSample } from '../../lib/gpu-perf'
 import { applyIsolation, clearIsolation } from '../../lib/isolation'
 import type { ColorPreset, RenderShading } from '../../lib/materials'
 import { ensureObjectWebGPUCompatibleGeometry } from '../../lib/safe-geometry'
 import { assessSceneComplexity } from '../../lib/scene-complexity'
 import { getSceneTheme } from '../../lib/scene-themes'
 import { installEmptyDrawGuard } from '../../lib/webgpu-draw-guard'
-import { isGpuOutOfMemoryError } from '../../lib/webgpu-health'
+import {
+  isGpuOutOfMemoryError,
+  isUnrecoverableGpuDeviceLoss,
+  isUnrecoverableGpuError,
+} from '../../lib/webgpu-health'
 import useViewer, { type RenderContext } from '../../store/use-viewer'
 import { FloorElevationSystem } from '../../systems/floor-elevation/floor-elevation-system'
 import { GeometrySystem } from '../../systems/geometry/geometry-system'
@@ -31,6 +36,7 @@ import { PerfMonitor } from './perf-monitor'
 import PostProcessing, { DEFAULT_HOVER_STYLES, type HoverStyles } from './post-processing'
 import { RegisteredSystems } from './registered-systems'
 import { SceneBvh } from './scene-bvh'
+import { SceneEnvironment } from './scene-environment'
 import { SelectionManager } from './selection-manager'
 import { ViewerCamera } from './viewer-camera'
 
@@ -55,8 +61,30 @@ extend(THREE as any)
 // concurrent configure() calls await the same init instead of creating two
 // renderers in parallel and only caching the second.
 const WEBGPU_RENDERER_CACHE = new WeakMap<HTMLCanvasElement, Promise<THREE.WebGPURenderer>>()
+const WEBGPU_RENDERER_TOKENS = new WeakMap<HTMLCanvasElement, symbol>()
+
+// R3F disposes the renderer when its Canvas unmounts. A cached renderer must
+// not be reused after that disposal, but Three owns the GPU device lifecycle.
+function clearRendererCacheOnDispose(
+  renderer: THREE.WebGPURenderer,
+  canvas: HTMLCanvasElement | undefined,
+  token: symbol | undefined,
+): void {
+  const originalDispose = renderer.dispose.bind(renderer)
+  let disposed = false
+  renderer.dispose = () => {
+    if (disposed) return
+    disposed = true
+    if (canvas && WEBGPU_RENDERER_TOKENS.get(canvas) === token) {
+      WEBGPU_RENDERER_CACHE.delete(canvas)
+      WEBGPU_RENDERER_TOKENS.delete(canvas)
+    }
+    originalDispose()
+  }
+}
 const FORCE_WEBGL =
   typeof process !== 'undefined' && process.env.NEXT_PUBLIC_VIEWER_FORCE_WEBGL === '1'
+const CLUSTERED_MAX_POINT_LIGHTS = 256
 const SCENE_READY_SETTLED_FRAMES = 2
 const SCENE_READY_MAX_WAIT_FRAMES = 180
 const DIRTY_BUILD_KINDS = new Set([
@@ -91,6 +119,13 @@ type WebGPUDeviceLike = {
   removeEventListener?: (type: string, listener: EventListener) => void
 }
 
+function rendererLostMessage(error: unknown): string {
+  if (isGpuOutOfMemoryError(error)) {
+    return 'GPU 显存不足，渲染和物品放置已停止。'
+  }
+  return 'WebGPU 渲染上下文已失效，需要重新加载页面。'
+}
+
 function GPUDeviceWatcher() {
   const gl = useThree((s) => s.gl)
 
@@ -116,7 +151,9 @@ function GPUDeviceWatcher() {
     device.lost.then((info: WebGPUDeviceLossInfo) => {
       if (!active) return
       const message = info.message || 'WebGPU 设备已丢失，需要重新加载页面。'
-      useViewer.getState().setRendererHealth('lost', message)
+      useViewer
+        .getState()
+        .setRendererHealth(isUnrecoverableGpuDeviceLoss(info) ? 'lost' : 'degraded', message)
       console.error(
         `[viewer] WebGPU device lost: reason="${info.reason ?? 'unknown'}", message="${info.message ?? ''}". ` +
           'The page must be reloaded to recover the GPU context.',
@@ -127,8 +164,8 @@ function GPUDeviceWatcher() {
     // best). Pipe them to console.error so silent mobile crashes show up.
     const onUncapturedError = (event: any) => {
       const error = event?.error
-      if (isGpuOutOfMemoryError(error)) {
-        useViewer.getState().setRendererHealth('lost', 'GPU 显存不足，渲染和物品放置已停止。')
+      if (isUnrecoverableGpuError(error)) {
+        useViewer.getState().setRendererHealth('lost', rendererLostMessage(error))
       } else {
         useViewer.getState().setRendererHealth('degraded', error?.message ?? null)
       }
@@ -314,6 +351,29 @@ function ShadowMapSync() {
     }
     invalidate()
   }, [gl, invalidate, shadows])
+
+  return null
+}
+
+function ClusteredLightingSetup() {
+  const gl = useThree((state) => state.gl)
+
+  useLayoutEffect(() => {
+    const renderer = gl as unknown as {
+      backend?: { constructor?: { name?: string }; isWebGPUBackend?: boolean }
+      lighting?: unknown
+    }
+    const backend = renderer.backend
+    const isWebGPU =
+      backend?.isWebGPUBackend === true || backend?.constructor?.name === 'WebGPUBackend'
+    if (!isWebGPU) return
+
+    const previousLighting = renderer.lighting
+    renderer.lighting = new ClusteredLighting(CLUSTERED_MAX_POINT_LIGHTS)
+    return () => {
+      renderer.lighting = previousLighting
+    }
+  }, [gl])
 
   return null
 }
@@ -564,6 +624,8 @@ const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(
           const canvas = props.canvas
           const cached = canvas ? WEBGPU_RENDERER_CACHE.get(canvas) : undefined
           if (cached) return cached
+          const token = Symbol('webgpu-renderer')
+          if (canvas) WEBGPU_RENDERER_TOKENS.set(canvas, token)
           const promise = (async () => {
             try {
               const renderer = new THREE.WebGPURenderer({
@@ -577,16 +639,22 @@ const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(
               ).toneMappingExposure
               await renderer.init()
               installEmptyDrawGuard(renderer)
+              if (canvas && WEBGPU_RENDERER_TOKENS.get(canvas) !== token) {
+                renderer.dispose()
+                throw new Error('Stale WebGPU renderer initialization was discarded')
+              }
+              clearRendererCacheOnDispose(renderer, canvas, token)
               return renderer
             } catch (err) {
               // Drop the failed promise from the cache so a future Canvas
               // mount on the same DOM can retry instead of inheriting the
               // rejection forever.
-              if (canvas) WEBGPU_RENDERER_CACHE.delete(canvas)
-              if (isGpuOutOfMemoryError(err)) {
-                useViewer
-                  .getState()
-                  .setRendererHealth('lost', 'GPU 显存不足，渲染和物品放置已停止。')
+              if (canvas && WEBGPU_RENDERER_TOKENS.get(canvas) === token) {
+                WEBGPU_RENDERER_CACHE.delete(canvas)
+                WEBGPU_RENDERER_TOKENS.delete(canvas)
+              }
+              if (isUnrecoverableGpuError(err)) {
+                useViewer.getState().setRendererHealth('lost', rendererLostMessage(err))
               }
               console.error('[viewer] WebGPURenderer init failed', err)
               throw err
@@ -604,7 +672,11 @@ const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(
         enabled: true,
       }}
     >
-      <FrameLimiter active={activeFrameLoop} fps={50} />
+      <FrameLimiter
+        active={activeFrameLoop || PERF_OVERLAY_ENABLED}
+        fps={PERF_OVERLAY_ENABLED ? PERF_TARGET_FPS : 50}
+      />
+      <ClusteredLightingSetup />
       <SceneComplexityController />
       <ViewerCamera />
       <GPUDeviceWatcher />
@@ -619,6 +691,7 @@ const Viewer = forwardRef<ViewerHandle, ViewerProps>(function Viewer(
         {/* <directionalLight position={[10, 10, 5]} intensity={0.5} castShadow
           /> */}
         <Lights />
+        <SceneEnvironment />
         {useBvh ? (
           <SceneBvh>
             <SceneRenderer />
@@ -663,7 +736,7 @@ const DebugRenderer = () => {
         | { onSubmittedWorkDone?: () => Promise<void> }
         | undefined
       queue?.onSubmittedWorkDone?.().then(() => {
-        pushGpuSample(performance.now() - submittedAt)
+        pushQueueWaitSample(performance.now() - submittedAt)
       })
     }
   })

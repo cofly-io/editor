@@ -159,7 +159,7 @@ export default function Home() {
             </p>
 
             <div className="mt-8 flex flex-wrap items-center gap-3">
-              <div className="[&_button]:h-11 [&_button]:min-w-36 [&_button]:rounded-md [&_button]:border-cyan-200/55 [&_button]:!bg-[linear-gradient(135deg,rgba(45,212,191,0.95),rgba(166,132,255,0.78))] [&_button]:px-6 [&_button]:py-0 [&_button]:font-semibold [&_button]:text-[#071013] [&_button]:text-sm [&_button]:shadow-[0_0_26px_rgba(45,212,191,0.22)] [&_button]:transition-[filter,transform] [&_button:hover]:!bg-[linear-gradient(135deg,rgba(103,232,249,1),rgba(166,132,255,0.9))] [&_button:hover]:brightness-110">
+              <div className="[&>div>button]:h-11 [&>div>button]:min-w-36 [&>div>button]:rounded-md [&>div>button]:border-cyan-200/55 [&>div>button]:!bg-[linear-gradient(135deg,rgba(45,212,191,0.95),rgba(166,132,255,0.78))] [&>div>button]:px-6 [&>div>button]:py-0 [&>div>button]:font-semibold [&>div>button]:text-[#071013] [&>div>button]:text-sm [&>div>button]:shadow-[0_0_26px_rgba(45,212,191,0.22)] [&>div>button]:transition-[filter,transform] [&>div>button:hover]:!bg-[linear-gradient(135deg,rgba(103,232,249,1),rgba(166,132,255,0.9))] [&>div>button:hover]:brightness-110">
                 <CreateSceneButton label="新建场景" />
               </div>
               <SceneActionLink href="/scenes">

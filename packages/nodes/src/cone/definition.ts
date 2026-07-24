@@ -8,6 +8,7 @@ export const coneDefinition: NodeDefinition<typeof ConeNode> = {
   schemaVersion: 1,
   schema: ConeNode,
   category: 'structure',
+  dirtyTracking: false,
 
   defaults: () => {
     const stub = ConeNodeSchema.parse({ id: 'cone_default' as never, type: 'cone' })

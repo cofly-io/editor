@@ -4,6 +4,8 @@ FROM oven/bun:1.3.0-alpine AS builder
 
 WORKDIR /app
 
+RUN apk add --no-cache nodejs
+
 COPY . .
 
 RUN bun install --frozen-lockfile
@@ -21,7 +23,16 @@ ENV NEXT_TELEMETRY_DISABLED=1 \
 
 # The app script explicitly loads the root .env.local, which is intentionally
 # excluded from Docker build contexts so credentials cannot enter an image layer.
-RUN touch .env.local && bun --cwd=apps/editor run build
+# First compile all workspace package dists (they are consumed by Next.js as
+# external packages, not transpiled from source), then build the app.
+RUN touch .env.local \
+    && bun --cwd=packages/core run build \
+    && bun --cwd=packages/viewer run build \
+    && bun --cwd=packages/nodes run build \
+    && bun --cwd=packages/mcp run build \
+    && bun --cwd=packages/articraft-bridge run build \
+    && cd apps/editor \
+    && node ./node_modules/next/dist/bin/next build
 
 FROM docker:27-cli AS docker-cli
 

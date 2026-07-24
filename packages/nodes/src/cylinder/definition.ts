@@ -8,6 +8,7 @@ export const cylinderDefinition: NodeDefinition<typeof CylinderNode> = {
   schemaVersion: 1,
   schema: CylinderNode,
   category: 'structure',
+  dirtyTracking: false,
 
   defaults: () => {
     const stub = CylinderNodeSchema.parse({ id: 'cylinder_default' as never, type: 'cylinder' })

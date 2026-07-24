@@ -1,12 +1,13 @@
 import type { AnyNodeId, LevelNode } from '@pascal-app/core'
 import { sceneRegistry, useInteractive, useScene } from '@pascal-app/core'
-import { useFrame } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import { useRef } from 'react'
 import { MathUtils, type PointLight, Vector3 } from 'three'
 import { useItemLightPool } from '../../store/use-item-light-pool'
 import useViewer from '../../store/use-viewer'
 
 const POOL_SIZE = 12
+const CLUSTERED_LIGHT_LIMIT = 256
 // How often (in seconds) to re-evaluate which items have lights assigned (fallback timer)
 const REASSIGN_INTERVAL = 0.2
 
@@ -34,6 +35,35 @@ const _itemPos = new Vector3()
 
 type SceneNodes = ReturnType<typeof useScene.getState>['nodes']
 type InteractiveState = ReturnType<typeof useInteractive.getState>
+
+function syncPointLight(
+  light: PointLight,
+  reg: import('../../store/use-item-light-pool').LightRegistration,
+  interactiveState: InteractiveState,
+  delta: number,
+) {
+  const obj = sceneRegistry.nodes.get(reg.nodeId)
+  if (obj) {
+    obj.getWorldPosition(_itemPos)
+    const [ox, oy, oz] = reg.effect.offset
+    light.position.set(_itemPos.x + ox, _itemPos.y + oy, _itemPos.z + oz)
+  }
+
+  const values = interactiveState.items[reg.nodeId]?.controlValues
+  const isOn = reg.toggleIndex >= 0 ? Boolean(values?.[reg.toggleIndex]) : true
+  let t = 1
+  if (reg.hasSlider) {
+    const raw = (values?.[reg.sliderIndex] as number) ?? reg.sliderMin
+    t = (raw - reg.sliderMin) / (reg.sliderMax - reg.sliderMin)
+  }
+  const targetIntensity = isOn
+    ? MathUtils.lerp(reg.effect.intensityRange[0], reg.effect.intensityRange[1], t)
+    : reg.effect.intensityRange[0]
+
+  light.color.set(reg.effect.color)
+  light.distance = reg.effect.distance ?? 0
+  light.intensity = MathUtils.lerp(light.intensity, targetIntensity, Math.min(delta, 0.1) * 12)
+}
 
 function scoreRegistration(
   reg: import('../../store/use-item-light-pool').LightRegistration,
@@ -86,7 +116,7 @@ function scoreRegistration(
   return angular * 0.7 + dist * 0.3 + levelPenalty
 }
 
-export function ItemLightSystem() {
+function PooledItemLights() {
   const lightRefs = useRef<Array<PointLight | null>>(Array.from({ length: POOL_SIZE }, () => null))
   const slots = useRef<SlotRuntime[]>(
     Array.from({ length: POOL_SIZE }, () => ({ key: null, pendingKey: null, isFadingOut: false })),
@@ -255,27 +285,7 @@ export function ItemLightSystem() {
         continue
       }
 
-      // Snap world position each frame
-      const obj = sceneRegistry.nodes.get(reg.nodeId)
-      if (obj) {
-        obj.getWorldPosition(_itemPos)
-        const [ox, oy, oz] = reg.effect.offset
-        light.position.set(_itemPos.x + ox, _itemPos.y + oy, _itemPos.z + oz)
-      }
-
-      // Compute target intensity
-      const values = interactiveState.items[reg.nodeId]?.controlValues
-      const isOn = reg.toggleIndex >= 0 ? Boolean(values?.[reg.toggleIndex]) : true
-      let t = 1
-      if (reg.hasSlider) {
-        const raw = (values?.[reg.sliderIndex] as number) ?? reg.sliderMin
-        t = (raw - reg.sliderMin) / (reg.sliderMax - reg.sliderMin)
-      }
-      const targetIntensity = isOn
-        ? MathUtils.lerp(reg.effect.intensityRange[0], reg.effect.intensityRange[1], t)
-        : reg.effect.intensityRange[0]
-
-      light.intensity = MathUtils.lerp(light.intensity, targetIntensity, dt * 12)
+      syncPointLight(light, reg, interactiveState, dt)
     }
   })
 
@@ -293,4 +303,45 @@ export function ItemLightSystem() {
       ))}
     </>
   )
+}
+
+function ClusteredItemLights() {
+  const registrations = useItemLightPool((state) => state.registrations)
+  const lightRefs = useRef(new Map<string, PointLight>())
+
+  useFrame((_, delta) => {
+    const interactiveState = useInteractive.getState()
+    for (const [key, reg] of registrations) {
+      const light = lightRefs.current.get(key)
+      if (light) syncPointLight(light, reg, interactiveState, delta)
+    }
+  })
+
+  const lights = Array.from(registrations.entries())
+  return (
+    <>
+      {lights.slice(0, CLUSTERED_LIGHT_LIMIT).map(([key]) => (
+        <pointLight
+          castShadow={false}
+          intensity={0}
+          key={key}
+          ref={(light: PointLight | null) => {
+            if (light) lightRefs.current.set(key, light)
+            else lightRefs.current.delete(key)
+          }}
+        />
+      ))}
+    </>
+  )
+}
+
+export function ItemLightSystem() {
+  const gl = useThree((state) => state.gl)
+  const backend = (
+    gl as unknown as { backend?: { constructor?: { name?: string }; isWebGPUBackend?: boolean } }
+  ).backend
+  const isWebGPU =
+    backend?.isWebGPUBackend === true || backend?.constructor?.name === 'WebGPUBackend'
+
+  return isWebGPU ? <ClusteredItemLights /> : <PooledItemLights />
 }

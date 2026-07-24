@@ -11,7 +11,11 @@ import {
   type ProjectStatus,
   type SceneEvent,
   type SceneEventAppendOptions,
+  type SceneEventCompactionOptions,
+  type SceneEventCompactionResult,
+  type SceneEventCursorRange,
   type SceneEventListOptions,
+  type SceneGraphPatch,
   SceneInvalidError,
   type SceneListOptions,
   type SceneMeta,
@@ -55,10 +59,21 @@ interface SceneRow {
 interface SceneEventRow {
   event_id: number
   scene_id: string
+  base_version: number | null
   version: number
   kind: string
   created_at: string
   graph_json: string
+  patch_json: string | null
+}
+
+interface SceneSnapshotRow {
+  event_id: number | null
+  version: number | null
+}
+
+interface CountRow {
+  count: number
 }
 
 interface ProjectPlaceholder {
@@ -250,19 +265,52 @@ function parseGraph(raw: string, context: string): SceneGraph {
   return graph as SceneGraph
 }
 
+function parsePatch(raw: string, context: string): SceneGraphPatch {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch (err) {
+    throw new SceneInvalidError(
+      `Failed to parse scene patch for ${context}: ${err instanceof Error ? err.message : String(err)}`,
+    )
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new SceneInvalidError(`Scene patch for ${context} has invalid shape`)
+  }
+  const patch = parsed as SceneGraphPatch
+  if (
+    !patch.nodes ||
+    typeof patch.nodes !== 'object' ||
+    Array.isArray(patch.nodes) ||
+    !patch.nodes.upsert ||
+    typeof patch.nodes.upsert !== 'object' ||
+    Array.isArray(patch.nodes.upsert) ||
+    !Array.isArray(patch.nodes.remove)
+  ) {
+    throw new SceneInvalidError(`Scene patch for ${context} has invalid shape`)
+  }
+  return patch
+}
+
 function asSceneRow(value: unknown): SceneRow | null {
   if (!value || typeof value !== 'object') return null
   return value as SceneRow
 }
 
 function rowToSceneEvent(row: SceneEventRow): SceneEvent {
+  const patch = row.patch_json
+    ? parsePatch(row.patch_json, `${row.scene_id}#${row.event_id}`)
+    : undefined
   return {
     eventId: Number(row.event_id),
     sceneId: row.scene_id,
+    baseVersion: row.base_version === null ? null : Number(row.base_version),
     version: Number(row.version),
     kind: row.kind,
     createdAt: row.created_at,
-    graph: parseGraph(row.graph_json, `${row.scene_id}@${row.version}`),
+    ...(patch
+      ? { patch }
+      : { graph: parseGraph(row.graph_json, `${row.scene_id}@${row.version}`) }),
   }
 }
 
@@ -420,6 +468,16 @@ export class SqliteSceneStore implements SceneStore {
          ) VALUES (?, ?, ?, ?, ?, ?)`,
       ).run(id, version, graphJson, 'mcp', ownerId, now)
 
+      if (opts.event) {
+        this.insertSceneEvent(db, graphJson, {
+          sceneId: id,
+          baseVersion: opts.event.baseVersion ?? null,
+          version,
+          kind: opts.event.kind,
+          ...(opts.event.patch ? { patch: opts.event.patch } : { graph: opts.graph }),
+        })
+      }
+
       this.projectPlaceholders.delete(id)
 
       return {
@@ -544,45 +602,145 @@ export class SqliteSceneStore implements SceneStore {
       if (!existing) {
         throw new SceneNotFoundError(`Scene "${safeId}" not found`)
       }
-
-      const graphJson = serializeGraph(opts.graph)
-      const now = new Date().toISOString()
-      const result = db
-        .query(
-          `INSERT INTO scene_events (
-             scene_id, version, kind, created_at, graph_json
-           ) VALUES (?, ?, ?, ?, ?)`,
-        )
-        .run(safeId, opts.version, opts.kind, now, graphJson)
-
-      return {
-        eventId: Number(result.lastInsertRowid),
-        sceneId: safeId,
-        version: opts.version,
-        kind: opts.kind,
-        createdAt: now,
-        graph: opts.graph,
-      }
+      return this.insertSceneEvent(db, existing.graph_json, opts)
     })
+  }
+
+  private insertSceneEvent(
+    db: SqliteDatabase,
+    durableGraphJson: string,
+    opts: SceneEventAppendOptions,
+  ): SceneEvent {
+    const safeId = sanitizeSlug(opts.sceneId)
+    const existing = this.getRow(db, safeId)
+    if (!existing) {
+      throw new SceneNotFoundError(`Scene "${safeId}" not found`)
+    }
+    const hasGraph = opts.graph !== undefined
+    const hasPatch = opts.patch !== undefined
+    if (hasGraph === hasPatch) {
+      throw new SceneInvalidError('Scene event must contain exactly one graph or patch payload')
+    }
+    if (opts.version !== existing.version) {
+      throw new SceneVersionConflictError(
+        `Scene event for "${safeId}" must match durable version ${existing.version}`,
+      )
+    }
+    if (hasPatch && opts.baseVersion !== existing.version - 1) {
+      throw new SceneVersionConflictError(
+        `Scene patch for "${safeId}" must use base version ${existing.version - 1}`,
+      )
+    }
+
+    const graphJson = hasGraph ? serializeGraph(opts.graph!) : '{}'
+    const patchJson = hasPatch ? JSON.stringify(opts.patch) : null
+    const now = new Date().toISOString()
+    const result = db
+      .query(
+        `INSERT INTO scene_events (
+           scene_id, base_version, version, kind, created_at, graph_json, patch_json
+         ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(safeId, opts.baseVersion ?? null, opts.version, opts.kind, now, graphJson, patchJson)
+
+    const eventId = Number(result.lastInsertRowid)
+    this.upsertSceneSnapshot(db, safeId, opts.version, eventId, durableGraphJson)
+    return {
+      eventId,
+      sceneId: safeId,
+      baseVersion: opts.baseVersion ?? null,
+      version: opts.version,
+      kind: opts.kind,
+      createdAt: now,
+      ...(hasPatch ? { patch: opts.patch! } : { graph: opts.graph! }),
+    }
+  }
+
+  async getLatestSceneEventId(sceneId: string): Promise<number> {
+    const db = await this.database()
+    const row = db
+      .query(
+        `SELECT event_id
+           FROM scene_events
+          WHERE scene_id = ?
+          ORDER BY event_id DESC
+          LIMIT 1`,
+      )
+      .get(sanitizeSlug(sceneId)) as { event_id?: number } | null
+
+    return Number(row?.event_id ?? 0)
+  }
+
+  async getSceneEventCursorRange(sceneId: string): Promise<SceneEventCursorRange> {
+    const db = await this.database()
+    return this.getSceneEventCursorRangeWithDb(db, sanitizeSlug(sceneId))
   }
 
   async listSceneEvents(sceneId: string, opts: SceneEventListOptions = {}): Promise<SceneEvent[]> {
     const afterEventId = Math.max(0, opts.afterEventId ?? 0)
+    const afterVersion = Math.max(0, opts.afterVersion ?? 0)
     const requestedLimit = opts.limit ?? 100
     const limit = Number.isInteger(requestedLimit) && requestedLimit > 0 ? requestedLimit : 100
     const db = await this.database()
     const rows = db
       .query(
-        `SELECT event_id, scene_id, version, kind, created_at, graph_json
+        `SELECT event_id, scene_id, base_version, version, kind, created_at, graph_json, patch_json
            FROM scene_events
           WHERE scene_id = ?
             AND event_id > ?
+            AND version > ?
           ORDER BY event_id ASC
           LIMIT ?`,
       )
-      .all(sanitizeSlug(sceneId), afterEventId, limit)
+      .all(sanitizeSlug(sceneId), afterEventId, afterVersion, limit)
 
     return rows.map((row) => rowToSceneEvent(row as SceneEventRow))
+  }
+
+  async compactSceneEvents(
+    sceneId: string,
+    opts: SceneEventCompactionOptions = {},
+  ): Promise<SceneEventCompactionResult> {
+    return this.withWriteTransaction((db) => {
+      const safeId = sanitizeSlug(sceneId)
+      const existing = this.getRow(db, safeId)
+      if (!existing) {
+        throw new SceneNotFoundError(`Scene "${safeId}" not found`)
+      }
+
+      const keepEvents = opts.keepEvents ?? 100
+      if (!Number.isInteger(keepEvents) || keepEvents < 1) {
+        throw new SceneInvalidError('keepEvents must be a positive integer')
+      }
+      const rangeBefore = this.getSceneEventCursorRangeWithDb(db, safeId)
+      const boundary = db
+        .query(
+          `SELECT event_id
+             FROM scene_events
+            WHERE scene_id = ?
+            ORDER BY event_id DESC
+            LIMIT 1 OFFSET ?`,
+        )
+        .get(safeId, keepEvents) as { event_id?: number } | null
+      const deleteThrough = boundary?.event_id
+        ? rangeBefore.snapshotEventId > 0
+          ? Math.min(boundary.event_id, rangeBefore.snapshotEventId - 1)
+          : boundary.event_id
+        : 0
+      const result = deleteThrough > 0
+        ? db
+            .query('DELETE FROM scene_events WHERE scene_id = ? AND event_id <= ?')
+            .run(safeId, deleteThrough)
+        : { changes: 0 }
+      const remainingEvents = this.countSceneEvents(db, safeId)
+      const rangeAfter = this.getSceneEventCursorRangeWithDb(db, safeId)
+
+      return {
+        ...rangeAfter,
+        deletedEvents: result.changes,
+        remainingEvents,
+      }
+    })
   }
 
   close(): void {
@@ -644,16 +802,29 @@ export class SqliteSceneStore implements SceneStore {
       CREATE TABLE IF NOT EXISTS scene_events (
         event_id INTEGER PRIMARY KEY AUTOINCREMENT,
         scene_id TEXT NOT NULL,
+        base_version INTEGER,
         version INTEGER NOT NULL CHECK (version >= 1),
         kind TEXT NOT NULL,
         created_at TEXT NOT NULL,
         graph_json TEXT NOT NULL,
+        patch_json TEXT,
         FOREIGN KEY (scene_id) REFERENCES scenes(id) ON DELETE CASCADE
       );
 
       CREATE INDEX IF NOT EXISTS scene_events_scene_event_idx
         ON scene_events(scene_id, event_id);
+
+      CREATE TABLE IF NOT EXISTS scene_snapshots (
+        scene_id TEXT PRIMARY KEY,
+        version INTEGER NOT NULL CHECK (version >= 1),
+        event_id INTEGER NOT NULL CHECK (event_id >= 0),
+        created_at TEXT NOT NULL,
+        graph_json TEXT NOT NULL,
+        FOREIGN KEY (scene_id) REFERENCES scenes(id) ON DELETE CASCADE
+      );
     `)
+    this.ensureColumn(db, 'scene_events', 'base_version', 'INTEGER')
+    this.ensureColumn(db, 'scene_events', 'patch_json', 'TEXT')
   }
 
   private async withWriteTransaction<T>(fn: (db: SqliteDatabase) => T | Promise<T>): Promise<T> {
@@ -684,6 +855,68 @@ export class SqliteSceneStore implements SceneStore {
         )
         .get(id),
     )
+  }
+
+  private ensureColumn(
+    db: SqliteDatabase,
+    tableName: string,
+    columnName: string,
+    definition: string,
+  ): void {
+    const columns = db.query(`PRAGMA table_info(${tableName})`).all() as Array<{ name?: string }>
+    if (columns.some((column) => column.name === columnName)) return
+    db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`)
+  }
+
+  private upsertSceneSnapshot(
+    db: SqliteDatabase,
+    sceneId: string,
+    version: number,
+    eventId: number,
+    graphJson: string,
+  ): void {
+    db.query(
+      `INSERT INTO scene_snapshots (
+         scene_id, version, event_id, created_at, graph_json
+       ) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(scene_id) DO UPDATE SET
+         version = excluded.version,
+         event_id = excluded.event_id,
+         created_at = excluded.created_at,
+         graph_json = excluded.graph_json`,
+    ).run(sceneId, version, eventId, new Date().toISOString(), graphJson)
+  }
+
+  private getSceneEventCursorRangeWithDb(
+    db: SqliteDatabase,
+    sceneId: string,
+  ): SceneEventCursorRange {
+    const row = db
+      .query(
+        `SELECT
+           MIN(event_id) AS earliest_event_id,
+           MAX(event_id) AS latest_event_id
+         FROM scene_events
+         WHERE scene_id = ?`,
+      )
+      .get(sceneId) as { earliest_event_id?: number | null; latest_event_id?: number | null } | null
+    const snapshot = db
+      .query('SELECT event_id, version FROM scene_snapshots WHERE scene_id = ?')
+      .get(sceneId) as SceneSnapshotRow | null
+
+    return {
+      earliestEventId: Number(row?.earliest_event_id ?? 0),
+      latestEventId: Number(row?.latest_event_id ?? 0),
+      snapshotEventId: Number(snapshot?.event_id ?? 0),
+      snapshotVersion: Number(snapshot?.version ?? 0),
+    }
+  }
+
+  private countSceneEvents(db: SqliteDatabase, sceneId: string): number {
+    const row = db
+      .query('SELECT COUNT(*) AS count FROM scene_events WHERE scene_id = ?')
+      .get(sceneId) as CountRow | null
+    return Number(row?.count ?? 0)
   }
 
   private generateUniqueId(db: SqliteDatabase): string {

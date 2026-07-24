@@ -1,17 +1,13 @@
 import { access } from 'node:fs/promises'
-import path from 'node:path'
-
-const localThumbnailPattern =
-  /^\/scene-thumbnails\/(?<file>[A-Za-z0-9_-]+\.(?:png|jpg|webp))(?:\?v=\d+)?$/
+import { sceneThumbnailPath, sceneThumbnailPattern } from './scene-thumbnail-storage'
 
 export async function resolveExistingSceneThumbnailUrl(url: string | null): Promise<string | null> {
   if (!url) return null
-  const match = localThumbnailPattern.exec(url)
+  const match = sceneThumbnailPattern.exec(url)
   if (!match?.groups?.file) return url
 
-  const thumbnailPath = path.join(process.cwd(), 'public', 'scene-thumbnails', match.groups.file)
   try {
-    await access(thumbnailPath)
+    await access(sceneThumbnailPath(match.groups.file))
     return url
   } catch {
     return null

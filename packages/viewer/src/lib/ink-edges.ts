@@ -1,15 +1,4 @@
-import {
-  abs,
-  colorToDirection,
-  float,
-  max,
-  min,
-  mix,
-  screenSize,
-  screenUV,
-  smoothstep,
-  vec2,
-} from 'three/tsl'
+import { abs, float, max, min, mix, screenSize, screenUV, smoothstep, vec2 } from 'three/tsl'
 
 // Screen-space ink outline (SketchUp / Moebius look). Reads the scene-pass
 // depth + normal MRT and inks two signals:
@@ -42,7 +31,7 @@ export function inkedEdges({
   // darkness — these are what distinguish soft (thin/faint) from strong
   // (thick/solid); the edge masks themselves saturate, so a gain wouldn't.
   radius: number
-  opacity: number
+  opacity: any
   sceneRgb: any
 }) {
   const px = vec2(1, 1).div(screenSize).mul(radius)
@@ -61,11 +50,11 @@ export function inkedEdges({
   // ≈ metres of step / near (near≈0.1): ~5cm starts a line, ~25cm solid.
   const depthEdge = smoothstep(float(0.5), float(2.5), depthMetric).mul(noiseGate)
 
-  const nC = colorToDirection(normalTex.sample(uvN)).normalize()
-  const nR = colorToDirection(normalTex.sample(uvN.add(vec2(px.x, 0)))).normalize()
-  const nL = colorToDirection(normalTex.sample(uvN.sub(vec2(px.x, 0)))).normalize()
-  const nU = colorToDirection(normalTex.sample(uvN.add(vec2(0, px.y)))).normalize()
-  const nD = colorToDirection(normalTex.sample(uvN.sub(vec2(0, px.y)))).normalize()
+  const nC = normalTex.sample(uvN).rgb.normalize()
+  const nR = normalTex.sample(uvN.add(vec2(px.x, 0))).rgb.normalize()
+  const nL = normalTex.sample(uvN.sub(vec2(px.x, 0))).rgb.normalize()
+  const nU = normalTex.sample(uvN.add(vec2(0, px.y))).rgb.normalize()
+  const nD = normalTex.sample(uvN.sub(vec2(0, px.y))).rgb.normalize()
   const nDiff = max(
     max(float(1).sub(nC.dot(nR)), float(1).sub(nC.dot(nL))),
     max(float(1).sub(nC.dot(nU)), float(1).sub(nC.dot(nD))),

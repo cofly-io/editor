@@ -6,6 +6,9 @@ import type {
   ProjectStatus,
   SceneEvent,
   SceneEventAppendOptions,
+  SceneEventCompactionOptions,
+  SceneEventCompactionResult,
+  SceneEventCursorRange,
   SceneEventListOptions,
   SceneListOptions,
   SceneMeta,
@@ -25,7 +28,10 @@ export interface SceneOperations {
   readonly hasStore: boolean
   readonly hasSceneEvents: boolean
   readonly canAppendSceneEvents: boolean
+  readonly canGetLatestSceneEventId: boolean
+  readonly canGetSceneEventCursorRange: boolean
   readonly canListSceneEvents: boolean
+  readonly canCompactSceneEvents: boolean
   readonly canCreateProject: boolean
   readonly canGetProjectStatus: boolean
   readonly storeBackend: SceneStore['backend'] | null
@@ -72,7 +78,13 @@ export interface SceneOperations {
   deleteStoredScene(id: string, options?: SceneMutateOptions): Promise<boolean>
   renameStoredScene(id: string, newName: string, options?: SceneMutateOptions): Promise<SceneMeta>
   appendSceneEvent(options: SceneEventAppendOptions): Promise<SceneEvent | null>
+  getLatestSceneEventId(id: string): Promise<number>
+  getSceneEventCursorRange(id: string): Promise<SceneEventCursorRange>
   listSceneEvents(id: string, options?: SceneEventListOptions): Promise<SceneEvent[]>
+  compactSceneEvents(
+    id: string,
+    options?: SceneEventCompactionOptions,
+  ): Promise<SceneEventCompactionResult>
 }
 
 export function createSceneOperations(options: CreateSceneOperationsOptions): SceneOperations {
@@ -97,15 +109,27 @@ class SceneOperationsFacade implements SceneOperations {
   }
 
   get hasSceneEvents(): boolean {
-    return this.canAppendSceneEvents && this.canListSceneEvents
+    return this.canAppendSceneEvents && this.canGetLatestSceneEventId && this.canListSceneEvents
   }
 
   get canAppendSceneEvents(): boolean {
     return typeof this.#store?.appendSceneEvent === 'function'
   }
 
+  get canGetLatestSceneEventId(): boolean {
+    return typeof this.#store?.getLatestSceneEventId === 'function'
+  }
+
+  get canGetSceneEventCursorRange(): boolean {
+    return typeof this.#store?.getSceneEventCursorRange === 'function'
+  }
+
   get canListSceneEvents(): boolean {
     return typeof this.#store?.listSceneEvents === 'function'
+  }
+
+  get canCompactSceneEvents(): boolean {
+    return typeof this.#store?.compactSceneEvents === 'function'
   }
 
   get canCreateProject(): boolean {
@@ -301,12 +325,39 @@ class SceneOperationsFacade implements SceneOperations {
     return store.appendSceneEvent(options)
   }
 
+  async getLatestSceneEventId(id: string): Promise<number> {
+    const store = this.requireStore()
+    if (!store.getLatestSceneEventId) {
+      throw new Error('scene_event_cursor_unavailable')
+    }
+    return store.getLatestSceneEventId(id)
+  }
+
+  async getSceneEventCursorRange(id: string): Promise<SceneEventCursorRange> {
+    const store = this.requireStore()
+    if (!store.getSceneEventCursorRange) {
+      throw new Error('scene_event_cursor_range_unavailable')
+    }
+    return store.getSceneEventCursorRange(id)
+  }
+
   async listSceneEvents(id: string, options?: SceneEventListOptions): Promise<SceneEvent[]> {
     const store = this.requireStore()
     if (!store.listSceneEvents) {
       throw new Error('scene_events_unavailable')
     }
     return store.listSceneEvents(id, options)
+  }
+
+  async compactSceneEvents(
+    id: string,
+    options?: SceneEventCompactionOptions,
+  ): Promise<SceneEventCompactionResult> {
+    const store = this.requireStore()
+    if (!store.compactSceneEvents) {
+      throw new Error('scene_event_compaction_unavailable')
+    }
+    return store.compactSceneEvents(id, options)
   }
 
   private requireBridge(): SceneBridge {
