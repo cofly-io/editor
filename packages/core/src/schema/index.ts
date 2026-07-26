@@ -101,6 +101,7 @@ export { RoadNode, RoadSurfaceKind } from './nodes/road'
 export type { RoofSurfaceMaterialRole, RoofSurfaceMaterialSpec } from './nodes/roof'
 export { getEffectiveRoofSurfaceMaterial, RoofNode } from './nodes/roof'
 export { getActiveRoofHeight, RoofSegmentNode, RoofType } from './nodes/roof-segment'
+export { getRoofWallFaceFrame, type RoofWallFaceId } from './nodes/roof-segment-walls'
 export { RoundedPanelNode } from './nodes/rounded-panel'
 export { ScanNode } from './nodes/scan'
 // Nodes

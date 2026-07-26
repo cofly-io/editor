@@ -7,7 +7,9 @@ import { BoxNode, ItemNode, PipeFittingNode, PipeNode, TankNode } from '@pascal-
 import {
   STORAGE_TANK_EDITABLE_PART_ROLES,
   STORAGE_TANK_RECIPE_ID,
+  synthesizeGeometryParts,
 } from '@pascal-app/plugin-factory-equipment'
+import type { Profile } from '@pascal-app/plugin-factory-equipment'
 import {
   computeGeneratedAssemblyPosition,
   createGeneratedGeometryId,
@@ -48,6 +50,7 @@ export type ProcessStationEquipmentResolver =
   | 'native-pipe-fitting'
   | 'native-tank'
   | 'profile-parts'
+  | 'synthesized-parts'
   | 'primitive'
 
 type ArtifactShape = GeneratedGeometryArtifact['shapes'][number]
@@ -811,6 +814,153 @@ function createProfilePartsPatch(input: {
   return { patches: inheritProcessPartMetadata(patchPlan.patches, input.metadata), routeObstacle }
 }
 
+// ─── Synthesized equipment fallback (Plan A strengthened) ────────────────────
+// When no handwritten factory node matches, no component generator exists, and
+// no profile parts are present, synthesize an EDITABLE part node tree from the
+// equipment contract via the industry-pack runtime synthesizer. Every part is
+// an independent node (double-click → part-level editing), NOT a snapshot and
+// NOT instanced.
+
+function synthesizedProfileForContract(
+  equipmentContract: ProcessEquipmentContract,
+): Profile {
+  const envelope = equipmentContract.envelope
+  return {
+    id: equipmentContract.profileId,
+    name: equipmentContract.profileId,
+    family: equipmentContract.equipmentFamily,
+    generatorRef: { componentPack: '', generator: '' },
+    defaultDimensions: {
+      length: envelope.length,
+      width: envelope.width,
+      height: envelope.height,
+    },
+    params: (equipmentContract.recipeParams ?? {}) as Record<string, unknown>,
+    ports: Object.fromEntries(equipmentContract.ports.map((port) => [port.id, port.medium])),
+    primarySemanticRole: equipmentContract.primarySemanticRole ?? 'vessel_shell',
+    qualityRequiredRoles: equipmentContract.requiredRoles ?? [],
+  }
+}
+
+function createSynthesizedEquipmentPatch(input: {
+  station: ProcessStationPlan
+  stationPlacement: StationPlacement
+  placement: GeneratedGeometryPlacementSpec
+  metadata: Record<string, unknown>
+  equipmentContract: ProcessEquipmentContract
+}) {
+  const equipmentContract = input.equipmentContract
+  const envelope = equipmentContract.envelope
+  const profile = synthesizedProfileForContract(equipmentContract)
+  const synthesizedParts = synthesizeGeometryParts(
+    profile,
+    (equipmentContract.recipeParams ?? {}) as Record<string, unknown>,
+    { length: envelope.length, width: envelope.width, height: envelope.height },
+  )
+  if (!synthesizedParts.length) return null
+
+  const routeObstacle = routeObstacleForStation({
+    stationPlacement: input.stationPlacement,
+    equipmentContract,
+    source: 'synthesized',
+  })
+
+  // Synthesized parts carry part-registry kinds (cylindrical_tank, heat_exchanger, ...).
+  // buildGeneratedGeometryNodes only understands RAW primitive kinds (box, cylinder, ...),
+  // so run them through composePartPrimitives first — exactly like createProfilePartsPatch.
+  const sourceArgs: PartComposeInput = {
+    name: stationDisplayLabel(input.station),
+    family: equipmentContract.equipmentFamily,
+    detail: 'high',
+    length: envelope.length,
+    width: envelope.width,
+    depth: envelope.width,
+    height: envelope.height,
+    parts: synthesizedParts as unknown as PartComposeInput['parts'],
+    autoComplete: false,
+    enhanceVisualDetails: false,
+    registryPartPlan: true,
+    primaryColor: '#cbd5e1',
+    secondaryColor: '#64748b',
+    metalColor: '#94a3b8',
+    darkColor: '#1f2937',
+    accentColor: '#f59e0b',
+  } as PartComposeInput
+  const composedShapes = composePartPrimitives(sourceArgs) as PrimitiveShapeInput[]
+  const rawArtifactShapes: GeneratedGeometryArtifact['shapes'] = composedShapes.map((shape) => ({
+    ...shape,
+    position: shape.position ?? [0, 0, 0],
+    rotation: shape.rotation ?? [0, 0, 0],
+  }))
+  if (!rawArtifactShapes.length) return null
+
+  const rawTransforms = resolvePrimitiveWorldTransforms(rawArtifactShapes, {
+    positionMode: 'world-center',
+  })
+  const groundLift = profilePartGroundLift({
+    shapes: rawArtifactShapes,
+    transforms: rawTransforms,
+  })
+  const artifactShapes = rawArtifactShapes.map((shape) => translateShapeY(shape, groundLift))
+  const transforms = translateTransformsY(rawTransforms, groundLift)
+  const assemblyPosition = computeGeneratedAssemblyPosition(transforms)
+  const artifactSourceArgs: Record<string, unknown> = {
+    profileId: equipmentContract.profileId,
+    family: equipmentContract.equipmentFamily,
+    length: envelope.length,
+    width: envelope.width,
+    height: envelope.height,
+    primarySemanticRole: equipmentContract.primarySemanticRole,
+    requiredRoles: equipmentContract.requiredRoles,
+  }
+  const artifact: GeneratedGeometryArtifact = {
+    id: createGeneratedGeometryId(),
+    title: stationDisplayLabel(input.station),
+    sourceTool: 'industry-pack-synthesizer',
+    sourceArgs: artifactSourceArgs,
+    userPrompt: input.station.equipmentHint,
+    version: 1,
+    createdAt: new Date().toISOString(),
+    shapes: artifactShapes,
+    transforms,
+    assemblyName: inferGeneratedAssemblyName(
+      'industry-pack-synthesizer',
+      artifactSourceArgs,
+      artifactShapes,
+    ),
+    assemblyPosition,
+    createdNames: artifactShapes.map((shape) => shape.name ?? shape.kind),
+    shapeDetails: formatGeneratedShapeDetails(artifactShapes, transforms),
+    geometryBrief: {
+      category: equipmentContract.equipmentFamily,
+      units: 'meters',
+      expectedDimensions: {
+        length: envelope.length,
+        width: envelope.width,
+        height: envelope.height,
+      },
+      requiredRoles: equipmentContract.requiredRoles,
+      semanticRoles: equipmentContract.requiredRoles,
+    },
+  }
+  const patchPlan = buildGeneratedGeometryCreatePatches(artifact, {
+    ...input.placement,
+    position: input.stationPlacement.position,
+    rotation: input.stationPlacement.rotation,
+    metadata: {
+      ...input.metadata,
+      equipmentRole: input.station.role,
+      resolver: 'synthesized-parts',
+      resolverReason:
+        'no handwritten factory node / profile parts; runtime synthesizer generated editable part node tree',
+      factoryRouteObstacle: routeObstacle,
+      ...semanticAssemblyMetadata(equipmentContract),
+      ...equipmentContractMetadata(equipmentContract),
+    },
+  })
+  return { patches: inheritProcessPartMetadata(patchPlan.patches, input.metadata), routeObstacle }
+}
+
 export function resolveProcessStationEquipment(input: {
   plan: ProcessLinePlan
   station: ProcessStationPlan
@@ -902,6 +1052,26 @@ export function resolveProcessStationEquipment(input: {
       resolved: true,
       resolver: 'factory-node',
       reason: `station equipment contract compiled to ${factoryNode.nodeKind}`,
+    }
+  }
+  // Synthesizer fallback: no handwritten factory node matched. Before falling
+  // to the generic catalog (or AI primitives), synthesize an editable part
+  // node tree from the equipment contract so every station gets real geometry
+  // while preserving part-level editing.
+  if (equipmentContract) {
+    const synthesized = createSynthesizedEquipmentPatch({
+      ...input,
+      equipmentContract,
+    })
+    if (synthesized?.patches.length) {
+      return {
+        patches: synthesized.patches,
+        primitiveRequest: null,
+        routeObstacle: synthesized.routeObstacle,
+        resolved: true,
+        resolver: 'synthesized-parts',
+        reason: 'station equipment contract synthesized to editable part node tree',
+      }
     }
   }
   const catalogMatch = resolveProcessCatalogEquipment({

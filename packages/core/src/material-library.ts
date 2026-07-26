@@ -1,4 +1,5 @@
 import {
+  type MaterialSchema,
   type MaterialPresetPayload,
   type MaterialTarget,
   MaterialTarget as MaterialTargetSchema,
@@ -13,6 +14,16 @@ export type MaterialCatalogItem = {
   previewColor?: string
   preset: MaterialPresetPayload
 }
+
+export type SceneMaterialId = string
+
+export type SceneMaterial = {
+  material: MaterialSchema
+}
+
+export type MaterialRef =
+  | { kind: 'library'; id: string }
+  | { kind: 'scene'; id: SceneMaterialId }
 
 const WALL_TARGETS: MaterialTarget[] = [MaterialTargetSchema.enum.wall]
 
@@ -2468,6 +2479,16 @@ export function getSceneMaterialIdFromRef(materialRef?: string | null): string |
   if (typeof materialRef !== 'string') return null
   if (!materialRef.startsWith(SCENE_MATERIAL_REF_PREFIX)) return null
   return materialRef.slice(SCENE_MATERIAL_REF_PREFIX.length)
+}
+
+export function parseMaterialRef(materialRef?: string | null): MaterialRef | null {
+  const libraryId = getLibraryMaterialIdFromRef(materialRef)
+  if (libraryId) return { kind: 'library', id: libraryId }
+
+  const sceneId = getSceneMaterialIdFromRef(materialRef)
+  if (sceneId) return { kind: 'scene', id: sceneId }
+
+  return null
 }
 
 export function getMaterialSolidColorByRef(materialRef?: string | null): string | null {

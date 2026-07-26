@@ -46,6 +46,8 @@ export const DoorNode = BaseNode.extend({
   rotation: z.tuple([z.number(), z.number(), z.number()]).default([0, 0, 0]),
   side: z.enum(['front', 'back']).optional(),
   wallId: z.string().optional(),
+  roofSegmentId: z.string().optional(),
+  roofFace: z.enum(['front', 'back', 'right', 'left']).optional(),
 
   // Overall dimensions
   width: z.number().default(0.9),

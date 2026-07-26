@@ -670,6 +670,7 @@ export function createSurfaceRoleMaterial(
   preset: ColorPreset,
   side: THREE.Side = THREE.FrontSide,
   sceneThemeId?: string,
+  shading: RenderShading = 'rendered',
 ): THREE.Material {
   // DoubleSide on glazing trips the MRT back-face pipeline issue documented
   // on `glassMaterial` above — the validator rejects the back-face variant
@@ -681,21 +682,38 @@ export function createSurfaceRoleMaterial(
   // FrontSide faces the viewer.
   const resolvedSide =
     role === 'glazing' ? THREE.FrontSide : resolveNodeMaterialSide(side ?? THREE.FrontSide)
-  const cacheKey = `${role}-${preset}-${resolvedSide}-${sceneThemeId ?? 'base'}`
+  const cacheKey = `${role}-${preset}-${resolvedSide}-${sceneThemeId ?? 'base'}-${shading}`
   const cached = surfaceRoleMaterialCache.get(cacheKey)
   if (cached) return cached
 
   const material =
     role === 'glazing'
-      ? new MeshLambertNodeMaterial({
+      ? shading === 'solid'
+        ? new MeshLambertNodeMaterial({
+            color: resolveSurfaceColor(role, preset, sceneThemeId),
+            depthWrite: false,
+            opacity: 0.25,
+            side: resolvedSide,
+            transparent: true,
+          })
+        : new MeshStandardNodeMaterial({
+            color: resolveSurfaceColor(role, preset, sceneThemeId),
+            depthWrite: false,
+            opacity: 0.25,
+            roughness: 0.12,
+            metalness: 0,
+            side: resolvedSide,
+            transparent: true,
+          })
+      : shading === 'solid'
+        ? new MeshLambertNodeMaterial({
+            color: resolveSurfaceColor(role, preset, sceneThemeId),
+            side: resolvedSide,
+          })
+        : new MeshStandardNodeMaterial({
           color: resolveSurfaceColor(role, preset, sceneThemeId),
-          depthWrite: false,
-          opacity: 0.25,
-          side: resolvedSide,
-          transparent: true,
-        })
-      : new MeshLambertNodeMaterial({
-          color: resolveSurfaceColor(role, preset, sceneThemeId),
+          roughness: 0.72,
+          metalness: 0,
           side: resolvedSide,
         })
 
@@ -707,6 +725,8 @@ export function createSurfaceRoleMaterial(
 export function baseMaterial(shading: RenderShading = 'rendered'): THREE.Material {
   return cachedDefaultMaterial('base', '#e9e7e3', 0.5, shading)
 }
+
+export const createBaseMaterial = baseMaterial
 
 export function DEFAULT_WALL_MATERIAL(shading: RenderShading = 'rendered'): THREE.Material {
   return cachedDefaultMaterial('wall', '#e9e6e0', 0.9, shading)

@@ -122,6 +122,14 @@ ktx2Loader.setTranscoderPath(getKtx2TranscoderPath())
 
 const configuredRenderers = new WeakSet<object>()
 const warnedRenderers = new WeakSet<object>()
+let resolveKtx2Ready: (() => void) | null = null
+const ktx2Ready = new Promise<void>((resolve) => {
+  resolveKtx2Ready = resolve
+})
+
+export function whenKtx2Ready(): Promise<void> {
+  return ktx2Ready
+}
 
 /** Returns true once support has been detected for this renderer (KTX2 safe to load). */
 export function ensureKtx2Support(renderer: unknown): boolean {
@@ -131,6 +139,8 @@ export function ensureKtx2Support(renderer: unknown): boolean {
   try {
     ;(ktx2Loader as unknown as { detectSupport: (r: unknown) => void }).detectSupport(renderer)
     configuredRenderers.add(key)
+    resolveKtx2Ready?.()
+    resolveKtx2Ready = null
     return true
   } catch (error) {
     // Some WebGPU flows can transiently call this before backend init; don't

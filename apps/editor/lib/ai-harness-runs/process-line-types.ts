@@ -218,7 +218,7 @@ export type ProcessLineFocusBounds = {
 
 export type FactoryRouteObstacleMetadata = {
   stationId: string
-  source: 'layout' | 'artifact' | 'factory-node' | 'native' | 'catalog' | 'profile-parts'
+  source: 'layout' | 'artifact' | 'factory-node' | 'native' | 'catalog' | 'profile-parts' | 'synthesized'
   minHeight?: number
   maxHeight?: number
   box: ProcessStationClearanceBox

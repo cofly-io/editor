@@ -385,13 +385,13 @@ function IndustryPackCard({
 
       <div className="mt-5 flex items-center justify-between gap-3">
         <div className="truncate font-mono text-[11px] text-white/36">{pack.url}</div>
-        <InstallButton busy={busy} onInstall={onInstall} pack={pack} />
+        <div className="flex items-center gap-2">
+          <InstallButton busy={busy} onInstall={onInstall} pack={pack} />
+        </div>
       </div>
     </article>
   )
 }
-
-export default function ProfilePacksPage() {
   const [data, setData] = useState<AssetCatalogResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)

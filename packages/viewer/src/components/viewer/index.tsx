@@ -19,6 +19,12 @@ import { ensureObjectWebGPUCompatibleGeometry } from '../../lib/safe-geometry'
 import { assessSceneComplexity } from '../../lib/scene-complexity'
 import { getSceneTheme } from '../../lib/scene-themes'
 import { installTextureNodeNullGuard } from '../../lib/texture-node-guard'
+import {
+  isGpuOutOfMemoryError,
+  isUnrecoverableGpuDeviceLoss,
+  isUnrecoverableGpuError,
+} from '../../lib/webgpu-health'
+import { installEmptyDrawGuard } from '../../lib/webgpu-draw-guard'
 import useViewer, { type RenderContext } from '../../store/use-viewer'
 import { FloorElevationSystem } from '../../systems/floor-elevation/floor-elevation-system'
 import { GeometrySystem } from '../../systems/geometry/geometry-system'

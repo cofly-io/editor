@@ -28,6 +28,8 @@ export const WindowNode = BaseNode.extend({
 
   // Wall reference
   wallId: z.string().optional(),
+  roofSegmentId: z.string().optional(),
+  roofFace: z.enum(['front', 'back', 'right', 'left']).optional(),
 
   // Overall dimensions
   width: z.number().default(1.5),

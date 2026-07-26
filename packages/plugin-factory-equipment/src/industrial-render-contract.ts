@@ -3,6 +3,7 @@ import type {
   IndustrialRenderKernel,
   SemanticRecipePart,
 } from '@pascal-app/core/registry'
+import { RenderContractRulesLoader, type IndustrialRenderRule } from './render-contract-rules-loader'
 
 export type IndustrialRenderContractSummary = {
   partCount: number
@@ -11,13 +12,7 @@ export type IndustrialRenderContractSummary = {
   instancingHints: string[]
 }
 
-type IndustrialRenderRule = IndustrialRenderContract & {
-  id: string
-  priority: number
-  roles?: readonly string[]
-  sourcePartKinds?: readonly string[]
-  tokenPatterns?: readonly RegExp[]
-}
+export type { IndustrialRenderRule }
 
 const INDUSTRIAL_RENDER_RULES: readonly IndustrialRenderRule[] = [
   {
@@ -246,8 +241,10 @@ function ruleMatches(rule: IndustrialRenderRule, part: SemanticRecipePart): bool
 
 export function resolveIndustrialRenderContract(
   part: SemanticRecipePart,
+  customRules?: IndustrialRenderRule[],
 ): IndustrialRenderContract {
-  const rule = [...INDUSTRIAL_RENDER_RULES]
+  const rules = customRules ?? INDUSTRIAL_RENDER_RULES
+  const rule = [...rules]
     .sort((left, right) => right.priority - left.priority)
     .find((candidate) => ruleMatches(candidate, part))
   if (rule) {
@@ -264,23 +261,39 @@ export function resolveIndustrialRenderContract(
   return { kernel: 'generic-industrial-part', material: 'painted-metal' }
 }
 
+/**
+ * Resolve render contract using rules loaded from an industry pack.
+ * Falls back to hardcoded base rules if no custom rules are loaded.
+ */
+export async function resolveIndustrialRenderContractWithPack(
+  part: SemanticRecipePart,
+  packRoot: string,
+): Promise<IndustrialRenderContract> {
+  const loader = new RenderContractRulesLoader()
+  await loader.loadFromIndustryPack(packRoot)
+  const mergedRules = loader.mergeWithBaseRules([...INDUSTRIAL_RENDER_RULES])
+  return resolveIndustrialRenderContract(part, mergedRules)
+}
+
 export function attachIndustrialRenderContracts<T extends SemanticRecipePart>(
   parts: readonly T[],
+  customRules?: IndustrialRenderRule[],
 ): Array<T & { renderContract: IndustrialRenderContract }> {
   return parts.map((part) => ({
     ...part,
-    renderContract: resolveIndustrialRenderContract(part),
+    renderContract: resolveIndustrialRenderContract(part, customRules),
   }))
 }
 
 export function summarizeIndustrialRenderContracts(
   parts: readonly SemanticRecipePart[],
+  customRules?: IndustrialRenderRule[],
 ): IndustrialRenderContractSummary {
   const kernels = {} as Record<IndustrialRenderKernel, number>
   const runtimeEffects = new Set<string>()
   const instancingHints = new Set<string>()
   for (const part of parts) {
-    const contract = resolveIndustrialRenderContract(part)
+    const contract = resolveIndustrialRenderContract(part, customRules)
     kernels[contract.kernel] = (kernels[contract.kernel] ?? 0) + 1
     for (const effect of contract.runtimeEffects ?? []) runtimeEffects.add(effect)
     if (contract.instancingHint) instancingHints.add(contract.instancingHint)
@@ -303,13 +316,14 @@ type ContractTarget = {
 export function applyIndustrialRenderContractsToShapes<T extends ContractTarget>(
   shapes: readonly T[],
   parts: readonly SemanticRecipePart[],
+  customRules?: IndustrialRenderRule[],
 ): T[] {
   const byId = new Map<string, IndustrialRenderContract>()
   const byKind = new Map<string, IndustrialRenderContract>()
   const byRole = new Map<string, IndustrialRenderContract>()
   for (const part of parts) {
     const record = part as Record<string, unknown>
-    const contract = resolveIndustrialRenderContract(part)
+    const contract = resolveIndustrialRenderContract(part, customRules)
     if (typeof part.id === 'string') byId.set(part.id, contract)
     if (typeof record.sourcePartKind === 'string') byKind.set(record.sourcePartKind, contract)
     if (typeof part.kind === 'string') byKind.set(part.kind, contract)

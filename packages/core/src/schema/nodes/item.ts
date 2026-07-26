@@ -128,6 +128,10 @@ export const ItemNode = BaseNode.extend({
   // Wall attachment properties (only used when asset.attachTo is "wall" or "wall-side")
   wallId: z.string().optional(),
   wallT: z.number().optional(), // 0-1 parametric position along wall
+  // Alternative host: a roof segment's generated wall face. Position is
+  // face-local ([u, v, z-from-wall-mid-plane]).
+  roofSegmentId: z.string().optional(),
+  roofFace: z.enum(['front', 'back', 'right', 'left']).optional(),
 
   // Denormalized references to collections this node belongs to
   collectionIds: z.array(z.custom<CollectionId>()).optional(),

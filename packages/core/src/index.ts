@@ -227,6 +227,7 @@ export {
   industrialAliasesForRecipe,
 } from './lib/industrial-archetype-registry'
 export { getDefaultLevelName, getLevelDisplayName } from './lib/level-name'
+export { deriveSlotId, isSlotMaterialName } from './lib/material-slots'
 export {
   composeObjectPrimitives,
   type ObjectComposeCategory,
@@ -434,11 +435,17 @@ export {
   getMaterialPresetByRef,
   getMaterialSolidColorByRef,
   getMaterialsForCategory,
+  getSceneMaterialIdFromRef,
   LIBRARY_MATERIAL_REF_PREFIX,
+  SCENE_MATERIAL_REF_PREFIX,
   MATERIAL_CATALOG,
   MATERIAL_CATEGORIES,
   type MaterialCatalogItem,
   type MaterialCategory,
+  type MaterialRef,
+  type SceneMaterial,
+  type SceneMaterialId,
+  parseMaterialRef,
   toLibraryMaterialRef,
 } from './material-library'
 export * from './registry'

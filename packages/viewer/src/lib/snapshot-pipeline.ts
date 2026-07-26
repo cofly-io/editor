@@ -1,17 +1,15 @@
-import { type Camera, Color, Matrix4, type Scene, UnsignedByteType } from 'three'
-import { ssgi } from 'three/addons/tsl/display/SSGINode.js'
+import { type Camera, Color, Matrix4, type Scene } from 'three'
+import { ao as gtao } from 'three/addons/tsl/display/GTAONode.js'
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js'
 import { fxaa } from 'three/examples/jsm/tsl/display/FXAANode.js'
 import {
   convertToTexture,
-  diffuseColor,
   float,
   mix,
   mrt,
   normalView,
   output,
   pass,
-  sample,
   saturation,
   screenUV,
   smoothstep,
@@ -20,12 +18,11 @@ import {
   vec4,
 } from 'three/tsl'
 import { RenderPipeline, RenderTarget, type WebGPURenderer } from 'three/webgpu'
-import { GRADE_PARAMS, SSGI_PARAMS } from '../components/viewer/post-processing'
+import { GRADE_PARAMS, GTAO_PARAMS } from '../components/viewer/post-processing'
 import { backdropGradient, deepSkyColor, horizonHazeColor } from './backdrop'
 import { type EdgeMode, edgeColorFor, edgeOpacityScaleFor } from './edge-style'
 import { inkedEdges } from './ink-edges'
 import { getSceneTheme } from './scene-themes'
-import { packNormalToRGB, unpackRGBToNormal } from './tsl-compat'
 
 export const THUMBNAIL_WIDTH = 1920
 export const THUMBNAIL_HEIGHT = 1080
@@ -112,8 +109,7 @@ export async function createSnapshotPipeline({
     scenePass.setMRT(
       mrt({
         output,
-        diffuseColor,
-        normal: packNormalToRGB(normalView),
+        normal: normalView,
       }),
     )
 
@@ -121,29 +117,19 @@ export async function createSnapshotPipeline({
     const scenePassDepth = scenePass.getTextureNode('depth')
     const scenePassNormal = scenePass.getTextureNode('normal')
 
-    scenePass.getTexture('diffuseColor').type = UnsignedByteType
-    scenePass.getTexture('normal').type = UnsignedByteType
+    const aoPass = gtao(scenePassDepth, scenePassNormal, camera as any)
+    aoPass.radius.value = GTAO_PARAMS.radius
+    aoPass.scale.value = GTAO_PARAMS.scale
+    aoPass.thickness.value = GTAO_PARAMS.thickness
+    aoPass.distanceFallOff.value = GTAO_PARAMS.distanceFallOff
+    aoPass.distanceExponent.value = GTAO_PARAMS.distanceExponent
+    aoPass.samples.value = GTAO_PARAMS.samples
+    aoPass.resolutionScale = GTAO_PARAMS.resolutionScale
+    aoPass.useTemporalFiltering = GTAO_PARAMS.useTemporalFiltering
 
-    const sceneNormal = sample((uv) => unpackRGBToNormal(scenePassNormal.sample(uv)))
-
-    const giPass = ssgi(scenePassColor, scenePassDepth, sceneNormal, camera as any)
-    giPass.sliceCount.value = SSGI_PARAMS.sliceCount
-    giPass.stepCount.value = SSGI_PARAMS.stepCount
-    giPass.radius.value = SSGI_PARAMS.radius
-    giPass.expFactor.value = SSGI_PARAMS.expFactor
-    giPass.thickness.value = SSGI_PARAMS.thickness
-    giPass.backfaceLighting.value = SSGI_PARAMS.backfaceLighting
-    giPass.aoIntensity.value = SSGI_PARAMS.aoIntensity
-    giPass.giIntensity.value = SSGI_PARAMS.giIntensity
-    giPass.useLinearThickness.value = SSGI_PARAMS.useLinearThickness
-    giPass.useScreenSpaceSampling.value = SSGI_PARAMS.useScreenSpaceSampling
-    giPass.useTemporalFiltering = SSGI_PARAMS.useTemporalFiltering
-
-    // r185: SSGI's AO lives in its own single-channel texture (getAONode)
-    // rather than the alpha of one packed rgba texture.
-    const aoTexture = (giPass as any).getAONode()
+    const aoTexture = aoPass.getTextureNode()
     const aoAsRgb = vec4(aoTexture.r, aoTexture.r, aoTexture.r, float(1))
-    const denoisePass = denoise(aoAsRgb, scenePassDepth, sceneNormal, camera)
+    const denoisePass = denoise(aoAsRgb, scenePassDepth, scenePassNormal, camera)
     denoisePass.index.value = 0
     denoisePass.radius.value = 4
 

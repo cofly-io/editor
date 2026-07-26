@@ -47,6 +47,7 @@ export {
   registerNode,
   setPluginDiscovery,
 } from './registry'
+export { itemClipRegistry, type ItemClipRegistryEntry } from './item-clip-registry'
 export {
   type CascadeContext,
   type ChildQuery,
