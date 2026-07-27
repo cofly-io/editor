@@ -18,7 +18,7 @@ export interface HealSceneResult {
   nodes: Record<string, unknown>
   /** Ids of zero-length walls that were dropped. */
   droppedWallIds: string[]
-  /** Count of non-string (e.g. null) entries removed from `children` arrays. */
+  /** Count of invalid non-string (e.g. null) entries removed from `children` arrays. */
   strippedChildRefs: number
   /**
    * Count of child references removed because the child's `parentId` points at
@@ -78,18 +78,33 @@ export function healSceneNodes(input: Record<string, unknown>): HealSceneResult 
     const children = (node as { children?: unknown })?.children
     if (Array.isArray(children)) {
       const seen = new Set<string>()
-      const cleaned = children.filter((c): c is string => {
-        if (typeof c !== 'string' || dropped.has(c)) {
+      const cleaned = children.filter((child) => {
+        const embeddedSiteChildId =
+          (node as { type?: unknown }).type === 'site' &&
+          child &&
+          typeof child === 'object' &&
+          typeof (child as { id?: unknown }).id === 'string'
+            ? (child as { id: string }).id
+            : null
+        if (embeddedSiteChildId) {
+          if (seen.has(embeddedSiteChildId)) {
+            strippedStaleChildRefs++
+            return false
+          }
+          seen.add(embeddedSiteChildId)
+          return true
+        }
+        if (typeof child !== 'string' || dropped.has(child)) {
           strippedChildRefs++
           return false
         }
-        if (seen.has(c)) {
+        if (seen.has(child)) {
           strippedStaleChildRefs++
           return false
         }
-        seen.add(c)
-        const child = kept[c] as { parentId?: unknown } | undefined
-        if (child && typeof child.parentId === 'string' && child.parentId !== id) {
+        seen.add(child)
+        const childNode = kept[child] as { parentId?: unknown } | undefined
+        if (childNode && typeof childNode.parentId === 'string' && childNode.parentId !== id) {
           strippedStaleChildRefs++
           return false
         }
