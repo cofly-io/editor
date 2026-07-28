@@ -25,11 +25,31 @@ export function shouldUseGeometryAgentForPrimitivePrompt(input: {
   text: string
   messages: readonly ChatMessage[]
 }): boolean {
-  if (latestGeometryAgentResponse(input.messages)) return true
   const text = input.text.trim().toLowerCase()
   if (!text) return false
+  const hasExistingSession = Boolean(latestGeometryAgentResponse(input.messages))
+  const isNewCreateRequest = shouldStartNewGeometryAgentSession(text)
+  if (hasExistingSession && !isNewCreateRequest) return true
+  return isIndustrialEquipmentGeometryPrompt(text)
+}
+
+export function shouldStartNewGeometryAgentSession(text: string): boolean {
+  const normalized = text.trim().toLowerCase()
+  if (!normalized) return false
+  return (
+    /^(generate|create|make|build|new|start|regenerate)\b/i.test(normalized) ||
+    /(?:^|[\s，。,.!?！？])(?:生成|创建|建立|新建|新做|另做|重新生成|再生成)(?:一个|一台|一套|1个|1台)?/.test(
+      normalized,
+    )
+  )
+}
+
+function isIndustrialEquipmentGeometryPrompt(text: string): boolean {
   return (
     /\b(conveyor|belt\s*conveyor|pump|motor|tank|cabinet|guard|cover|flange|pipe|valve|hopper|filter|platform|ladder|handrail|machine|equipment)\b/i.test(
+      text,
+    ) ||
+    /(?:\u8f93\u9001\u673a|\u76ae\u5e26|\u6cf5|\u7535\u673a|\u7535\u52a8\u673a|\u50a8\u7f50|\u7f50\u4f53|\u7acb\u5f0f\u7f50|\u9664\u5c18\u5668|\u888b\u5f0f\u9664\u5c18|\u6cd5\u5170|\u722c\u68af|\u68c0\u4fee\u53e3|\u68c0\u4fee\u95e8|\u5e73\u53f0|\u6276\u624b|\u7ba1\u9053|\u9600\u95e8|\u8bbe\u5907|\u5de5\u4e1a\u673a\u5668)/.test(
       text,
     ) ||
     /(?:输送机|皮带|泵|水泵|电机|电动机|储罐|罐体|控制柜|电柜|防护罩|护罩|罩子|检修门|法兰|管道|阀门|料斗|过滤器|平台|梯子|扶手|设备|机器)/.test(
@@ -165,7 +185,8 @@ export function useGeometryAgentChat({
     setImageAttachment(undefined)
     setLoading(true)
 
-    const previousResponse = latestGeometryAgentResponse(messages)
+    const startsNewSession = shouldStartNewGeometryAgentSession(text)
+    const previousResponse = startsNewSession ? null : latestGeometryAgentResponse(messages)
     const existingSessionId = previousResponse?.sessionId ?? null
     const runId = existingSessionId ?? `geo_agent_pending_${Date.now()}`
     const userMsg: ChatMessage = { role: 'user', content: text }
