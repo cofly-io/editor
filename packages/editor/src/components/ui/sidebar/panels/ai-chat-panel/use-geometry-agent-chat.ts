@@ -19,6 +19,23 @@ function latestGeometryAgentSessionId(messages: readonly ChatMessage[]): string 
   return null
 }
 
+export function shouldUseGeometryAgentForPrimitivePrompt(input: {
+  text: string
+  messages: readonly ChatMessage[]
+}): boolean {
+  if (latestGeometryAgentSessionId(input.messages)) return true
+  const text = input.text.trim().toLowerCase()
+  if (!text) return false
+  return (
+    /\b(conveyor|belt\s*conveyor|pump|motor|tank|cabinet|guard|cover|flange|pipe|valve|hopper|filter|platform|ladder|handrail|machine|equipment)\b/i.test(
+      text,
+    ) ||
+    /(?:输送机|皮带|泵|水泵|电机|电动机|储罐|罐体|控制柜|电柜|防护罩|护罩|罩子|检修门|法兰|管道|阀门|料斗|过滤器|平台|梯子|扶手|设备|机器)/.test(
+      text,
+    )
+  )
+}
+
 function applyGeneratedAssembly(response: GeometryAgentRunResponse): {
   applied: boolean
   patchCount: number

@@ -256,6 +256,18 @@ export function AiChatPanel({ sceneId }: { sceneId?: string } = {}) {
     trackRunEventSource,
   })
 
+  const { sendGeometryAgentMessage } = useGeometryAgentChat({
+    activeAbortControllerRef,
+    input,
+    loading,
+    markGenerationStopped,
+    messages,
+    setImageAttachment,
+    setInput,
+    setLoading,
+    setMessages,
+  })
+
   const { sendPrimitiveMessage } = usePrimitiveChat({
     activeAbortControllerRef,
     conversationId,
@@ -270,19 +282,8 @@ export function AiChatPanel({ sceneId }: { sceneId?: string } = {}) {
     setInput,
     setLoading,
     setMessages,
+    sendGeometryAgentMessage,
     subscribePrimitiveRun,
-  })
-
-  const { sendGeometryAgentMessage } = useGeometryAgentChat({
-    activeAbortControllerRef,
-    input,
-    loading,
-    markGenerationStopped,
-    messages,
-    setImageAttachment,
-    setInput,
-    setLoading,
-    setMessages,
   })
 
   const {
@@ -340,7 +341,6 @@ export function AiChatPanel({ sceneId }: { sceneId?: string } = {}) {
     loading,
     sendArticraftMessage,
     sendFactoryMessage,
-    sendGeometryAgentMessage,
     sendImageTo3DMessage,
     sendPrimitiveMessage,
     setConversationHistoryOpen,

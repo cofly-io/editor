@@ -113,7 +113,7 @@ export type ApiMessage = {
   tool_calls?: unknown
 }
 
-export type AiGenerationMode = 'primitive' | 'geometry-agent' | 'articraft' | 'image-to-3d'
+export type AiGenerationMode = 'primitive' | 'articraft' | 'image-to-3d'
 export type AiConversationPurpose = 'factory' | 'asset'
 
 export interface ArticraftResult {

@@ -13,6 +13,7 @@ import {
   isRecord,
   throwIfAborted,
 } from './chat-utils'
+import { shouldUseGeometryAgentForPrimitivePrompt } from './use-geometry-agent-chat'
 import { buildDeviceProgressSummary } from './run-summaries'
 import type { ChatImageAttachment, ChatMessage } from './types'
 
@@ -30,6 +31,7 @@ export function usePrimitiveChat({
   setInput,
   setLoading,
   setMessages,
+  sendGeometryAgentMessage,
   subscribePrimitiveRun,
 }: {
   activeAbortControllerRef: { current: AbortController | null }
@@ -45,12 +47,17 @@ export function usePrimitiveChat({
   setInput: Dispatch<SetStateAction<string>>
   setLoading: Dispatch<SetStateAction<boolean>>
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>
+  sendGeometryAgentMessage: (overrideText?: string) => Promise<void>
   subscribePrimitiveRun: (run: { id: string; prompt: string; status?: string }) => void
 }) {
   const sendPrimitiveMessage = useCallback(
     async (overrideText?: string) => {
       const text = (overrideText ?? input).trim()
       if (!text || loading) return
+      if (shouldUseGeometryAgentForPrimitivePrompt({ text, messages })) {
+        await sendGeometryAgentMessage(overrideText)
+        return
+      }
 
       const controller = new AbortController()
       activeAbortControllerRef.current = controller
@@ -191,6 +198,7 @@ export function usePrimitiveChat({
       setInput,
       setLoading,
       setMessages,
+      sendGeometryAgentMessage,
       subscribePrimitiveRun,
     ],
   )

@@ -171,9 +171,7 @@ export function useAiChatPanelPersistence({
 
   useEffect(() => {
     state.generationMode = generationMode
-    if (generationMode === 'primitive' || generationMode === 'geometry-agent') {
-      setImageAttachment(undefined)
-    }
+    if (generationMode === 'primitive') setImageAttachment(undefined)
   }, [generationMode, setImageAttachment, state])
 
   useEffect(() => {

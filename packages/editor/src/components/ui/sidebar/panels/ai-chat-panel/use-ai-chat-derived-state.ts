@@ -60,14 +60,12 @@ export function useAiChatDerivedState({
     !loading &&
     (generationMode === 'image-to-3d'
       ? true
-      : generationMode === 'primitive' || generationMode === 'geometry-agent'
+      : generationMode === 'primitive'
         ? Boolean(input.trim())
         : Boolean(input.trim() || imageAttachment))
   const inputPlaceholder =
     generationMode === 'primitive'
       ? '\u63cf\u8ff0\u8981\u642d\u5efa\u7684\u51e0\u4f55\u4f53...'
-      : generationMode === 'geometry-agent'
-        ? '描述要生成或继续修改的设备几何...'
       : generationMode === 'image-to-3d'
         ? '\u4e0a\u4f20\u56fe\u7247\u5e76\u63cf\u8ff0\u6a21\u578b...'
         : '\u63cf\u8ff0\u8981\u751f\u6210\u7684\u53ef\u52a8\u6a21\u578b...'
