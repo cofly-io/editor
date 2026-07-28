@@ -110,4 +110,29 @@ handrail({ id: 'platform_handrail', target: 'service_platform', side: 'all' });
       { id: 'platform_handrail', functionName: 'handrail' },
     ])
   })
+
+  test('tracks agitator tank source changes', () => {
+    const beforeSource = `
+agitatorTank({ id: 'reactor', diameter: 1.5, height: 3.6, bladeCount: 4 });
+`
+    const feedback = summarizeGeometryAgentSourceChange({
+      beforeSource,
+      afterSource: beforeSource
+        .replace('height: 3.6', 'height: 4.2')
+        .replace('bladeCount: 4', 'bladeCount: 6'),
+      instruction: 'make the reactor taller and use six blades',
+    })
+
+    expect(feedback.changed).toEqual([
+      {
+        id: 'reactor',
+        functionName: 'agitatorTank',
+        changedParams: [
+          { name: 'bladeCount', before: '4', after: '6' },
+          { name: 'height', before: '3.6', after: '4.2' },
+        ],
+      },
+    ])
+    expect(feedback.text).toContain('agitatorTank(reactor)')
+  })
 })

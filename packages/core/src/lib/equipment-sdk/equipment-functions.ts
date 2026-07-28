@@ -241,6 +241,15 @@ export type HeatExchangerParams = CommonParams & {
   includePorts?: boolean
 }
 
+export type AgitatorTankParams = CommonParams & {
+  diameter?: number
+  height?: number
+  includeLadder?: boolean
+  includePorts?: boolean
+  includeManway?: boolean
+  bladeCount?: number
+}
+
 const round = (value: number) => Number(value.toFixed(4))
 
 const clamp = (value: unknown, fallback: number, min: number, max: number): number => {
@@ -2012,6 +2021,267 @@ export function buildHeatExchanger(params: HeatExchangerParams): EquipmentPartSp
           rotation: isTop ? undefined : { axis: 'z', degrees: 90 },
           material: 'cast_iron',
           params: { radius: portRadius * 1.42, height: portRadius * 0.32, radialSegments: 56 },
+        }),
+      )
+    }
+  }
+
+  return parts
+}
+
+export function buildAgitatorTank(params: AgitatorTankParams): EquipmentPartSpec[] {
+  const diameter = clamp(params.diameter, 1.45, 0.45, 7)
+  const height = clamp(params.height, 3.4, 1.2, 14)
+  const bladeCount = Math.round(clamp(params.bladeCount, 4, 2, 8))
+  const radius = diameter / 2
+  const shellHeight = Math.max(height - diameter * 0.62, height * 0.6)
+  const shellY = shellHeight / 2 + diameter * 0.34
+  const shellTop = shellY + shellHeight / 2
+  const shellBottom = shellY - shellHeight / 2
+  const headHeight = Math.max(diameter * 0.13, 0.13)
+  const supportHeight = Math.max(shellBottom - 0.03, 0.28)
+  const topGap = 0.06
+  const gearboxHeight = diameter * 0.22
+  const gearboxY = shellTop + headHeight + topGap + gearboxHeight / 2
+  const motorDiameter = diameter * 0.22
+  const motorLength = diameter * 0.42
+  const motorY = gearboxY + gearboxHeight / 2 + motorDiameter * 0.62
+  const frontZ = radius + diameter * 0.22
+  const material = params.material ?? 'painted_steel'
+  const parts: EquipmentPartSpec[] = [
+    spec({
+      id: `${params.id}.shell`,
+      kind: 'cylinder',
+      semanticRole: 'reactor_vessel_shell',
+      position: [0, shellY, 0],
+      size: [diameter, shellHeight, diameter],
+      material,
+      color: params.color,
+      params: { radius, height: shellHeight, radialSegments: 72 },
+    }),
+    spec({
+      id: `${params.id}.top_head`,
+      kind: 'cylinder',
+      semanticRole: 'vessel_head',
+      position: [0, shellTop + headHeight / 2 + 0.012, 0],
+      material,
+      color: params.color,
+      params: { radius: radius * 0.98, height: headHeight, radialSegments: 72 },
+    }),
+    spec({
+      id: `${params.id}.bottom_head`,
+      kind: 'cylinder',
+      semanticRole: 'vessel_head',
+      position: [0, shellBottom - headHeight / 2 - 0.012, 0],
+      material,
+      color: params.color,
+      params: { radius: radius * 0.98, height: headHeight, radialSegments: 72 },
+    }),
+    spec({
+      id: `${params.id}.gearbox`,
+      kind: 'box',
+      semanticRole: 'agitator_gearbox',
+      position: [0, gearboxY, 0],
+      material: 'cast_iron',
+      params: {
+        length: diameter * 0.32,
+        width: diameter * 0.32,
+        height: gearboxHeight,
+        cornerRadius: diameter * 0.025,
+        cornerSegments: 8,
+      },
+    }),
+    spec({
+      id: `${params.id}.motor`,
+      kind: 'cylinder',
+      semanticRole: 'agitator_motor',
+      position: [0, motorY, 0],
+      rotation: { axis: 'z', degrees: 90 },
+      material: 'painted_steel',
+      params: { radius: motorDiameter / 2, height: motorLength, radialSegments: 48 },
+    }),
+    spec({
+      id: `${params.id}.motor_terminal_box`,
+      kind: 'box',
+      semanticRole: 'motor_terminal_box',
+      position: [0, motorY + motorDiameter * 0.52, 0],
+      material: 'painted_steel',
+      params: {
+        length: motorLength * 0.34,
+        width: motorDiameter * 0.2,
+        height: motorDiameter * 0.16,
+        cornerRadius: motorDiameter * 0.025,
+        cornerSegments: 5,
+      },
+    }),
+    spec({
+      id: `${params.id}.visible_shaft`,
+      kind: 'cylinder',
+      semanticRole: 'agitator_shaft',
+      position: [0, shellY - shellHeight * 0.06, frontZ],
+      material: 'stainless_steel',
+      params: { radius: diameter * 0.025, height: shellHeight * 0.58, radialSegments: 32 },
+    }),
+    spec({
+      id: `${params.id}.shaft_guard`,
+      kind: 'box',
+      semanticRole: 'sheet_cover_panel',
+      position: [0, shellY + shellHeight * 0.04, frontZ + diameter * 0.09],
+      material: 'transparent_polycarbonate',
+      params: {
+        length: diameter * 0.42,
+        width: 0.018,
+        height: shellHeight * 0.7,
+        cornerRadius: 0.012,
+        cornerSegments: 5,
+      },
+    }),
+    spec({
+      id: `${params.id}.nameplate`,
+      kind: 'box',
+      semanticRole: 'equipment_nameplate',
+      position: [diameter * 0.22, shellY - shellHeight * 0.18, radius + 0.02],
+      material: 'stainless_steel',
+      params: {
+        length: diameter * 0.22,
+        width: 0.008,
+        height: diameter * 0.1,
+        cornerRadius: 0.006,
+        cornerSegments: 4,
+      },
+    }),
+  ]
+
+  for (let i = 0; i < bladeCount; i += 1) {
+    const x = (i - (bladeCount - 1) / 2) * diameter * 0.12
+    const yOffset = i % 2 === 0 ? -diameter * 0.035 : diameter * 0.035
+    parts.push(
+      spec({
+        id: `${params.id}.impeller_blade.${i}`,
+        kind: 'box',
+        semanticRole: 'agitator_impeller_blade',
+        position: [x, shellY - shellHeight * 0.33 + yOffset, frontZ + diameter * 0.08],
+        rotation: { axis: 'z', degrees: i % 2 === 0 ? 8 : -8 },
+        material: 'stainless_steel',
+        params: {
+          length: diameter * 0.16,
+          width: 0.028,
+          height: 0.055,
+          cornerRadius: 0.006,
+          cornerSegments: 4,
+        },
+      }),
+    )
+  }
+
+  for (const [label, x, z] of [
+    ['front_left', -radius * 1.12, radius * 1.12],
+    ['front_right', radius * 1.12, radius * 1.12],
+    ['back_left', -radius * 1.12, -radius * 1.12],
+    ['back_right', radius * 1.12, -radius * 1.12],
+  ] as const) {
+    parts.push(
+      spec({
+        id: `${params.id}.support_leg.${label}`,
+        kind: 'box',
+        semanticRole: 'support_leg',
+        position: [x, supportHeight / 2, z],
+        material: 'painted_steel',
+        params: {
+          length: diameter * 0.055,
+          width: diameter * 0.055,
+          height: supportHeight,
+          cornerRadius: diameter * 0.006,
+          cornerSegments: 4,
+        },
+      }),
+    )
+  }
+
+  if (params.includePorts ?? true) {
+    const portRadius = diameter * 0.075
+    const sidePortLength = diameter * 0.28
+    for (const [label, x, yPos, z, rotation] of [
+      [
+        'feed_nozzle',
+        -radius - sidePortLength / 2 - 0.03,
+        shellY + shellHeight * 0.24,
+        0,
+        { axis: 'z', degrees: 90 },
+      ],
+      [
+        'bottom_drain',
+        0,
+        Math.max(0.14, supportHeight * 0.45),
+        radius + sidePortLength / 2 + 0.02,
+        { axis: 'x', degrees: 90 },
+      ],
+      ['top_vent', radius * 0.38, shellTop + headHeight + sidePortLength / 2 + 0.04, 0, undefined],
+    ] as const) {
+      parts.push(
+        spec({
+          id: `${params.id}.${label}`,
+          kind: 'cylinder',
+          semanticRole: 'flange_port',
+          position: [x, yPos, z],
+          ...(rotation ? { rotation } : {}),
+          material: 'stainless_steel',
+          params: { radius: portRadius, height: sidePortLength, radialSegments: 48 },
+        }),
+      )
+    }
+  }
+
+  if (params.includeManway ?? true) {
+    parts.push(
+      spec({
+        id: `${params.id}.manway_cover`,
+        kind: 'cylinder',
+        semanticRole: 'inspection_door',
+        position: [-radius - 0.03, shellY + shellHeight * 0.02, 0],
+        rotation: { axis: 'z', degrees: 90 },
+        material,
+        params: { radius: diameter * 0.13, height: 0.035, radialSegments: 48 },
+      }),
+      spec({
+        id: `${params.id}.manway_handle`,
+        kind: 'cylinder',
+        semanticRole: 'door_handle',
+        position: [-radius - 0.075, shellY + shellHeight * 0.02, 0],
+        rotation: { axis: 'z', degrees: 90 },
+        material: 'dark_fastener',
+        params: { radius: 0.012, height: diameter * 0.22, radialSegments: 20 },
+      }),
+    )
+  }
+
+  if (params.includeLadder ?? true) {
+    const ladderWidth = clamp(diameter * 0.28, 0.46, 0.62, 0.78)
+    const rungCount = Math.max(6, Math.ceil(height / 0.32))
+    const ladderZ = -radius - 0.09
+    for (const x of [-ladderWidth / 2, ladderWidth / 2]) {
+      parts.push(
+        spec({
+          id: `${params.id}.ladder_side_rail.${x < 0 ? 'left' : 'right'}`,
+          kind: 'cylinder',
+          semanticRole: 'ladder_side_rail',
+          position: [x, height / 2, ladderZ],
+          material: 'yellow_safety',
+          params: { radius: 0.024, height: height * 0.82, radialSegments: 24 },
+        }),
+      )
+    }
+    for (let i = 0; i < rungCount; i += 1) {
+      const rungY = 0.28 + (height * 0.76 * i) / Math.max(1, rungCount - 1)
+      parts.push(
+        spec({
+          id: `${params.id}.ladder_rung.${i}`,
+          kind: 'cylinder',
+          semanticRole: 'ladder_rung',
+          position: [0, round(rungY), ladderZ],
+          rotation: { axis: 'z', degrees: 90 },
+          material: 'yellow_safety',
+          params: { radius: 0.018, height: ladderWidth, radialSegments: 20 },
         }),
       )
     }

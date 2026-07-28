@@ -450,6 +450,28 @@ export const EQUIPMENT_DSL_API_CARDS: DSLApiCard[] = [
     cost: { parts: 24 },
     example: "heatExchanger({ id: 'exchanger', length: 3.6, diameter: 0.9, tubeCount: 12 });",
   },
+  {
+    apiVersion: DSL_API_VERSION,
+    kind: 'geometry_api_card',
+    id: 'industrial.agitatorTank',
+    category: 'industrial',
+    signature:
+      'agitatorTank({ id, diameter?, height?, includeLadder?, includePorts?, includeManway?, bladeCount?, material?, color? })',
+    inputs: {
+      id: stringInput(true),
+      diameter: numberInput([0.45, 7]),
+      height: numberInput([1.2, 14]),
+      includeLadder: { type: 'boolean' },
+      includePorts: { type: 'boolean' },
+      includeManway: { type: 'boolean' },
+      bladeCount: { type: 'integer', unit: 'count', range: [2, 8] },
+      material: enumInput(['painted_steel', 'stainless_steel', 'cast_iron']),
+      color: stringInput(),
+    },
+    outputs: 'PartBuilder[]',
+    cost: { parts: 28 },
+    example: "agitatorTank({ id: 'reactor', diameter: 1.6, height: 3.8, includeLadder: true });",
+  },
 ]
 
 export function formatEquipmentDslApiCards(cards = EQUIPMENT_DSL_API_CARDS): string {

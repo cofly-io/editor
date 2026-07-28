@@ -101,4 +101,21 @@ handrail({ id: 'platform_handrail', target: 'service_platform', side: 'all' });
     )
     expect(review.addedIds).toEqual(['access_ladder', 'platform_handrail', 'service_platform'])
   })
+
+  test('allows local edits to reactor agitator tank calls', () => {
+    const source = `
+agitatorTank({ id: 'reactor', diameter: 1.5, height: 3.6, bladeCount: 4 });
+`
+    const review = reviewGeometryAgentPatchLocality({
+      instruction: 'make the reactor taller and use six impeller blades',
+      beforeSource: source,
+      afterSource: source
+        .replace('height: 3.6', 'height: 4.2')
+        .replace('bladeCount: 4', 'bladeCount: 6'),
+    })
+
+    expect(review.passed).toBe(true)
+    expect(review.allowedFunctions).toContain('agitatorTank')
+    expect(review.changedIds).toEqual(['reactor'])
+  })
 })

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  buildAgitatorTank,
   buildBearingBlock,
   buildControlCabinet,
   buildDustCollector,
@@ -225,6 +226,21 @@ describe('equipment SDK realism builders', () => {
     expect(
       parts.find((p) => p.semanticRole === 'heat_exchanger_shell')?.params.radialSegments,
     ).toBe(72)
+  })
+
+  test('agitatorTank creates reactor vessel motor gearbox agitator ports access and nameplate', () => {
+    const parts = buildAgitatorTank({ id: 'reactor', diameter: 1.5, height: 3.6, bladeCount: 4 })
+
+    expect(parts.some((p) => p.semanticRole === 'reactor_vessel_shell')).toBe(true)
+    expect(parts.filter((p) => p.semanticRole === 'vessel_head').length).toBe(2)
+    expect(parts.some((p) => p.semanticRole === 'agitator_motor')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'agitator_gearbox')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'agitator_shaft')).toBe(true)
+    expect(parts.filter((p) => p.semanticRole === 'agitator_impeller_blade').length).toBe(4)
+    expect(parts.filter((p) => p.semanticRole === 'flange_port').length).toBeGreaterThanOrEqual(3)
+    expect(parts.some((p) => p.semanticRole === 'inspection_door')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'equipment_nameplate')).toBe(true)
+    expect(parts.filter((p) => p.semanticRole === 'ladder_rung').length).toBeGreaterThanOrEqual(6)
   })
 
   test('industrial material presets carry appearance data for realism gates', () => {

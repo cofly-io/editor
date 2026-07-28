@@ -183,4 +183,21 @@ describe('compileDsl — equipment semantic constructors', () => {
     expect(roles.has('saddle_support')).toBe(true)
     expect(roles.has('flange_port')).toBe(true)
   })
+
+  test('compiles agitator tank constructor through the same DSL pipeline', () => {
+    const result = compileDsl(`
+      agitatorTank({ id: 'reactor', diameter: 1.5, height: 3.6, bladeCount: 4 });
+    `)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const roles = new Set(result.ir.parts.map((p) => p.semanticRole))
+    expect(roles.has('reactor_vessel_shell')).toBe(true)
+    expect(roles.has('vessel_head')).toBe(true)
+    expect(roles.has('agitator_motor')).toBe(true)
+    expect(roles.has('agitator_gearbox')).toBe(true)
+    expect(roles.has('agitator_shaft')).toBe(true)
+    expect(roles.has('agitator_impeller_blade')).toBe(true)
+    expect(roles.has('flange_port')).toBe(true)
+  })
 })

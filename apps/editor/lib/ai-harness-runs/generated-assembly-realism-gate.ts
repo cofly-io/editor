@@ -7,6 +7,7 @@ export type IndustrialEquipmentFamily =
   | 'process_vessel'
   | 'dust_collector'
   | 'heat_exchanger'
+  | 'agitated_vessel'
 
 export type RealismGateReview = {
   applicable: boolean
@@ -58,6 +59,16 @@ const FAMILY_SPECS: Record<IndustrialEquipmentFamily, FamilySpec> = {
   heat_exchanger: {
     required: ['heat_exchanger_shell', 'tube_sheet', 'tube_bundle', 'flange_port'],
     recommended: ['channel_head', 'saddle_support', 'baffle_plate', 'equipment_nameplate'],
+    maxAnonymousPrimitiveRatio: 0.18,
+  },
+  agitated_vessel: {
+    required: ['reactor_vessel_shell', 'agitator_motor', 'agitator_gearbox', 'agitator_shaft'],
+    recommended: [
+      'agitator_impeller_blade',
+      'flange_port',
+      'inspection_door',
+      'equipment_nameplate',
+    ],
     maxAnonymousPrimitiveRatio: 0.18,
   },
 }
@@ -133,6 +144,7 @@ export function reviewAssemblyRealism(
   checkProcessVesselDetails(ir, roles, issues, warnings)
   checkDustCollectorDetails(ir, roles, issues, warnings)
   checkHeatExchangerDetails(ir, roles, issues, warnings)
+  checkAgitatedVesselDetails(ir, roles, issues, warnings)
   checkAccessDetails(ir, roles, opts.source, issues, warnings)
 
   const score = Math.max(0, Math.min(1, 1 - issues.length * 0.25 - warnings.length * 0.06))
@@ -191,6 +203,16 @@ function inferIndustrialFamily(
     /exchanger|condenser|cooler/.test(idText)
   ) {
     return 'heat_exchanger'
+  }
+  if (
+    hasRoleLike(roles, 'reactor_vessel_shell') ||
+    hasRoleLike(roles, 'agitator_motor') ||
+    /\b(reactor|reaction[_\s-]?kettle|agitated[_\s-]?vessel|stirred[_\s-]?tank|agitator[_\s-]?tank)\b/.test(
+      sourceText,
+    ) ||
+    /reactor|agitator|stirred/.test(idText)
+  ) {
+    return 'agitated_vessel'
   }
   if (
     hasRoleLike(roles, 'vessel_shell') ||
@@ -265,6 +287,11 @@ function hasRoleLike(roles: Set<string>, needle: string): boolean {
     if (n === 'channel_head' && r.includes('channel_head')) return true
     if (n === 'saddle_support' && r.includes('saddle')) return true
     if (n === 'baffle_plate' && r.includes('baffle')) return true
+    if (n === 'reactor_vessel_shell' && r.includes('reactor_vessel_shell')) return true
+    if (n === 'agitator_motor' && r.includes('agitator_motor')) return true
+    if (n === 'agitator_gearbox' && r.includes('agitator_gearbox')) return true
+    if (n === 'agitator_shaft' && r.includes('agitator_shaft')) return true
+    if (n === 'agitator_impeller_blade' && r.includes('agitator_impeller')) return true
   }
   return false
 }
@@ -708,6 +735,80 @@ function checkHeatExchangerDetails(
     warnings.push(
       'realism_heat_exchanger_nameplate_missing: heat exchanger should include a nameplate.',
     )
+  }
+}
+
+function checkAgitatedVesselDetails(
+  ir: AssemblyIR,
+  roles: Set<string>,
+  issues: string[],
+  warnings: string[],
+): void {
+  if (!hasRoleLike(roles, 'reactor_vessel_shell') && !hasRoleLike(roles, 'agitator_motor')) return
+
+  if (ir.parts.length < 20) {
+    issues.push(
+      `realism_agitated_vessel_under_detailed: agitated_vessel has only ${ir.parts.length} parts; use agitatorTank() so it has vessel shell, heads, top motor, gearbox, visible shaft/impeller cues, ports, manway, supports, ladder, and nameplate.`,
+    )
+  }
+
+  const shell = ir.parts.find((p) => p.semanticRole === 'reactor_vessel_shell')
+  if (shell?.geometry.kind === 'primitive-recipe') {
+    if (shell.geometry.recipeId !== 'primitive.cylinder') {
+      issues.push(
+        'realism_agitated_vessel_shell_shape: reactor vessel shell should be cylindrical.',
+      )
+    }
+    const radialSegments = shell.geometry.params.radialSegments
+    if (typeof radialSegments !== 'number' || radialSegments < 48) {
+      issues.push(
+        'realism_agitated_vessel_shell_faceting: reactor vessel shell should use at least 48 radialSegments.',
+      )
+    }
+  }
+
+  const heads = ir.parts.filter((p) => p.semanticRole === 'vessel_head')
+  if (heads.length < 2) {
+    issues.push(
+      `realism_agitated_vessel_heads_missing: agitated vessel has only ${heads.length} heads; add top and bottom vessel_head parts.`,
+    )
+  }
+
+  if (!hasRoleLike(roles, 'agitator_gearbox')) {
+    issues.push(
+      'realism_agitated_vessel_gearbox_missing: reactor needs a visible agitator gearbox.',
+    )
+  }
+  if (!hasRoleLike(roles, 'agitator_shaft')) {
+    issues.push(
+      'realism_agitated_vessel_shaft_missing: reactor needs a visible agitator shaft cue.',
+    )
+  }
+
+  const impellerBlades = ir.parts.filter((p) => p.semanticRole === 'agitator_impeller_blade')
+  if (impellerBlades.length < 2) {
+    issues.push(
+      `realism_agitated_vessel_impeller_missing: reactor has only ${impellerBlades.length} impeller blades; add visible agitator impeller cues.`,
+    )
+  }
+
+  const ports = ir.parts.filter((p) => p.semanticRole === 'flange_port')
+  if (ports.length < 3) {
+    issues.push(
+      `realism_agitated_vessel_ports_missing: reactor has only ${ports.length} flanged ports; add feed, vent, and drain nozzles.`,
+    )
+  }
+
+  if (!hasRoleLike(roles, 'inspection_door')) {
+    issues.push(
+      'realism_agitated_vessel_manhole_missing: reactor needs a manway or inspection door.',
+    )
+  }
+  if (!hasRoleLike(roles, 'support_leg') && !hasRoleLike(roles, 'vessel_support_skirt')) {
+    issues.push('realism_agitated_vessel_support_missing: reactor needs support legs or skirt.')
+  }
+  if (!hasRoleLike(roles, 'equipment_nameplate')) {
+    warnings.push('realism_agitated_vessel_nameplate_missing: reactor should include a nameplate.')
   }
 }
 

@@ -10,9 +10,11 @@
  */
 
 import {
+  type AgitatorTankParams,
   type BearingBlockParams,
   type BeltParams,
   type BoxFrameParams,
+  buildAgitatorTank,
   buildBearingBlock,
   buildBelt,
   buildBoxFrame,
@@ -747,6 +749,7 @@ export function createDslApiBuilders(opts: CreateBuildersOptions) {
     verticalVessel: (o: VerticalVesselParams) => registerEquipmentSpecs(buildVerticalVessel(o)),
     dustCollector: (o: DustCollectorParams) => registerEquipmentSpecs(buildDustCollector(o)),
     heatExchanger: (o: HeatExchangerParams) => registerEquipmentSpecs(buildHeatExchanger(o)),
+    agitatorTank: (o: AgitatorTankParams) => registerEquipmentSpecs(buildAgitatorTank(o)),
 
     hinge: (o: {
       part: string

@@ -18,6 +18,10 @@ const EQUIPMENT_CALLS = [
   'controlCabinet',
   'skidBase',
   'pumpCasing',
+  'verticalVessel',
+  'dustCollector',
+  'heatExchanger',
+  'agitatorTank',
 ] as const
 
 type EquipmentCallName = (typeof EQUIPMENT_CALLS)[number]
@@ -58,6 +62,10 @@ const IMPORTANT_IDS = [
   'process_pipe',
   'skid',
   'pump',
+  'buffer_tank',
+  'baghouse',
+  'exchanger',
+  'reactor',
 ]
 
 export function summarizeGeometryAgentSourceChange(input: {

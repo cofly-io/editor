@@ -539,6 +539,35 @@ describe('runDslSourceLoop', () => {
     expect(seen[seen.length - 1]).toContain('heatExchanger')
   })
 
+  it('agitated reactor realism failures feed the same repair loop', async () => {
+    const toyReactor = `
+      part('reactor.shell', cylinder({ radius: 0.75, height: 3.0, material: 'metal', color: '#64748b', radialSegments: 16 }))
+        .atWorld([0, 1.7, 0])
+        .withRole('reactor_vessel_shell');
+      part('reactor.motor', cylinder({ radius: 0.16, height: 0.3, material: 'metal', color: '#64748b', radialSegments: 16 }))
+        .atWorld([0, 3.35, 0])
+        .withRole('agitator_motor');
+    `
+    const sdkReactor = "agitatorTank({ id: 'reactor', diameter: 1.5, height: 3.6, bladeCount: 4 });"
+    let call = 0
+    const seen: string[] = []
+    const result = await runDslSourceLoop({
+      userPrompt:
+        'generate a realistic stirred reactor tank with top motor gearbox agitator shaft ports and manway',
+      callLlm: async (msgs) => {
+        seen.push(msgs.map((m) => m.content).join('\n---\n'))
+        return call++ === 0 ? toyReactor : sdkReactor
+      },
+      runAttempt: directAttempt,
+    })
+
+    expect(result.kind).toBe('ok')
+    expect(result.attempts).toBe(2)
+    expect(seen[seen.length - 1]).toContain('Industrial realism gate feedback')
+    expect(seen[seen.length - 1]).toContain('realism_agitated_vessel_under_detailed')
+    expect(seen[seen.length - 1]).toContain('agitatorTank')
+  })
+
   it('reply without DSL → nudges the model once and counts the attempt', async () => {
     let call = 0
     const result = await runDslSourceLoop({
@@ -569,6 +598,7 @@ describe('prompt + repair message content', () => {
     expect(prompt).toContain('verticalVessel')
     expect(prompt).toContain('dustCollector')
     expect(prompt).toContain('heatExchanger')
+    expect(prompt).toContain('agitatorTank')
     expect(prompt).toContain('prefer semantic constructors')
     expect(prompt).toContain('keyboard.key.r')
     expect(prompt).toContain(`Prompt version: ${DSL_AUTHOR_PROMPT_VERSION}`)

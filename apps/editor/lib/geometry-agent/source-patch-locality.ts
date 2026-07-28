@@ -22,6 +22,10 @@ const EQUIPMENT_CALLS = [
   'controlCabinet',
   'skidBase',
   'pumpCasing',
+  'verticalVessel',
+  'dustCollector',
+  'heatExchanger',
+  'agitatorTank',
 ] as const
 
 type EquipmentCallName = (typeof EQUIPMENT_CALLS)[number]
@@ -213,6 +217,31 @@ function allowedFunctionsForInstruction(instruction: string): EquipmentCallName[
     allowed.add('flangePort')
     allowed.add('pipeRun')
     allowed.add('sheetCover')
+  }
+  if (/(tank|vessel|storage|silo|罐|储罐|容器)/i.test(text)) {
+    allowed.add('verticalVessel')
+    allowed.add('flangePort')
+    allowed.add('inspectionDoor')
+    allowed.add('ladder')
+    allowed.add('platform')
+    allowed.add('handrail')
+  }
+  if (/(dust|collector|baghouse|filter|hopper|pulse|除尘|收尘|过滤|料斗|脉冲)/i.test(text)) {
+    allowed.add('dustCollector')
+    allowed.add('ladder')
+    allowed.add('flangePort')
+  }
+  if (/(heat|exchanger|condenser|cooler|tube|换热|冷凝|冷却|管束)/i.test(text)) {
+    allowed.add('heatExchanger')
+    allowed.add('flangePort')
+  }
+  if (/(reactor|reaction|stirred|agitator|impeller|kettle|反应|搅拌|叶轮|釜)/i.test(text)) {
+    allowed.add('agitatorTank')
+    allowed.add('flangePort')
+    allowed.add('inspectionDoor')
+    allowed.add('ladder')
+    allowed.add('platform')
+    allowed.add('handrail')
   }
   return Array.from(allowed)
 }
