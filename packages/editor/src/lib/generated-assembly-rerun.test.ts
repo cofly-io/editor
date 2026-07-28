@@ -90,8 +90,9 @@ describe('planGeneratedAssemblyRerun', () => {
 
     const plan = planGeneratedAssemblyRerun(root, parts, irV2)
     expect(plan.creates).toHaveLength(1)
-    expect(plan.creates[0].parentId).toBe(root.id)
-    expect((plan.creates[0].node as GeneratedMeshNode).partId).toBe('c')
+    const create = plan.creates[0]!
+    expect(create.parentId).toBe(root.id)
+    expect((create.node as GeneratedMeshNode).partId).toBe('c')
     expect(plan.deletes).toHaveLength(0)
   })
 
@@ -107,7 +108,8 @@ describe('planGeneratedAssemblyRerun', () => {
     const plan = planGeneratedAssemblyRerun(root, parts, irV2, {}, '2026-07-26T00:00:00Z')
 
     const bNode = parts.find((p) => p.partId === 'b')
-    expect(plan.deletes).toEqual([bNode?.id])
+    expect(bNode).toBeDefined()
+    expect(plan.deletes).toEqual([bNode!.id])
     // override for 'a' reapplies; override for 'b' is orphaned
     expect(plan.nextOverrides.map((o) => o.partId)).toEqual(['a'])
     expect(plan.orphans).toHaveLength(1)
@@ -204,8 +206,9 @@ describe('planGeneratedAssemblyRerun', () => {
 
     const plan = planGeneratedAssemblyRerun(root, parts, irV2)
     const lidNode = parts.find((p) => p.partId === 'lid')
+    expect(lidNode).toBeDefined()
     expect(plan.creates).toHaveLength(1)
-    expect(plan.creates[0].parentId).toBe(lidNode?.id)
+    expect(plan.creates[0]!.parentId).toBe(lidNode!.id)
   })
 
   it('user override transform beats the regenerated IR transform on kept parts', () => {
@@ -217,7 +220,7 @@ describe('planGeneratedAssemblyRerun', () => {
     const irV2 = makeIR([makePart({ id: 'a', fingerprint: 'fp-a-v2' })], 'src-v2')
 
     const plan = planGeneratedAssemblyRerun(root, parts, irV2)
-    const aUpdate = plan.updates.find((u) => u.id === parts[0].id)
+    const aUpdate = plan.updates.find((u) => u.id === parts[0]!.id)
     expect((aUpdate?.data as { position?: number[] }).position).toEqual([7, 8, 9])
   })
 

@@ -62,13 +62,15 @@ describe('buildGeneratedAssemblyNodes', () => {
     const { rootNode, childNodes, nodeIdByPartId } = buildGeneratedAssemblyNodes(ir)
     expect(rootNode.type).toBe('generated-assembly')
     expect(childNodes).toHaveLength(2)
-    expect(nodeIdByPartId.get('a')).toBe(childNodes[0].id)
-    expect(nodeIdByPartId.get('b')).toBe(childNodes[1].id)
-    expect(childNodes[0].type).toBe('generated-mesh')
-    expect(childNodes[0].partId).toBe('a')
-    expect(childNodes[0].parentId).toBe(rootNode.id)
+    const firstChild = childNodes[0]!
+    const secondChild = childNodes[1]!
+    expect(nodeIdByPartId.get('a')).toBe(firstChild.id)
+    expect(nodeIdByPartId.get('b')).toBe(secondChild.id)
+    expect(firstChild.type).toBe('generated-mesh')
+    expect(firstChild.partId).toBe('a')
+    expect(firstChild.parentId).toBe(rootNode.id)
     expect(rootNode.id.startsWith('generated-assembly_')).toBe(true)
-    expect(childNodes[0].id.startsWith('generated-mesh_')).toBe(true)
+    expect(firstChild.id.startsWith('generated-mesh_')).toBe(true)
   })
 
   it('world-space parts are positioned relative to the root origin', () => {
@@ -84,7 +86,7 @@ describe('buildGeneratedAssemblyNodes', () => {
       }),
     ])
     const { childNodes } = buildGeneratedAssemblyNodes(ir, { origin: [1, 0, 1] })
-    expect(childNodes[0].position).toEqual([0, 2, 2])
+    expect(childNodes[0]!.position).toEqual([0, 2, 2])
   })
 
   it('local-space parts become children of their parent part node and keep local transform', () => {
@@ -148,8 +150,11 @@ describe('buildGeneratedAssemblyNodes', () => {
       makePart({ id: 'a', material: { preset: 'metal', color: [0.5, 0.5, 0.6], roughness: 0.3 } }),
     ])
     const { childNodes } = buildGeneratedAssemblyNodes(ir)
-    expect(childNodes[0].materialPreset).toBe('metal')
-    expect(childNodes[0].material?.properties).toMatchObject({ color: '#808099', roughness: 0.3 })
+    expect(childNodes[0]!.materialPreset).toBe('metal')
+    expect(childNodes[0]!.material?.properties).toMatchObject({
+      color: '#808099',
+      roughness: 0.3,
+    })
   })
 })
 
@@ -171,8 +176,8 @@ describe('buildGeneratedAssemblyCreatePatches', () => {
     ])
     const plan = buildGeneratedAssemblyCreatePatches(ir, { parentId: 'level_1' })
     expect(plan.patches).toHaveLength(4)
-    expect(plan.patches[0].node.type).toBe('generated-assembly')
-    expect(plan.patches[0].parentId).toBe('level_1')
+    expect(plan.patches[0]!.node.type).toBe('generated-assembly')
+    expect(plan.patches[0]!.parentId).toBe('level_1')
     const partTypes = plan.patches.slice(1).map((p) => (p.node as { partId: string }).partId)
     // lid must precede screen despite screen appearing first in the IR
     expect(partTypes.indexOf('lid')).toBeLessThan(partTypes.indexOf('screen'))
