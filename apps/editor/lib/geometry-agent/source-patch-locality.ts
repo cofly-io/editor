@@ -22,6 +22,8 @@ const EQUIPMENT_CALLS = [
   'controlCabinet',
   'skidBase',
   'pumpCasing',
+  'centrifugalFan',
+  'blowerPackage',
   'verticalVessel',
   'dustCollector',
   'heatExchanger',
@@ -242,6 +244,15 @@ function allowedFunctionsForInstruction(instruction: string): EquipmentCallName[
     allowed.add('ladder')
     allowed.add('platform')
     allowed.add('handrail')
+  }
+  if (/(fan|blower|air\s*mover|draft|silencer|filter|风机|鼓风|引风|送风|消音|过滤)/i.test(text)) {
+    allowed.add('centrifugalFan')
+    allowed.add('blowerPackage')
+    allowed.add('skidBase')
+    allowed.add('motor')
+    allowed.add('sheetCover')
+    allowed.add('flangePort')
+    allowed.add('controlCabinet')
   }
   return Array.from(allowed)
 }

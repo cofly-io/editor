@@ -29,6 +29,8 @@ import type { DslRunResult } from './generator-dsl-run'
 export const DSL_AUTHOR_PROMPT_VERSION = '1.2.0'
 
 const DSL_EQUIPMENT_API_SUMMARY = `
+  centrifugalFan({ id, diameter?, width?, includeMotor?, includeGuard?, includeBase?, material?, color? }) — centrifugal fan with volute casing, inlet ring/nozzle, outlet duct, impeller cues, bearing pedestal, motor, coupling guard and base
+  blowerPackage({ id, length?, width?, fanDiameter?, includeSilencer?, includeFilter?, includeCabinet?, material?, color? }) — skid-mounted blower/fan package with centrifugal fan, motor, coupling guard, silencer/filter, discharge duct, flanges and local cabinet
   belt({ id, length?, width?, thickness?, material?, color? }) — conveyor belt surface + pulley hints
   rollerArray({ id, length?, width?, count?, radius?, material?, color? }) — repeated cross rollers
   boxFrame({ id, length?, width?, height?, railThickness?, legCount?, material? }) — rails, legs and cross ties
@@ -154,6 +156,8 @@ const DSL_RULES = `
     flangePort(), pipeRun(), and controlCabinet() for covers, nozzles,
     piping and controls. Pump skids should use skidBase(), pumpCasing(),
     motor(), gearbox(), flangePort(), pipeRun(), sheetCover(), and nameplate().
+    Centrifugal fans, blowers, induced-draft fans and air movers should use
+    centrifugalFan() or blowerPackage().
     Tall tanks and pressure/process vessels should use verticalVessel().
     Reactors, reaction kettles and stirred tanks should use agitatorTank().
     Baghouse filters and dust collectors should use dustCollector().
@@ -212,7 +216,7 @@ export function extractDslSource(reply: string): string | null {
     // No fence: drop leading prose lines until the first DSL-looking line.
     const lines = text.split('\n')
     const start = lines.findIndex((l) =>
-      /^\s*(const|function|part\(|equipment\(|belt\(|rollerArray\(|boxFrame\(|guardCover\(|motor\(|gearbox\(|bearingBlock\(|platform\(|ladder\(|handrail\(|inspectionDoor\(|nameplate\(|sheetCover\(|flangePort\(|pipeRun\(|controlCabinet\(|skidBase\(|pumpCasing\(|verticalVessel\(|dustCollector\(|heatExchanger\(|agitatorTank\(|for\s*\(|if\s*\(|hinge\(|grid\(|connect\(|let\b)/.test(
+      /^\s*(const|function|part\(|equipment\(|belt\(|rollerArray\(|boxFrame\(|guardCover\(|motor\(|gearbox\(|bearingBlock\(|platform\(|ladder\(|handrail\(|inspectionDoor\(|nameplate\(|sheetCover\(|flangePort\(|pipeRun\(|controlCabinet\(|skidBase\(|pumpCasing\(|centrifugalFan\(|blowerPackage\(|verticalVessel\(|dustCollector\(|heatExchanger\(|agitatorTank\(|for\s*\(|if\s*\(|hinge\(|grid\(|connect\(|let\b)/.test(
         l,
       ),
     )
@@ -221,7 +225,7 @@ export function extractDslSource(reply: string): string | null {
   }
   // Sanity: must reference at least one whitelisted global.
   if (
-    !/\b(part|params|box|cylinder|sphere|cone|frustum|torus|lathe|extrude|sweep|equipment|belt|rollerArray|boxFrame|guardCover|motor|gearbox|bearingBlock|platform|ladder|handrail|inspectionDoor|nameplate|sheetCover|flangePort|pipeRun|controlCabinet|skidBase|pumpCasing|verticalVessel|dustCollector|heatExchanger|agitatorTank)\s*\(/.test(
+    !/\b(part|params|box|cylinder|sphere|cone|frustum|torus|lathe|extrude|sweep|equipment|belt|rollerArray|boxFrame|guardCover|motor|gearbox|bearingBlock|platform|ladder|handrail|inspectionDoor|nameplate|sheetCover|flangePort|pipeRun|controlCabinet|skidBase|pumpCasing|centrifugalFan|blowerPackage|verticalVessel|dustCollector|heatExchanger|agitatorTank)\s*\(/.test(
       text,
     )
   ) {

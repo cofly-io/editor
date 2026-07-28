@@ -146,6 +146,26 @@ describe('compileDsl — equipment semantic constructors', () => {
     expect(roles.has('sheet_cover_panel')).toBe(true)
   })
 
+  test('compiles fan and blower package constructors through the same DSL pipeline', () => {
+    const result = compileDsl(`
+      centrifugalFan({ id: 'fan', diameter: 1.2, includeMotor: true });
+      blowerPackage({ id: 'blower', length: 3.2, width: 1.3, fanDiameter: 0.95 });
+    `)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const roles = new Set(result.ir.parts.map((p) => p.semanticRole))
+    expect(roles.has('fan_volute_casing')).toBe(true)
+    expect(roles.has('fan_inlet_ring')).toBe(true)
+    expect(roles.has('fan_outlet_duct')).toBe(true)
+    expect(roles.has('fan_impeller_blade')).toBe(true)
+    expect(roles.has('drive_motor')).toBe(true)
+    expect(roles.has('coupling_guard')).toBe(true)
+    expect(roles.has('inlet_silencer')).toBe(true)
+    expect(roles.has('inlet_filter')).toBe(true)
+    expect(roles.has('flange_port')).toBe(true)
+  })
+
   test('compiles process vessel and dust collector constructors through the same DSL pipeline', () => {
     const result = compileDsl(`
       verticalVessel({ id: 'buffer_tank', diameter: 1.4, height: 3.6, includeLadder: true });

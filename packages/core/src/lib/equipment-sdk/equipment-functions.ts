@@ -250,6 +250,23 @@ export type AgitatorTankParams = CommonParams & {
   bladeCount?: number
 }
 
+export type CentrifugalFanParams = CommonParams & {
+  diameter?: number
+  width?: number
+  includeMotor?: boolean
+  includeGuard?: boolean
+  includeBase?: boolean
+}
+
+export type BlowerPackageParams = CommonParams & {
+  length?: number
+  width?: number
+  fanDiameter?: number
+  includeSilencer?: boolean
+  includeFilter?: boolean
+  includeCabinet?: boolean
+}
+
 const round = (value: number) => Number(value.toFixed(4))
 
 const clamp = (value: unknown, fallback: number, min: number, max: number): number => {
@@ -2285,6 +2302,452 @@ export function buildAgitatorTank(params: AgitatorTankParams): EquipmentPartSpec
         }),
       )
     }
+  }
+
+  return parts
+}
+
+export function buildCentrifugalFan(params: CentrifugalFanParams): EquipmentPartSpec[] {
+  const diameter = clamp(params.diameter, 1.15, 0.32, 4.5)
+  const width = clamp(params.width, diameter * 0.36, 0.14, 1.8)
+  const radius = diameter / 2
+  const baseHeight = Math.max(diameter * 0.12, 0.12)
+  const centerY = baseHeight + radius
+  const casingZ = 0
+  const frontZ = casingZ + width / 2 + 0.028
+  const backZ = casingZ - width / 2 - 0.028
+  const material = params.material ?? 'painted_steel'
+  const parts: EquipmentPartSpec[] = [
+    spec({
+      id: `${params.id}.volute_shell`,
+      kind: 'cylinder',
+      semanticRole: 'fan_volute_casing',
+      position: [0, centerY, casingZ],
+      rotation: { axis: 'x', degrees: 90 },
+      size: [diameter, diameter, width],
+      material,
+      color: params.color,
+      params: { radius, height: width, radialSegments: 80 },
+    }),
+    spec({
+      id: `${params.id}.volute_scroll_lip`,
+      kind: 'torus',
+      semanticRole: 'fan_scroll_lip',
+      position: [0, centerY, frontZ + 0.018],
+      material: 'cast_iron',
+      params: {
+        majorRadius: radius * 0.9,
+        tubeRadius: Math.max(diameter * 0.018, 0.012),
+        radialSegments: 96,
+        tubularSegments: 12,
+      },
+    }),
+    spec({
+      id: `${params.id}.inlet_ring`,
+      kind: 'torus',
+      semanticRole: 'fan_inlet_ring',
+      position: [0, centerY, frontZ + width * 1.18],
+      material: 'cast_iron',
+      params: {
+        majorRadius: radius * 0.45,
+        tubeRadius: Math.max(diameter * 0.026, 0.014),
+        radialSegments: 80,
+        tubularSegments: 14,
+      },
+    }),
+    spec({
+      id: `${params.id}.inlet_nozzle`,
+      kind: 'cylinder',
+      semanticRole: 'fan_inlet_nozzle',
+      position: [0, centerY, frontZ + width * 1.56],
+      rotation: { axis: 'x', degrees: 90 },
+      material: 'stainless_steel',
+      params: { radius: radius * 0.36, height: width * 0.35, radialSegments: 64 },
+    }),
+    spec({
+      id: `${params.id}.impeller_hub`,
+      kind: 'cylinder',
+      semanticRole: 'fan_impeller_hub',
+      position: [0, centerY, frontZ + width * 1.8],
+      rotation: { axis: 'x', degrees: 90 },
+      material: 'dark_fastener',
+      params: { radius: radius * 0.12, height: width * 0.12, radialSegments: 48 },
+    }),
+    spec({
+      id: `${params.id}.outlet_duct`,
+      kind: 'box',
+      semanticRole: 'fan_outlet_duct',
+      position: [radius + diameter * 0.28, centerY + radius * 0.36, casingZ],
+      material,
+      color: params.color,
+      params: {
+        length: diameter * 0.54,
+        width,
+        height: diameter * 0.36,
+        cornerRadius: diameter * 0.025,
+        cornerSegments: 6,
+      },
+    }),
+    spec({
+      id: `${params.id}.outlet_flange`,
+      kind: 'box',
+      semanticRole: 'flange_port',
+      position: [radius + diameter * 0.58, centerY + radius * 0.36, casingZ],
+      material: 'cast_iron',
+      params: {
+        length: diameter * 0.065,
+        width: width * 1.12,
+        height: diameter * 0.43,
+        cornerRadius: diameter * 0.018,
+        cornerSegments: 5,
+      },
+    }),
+    spec({
+      id: `${params.id}.bearing_pedestal`,
+      kind: 'box',
+      semanticRole: 'bearing_block',
+      position: [0, centerY - radius * 0.72, backZ - width * 0.35],
+      material: 'cast_iron',
+      params: {
+        length: diameter * 0.28,
+        width: width * 0.42,
+        height: diameter * 0.18,
+        cornerRadius: diameter * 0.018,
+        cornerSegments: 5,
+      },
+    }),
+    spec({
+      id: `${params.id}.shaft`,
+      kind: 'cylinder',
+      semanticRole: 'fan_shaft',
+      position: [0, centerY, backZ - width * 0.18],
+      rotation: { axis: 'x', degrees: 90 },
+      material: 'stainless_steel',
+      params: { radius: diameter * 0.035, height: width * 0.7, radialSegments: 32 },
+    }),
+    spec({
+      id: `${params.id}.nameplate`,
+      kind: 'box',
+      semanticRole: 'equipment_nameplate',
+      position: [-radius * 0.42, centerY - radius * 0.18, frontZ + 0.022],
+      material: 'stainless_steel',
+      params: {
+        length: diameter * 0.24,
+        width: 0.008,
+        height: diameter * 0.1,
+        cornerRadius: 0.006,
+        cornerSegments: 4,
+      },
+    }),
+  ]
+
+  for (let i = 0; i < 8; i += 1) {
+    const angle = (Math.PI * 2 * i) / 8
+    const x = Math.cos(angle) * radius * 0.34
+    const y = centerY + Math.sin(angle) * radius * 0.34
+    parts.push(
+      spec({
+        id: `${params.id}.impeller_blade.${i}`,
+        kind: 'box',
+        semanticRole: 'fan_impeller_blade',
+        position: [x, y, frontZ + width * 1.92],
+        rotation: { axis: 'z', degrees: (angle * 180) / Math.PI + 28 },
+        material: 'stainless_steel',
+        params: {
+          length: radius * 0.34,
+          width: 0.018,
+          height: Math.max(width * 0.08, 0.018),
+          cornerRadius: 0.005,
+          cornerSegments: 4,
+        },
+      }),
+    )
+  }
+
+  if (params.includeBase ?? true) {
+    parts.push(
+      spec({
+        id: `${params.id}.base_left_rail`,
+        kind: 'box',
+        semanticRole: 'skid_base_rail',
+        position: [0, baseHeight / 2, -diameter * 0.32],
+        material: 'painted_steel',
+        params: {
+          length: diameter * 1.45,
+          width: diameter * 0.07,
+          height: baseHeight,
+          cornerRadius: diameter * 0.012,
+          cornerSegments: 4,
+        },
+      }),
+      spec({
+        id: `${params.id}.base_right_rail`,
+        kind: 'box',
+        semanticRole: 'skid_base_rail',
+        position: [0, baseHeight / 2, diameter * 0.32],
+        material: 'painted_steel',
+        params: {
+          length: diameter * 1.45,
+          width: diameter * 0.07,
+          height: baseHeight,
+          cornerRadius: diameter * 0.012,
+          cornerSegments: 4,
+        },
+      }),
+      spec({
+        id: `${params.id}.base_cross_member.front`,
+        kind: 'box',
+        semanticRole: 'skid_cross_member',
+        position: [diameter * 0.42, baseHeight * 0.62, 0],
+        material: 'painted_steel',
+        params: {
+          length: diameter * 0.08,
+          width: diameter * 0.72,
+          height: baseHeight * 0.5,
+          cornerRadius: diameter * 0.01,
+          cornerSegments: 4,
+        },
+      }),
+      spec({
+        id: `${params.id}.base_cross_member.rear`,
+        kind: 'box',
+        semanticRole: 'skid_cross_member',
+        position: [-diameter * 0.42, baseHeight * 0.62, 0],
+        material: 'painted_steel',
+        params: {
+          length: diameter * 0.08,
+          width: diameter * 0.72,
+          height: baseHeight * 0.5,
+          cornerRadius: diameter * 0.01,
+          cornerSegments: 4,
+        },
+      }),
+    )
+  }
+
+  if (params.includeMotor ?? true) {
+    const motorDiameter = diameter * 0.28
+    const motorLength = diameter * 0.52
+    const motorX = -radius - motorLength * 0.72
+    const motorZ = backZ - width * 0.48
+    parts.push(
+      spec({
+        id: `${params.id}.motor`,
+        kind: 'cylinder',
+        semanticRole: 'drive_motor',
+        position: [motorX, centerY - radius * 0.62, motorZ],
+        rotation: { axis: 'z', degrees: 90 },
+        material: 'painted_steel',
+        params: { radius: motorDiameter / 2, height: motorLength, radialSegments: 48 },
+      }),
+      spec({
+        id: `${params.id}.motor_terminal_box`,
+        kind: 'box',
+        semanticRole: 'motor_terminal_box',
+        position: [motorX, centerY - radius * 0.18, motorZ],
+        material: 'painted_steel',
+        params: {
+          length: motorLength * 0.34,
+          width: motorDiameter * 0.22,
+          height: motorDiameter * 0.18,
+          cornerRadius: motorDiameter * 0.025,
+          cornerSegments: 5,
+        },
+      }),
+    )
+  }
+
+  if (params.includeGuard ?? true) {
+    parts.push(
+      spec({
+        id: `${params.id}.coupling_guard`,
+        kind: 'box',
+        semanticRole: 'coupling_guard',
+        position: [-radius * 0.62, centerY - radius * 0.62, backZ - width * 0.48],
+        material: 'yellow_safety',
+        params: {
+          length: diameter * 0.34,
+          width: width * 0.34,
+          height: diameter * 0.18,
+          cornerRadius: diameter * 0.035,
+          cornerSegments: 8,
+        },
+      }),
+    )
+  }
+
+  return parts
+}
+
+export function buildBlowerPackage(params: BlowerPackageParams): EquipmentPartSpec[] {
+  const length = clamp(params.length, 3.2, 1.2, 10)
+  const width = clamp(params.width, 1.35, 0.5, 4)
+  const fanDiameter = clamp(params.fanDiameter, Math.min(width * 0.72, length * 0.36), 0.36, 4)
+  const parts: EquipmentPartSpec[] = [
+    ...buildCentrifugalFan({
+      id: `${params.id}.fan`,
+      diameter: fanDiameter,
+      width: fanDiameter * 0.36,
+      includeBase: false,
+      includeMotor: true,
+      includeGuard: true,
+      material: params.material,
+      color: params.color,
+    }),
+    ...buildSkidBase({
+      id: `${params.id}.skid`,
+      length,
+      width,
+      height: fanDiameter * 0.12,
+      railThickness: fanDiameter * 0.06,
+      material: 'painted_steel',
+    }),
+  ]
+
+  const baseY = fanDiameter * 0.12
+  const centerY = baseY + fanDiameter / 2
+  const fanX = 0
+  const inletX = -length * 0.38
+  const dischargeX = length * 0.52
+  const ductRadius = fanDiameter * 0.19
+
+  parts.push(
+    spec({
+      id: `${params.id}.inlet_flexible_connector`,
+      kind: 'cylinder',
+      semanticRole: 'flexible_connector',
+      position: [inletX + fanDiameter * 0.52, centerY, fanDiameter * 0.22],
+      rotation: { axis: 'z', degrees: 90 },
+      material: 'rubber_belt',
+      params: { radius: ductRadius, height: fanDiameter * 0.22, radialSegments: 48 },
+    }),
+    spec({
+      id: `${params.id}.discharge_duct`,
+      kind: 'box',
+      semanticRole: 'fan_outlet_duct',
+      position: [dischargeX, centerY + fanDiameter * 0.18, 0],
+      material: params.material ?? 'painted_steel',
+      color: params.color,
+      params: {
+        length: fanDiameter * 0.72,
+        width: fanDiameter * 0.34,
+        height: fanDiameter * 0.3,
+        cornerRadius: fanDiameter * 0.018,
+        cornerSegments: 5,
+      },
+    }),
+    spec({
+      id: `${params.id}.discharge_flange`,
+      kind: 'box',
+      semanticRole: 'flange_port',
+      position: [dischargeX + fanDiameter * 0.48, centerY + fanDiameter * 0.18, 0],
+      material: 'cast_iron',
+      params: {
+        length: fanDiameter * 0.06,
+        width: fanDiameter * 0.42,
+        height: fanDiameter * 0.38,
+        cornerRadius: fanDiameter * 0.014,
+        cornerSegments: 4,
+      },
+    }),
+    spec({
+      id: `${params.id}.nameplate`,
+      kind: 'box',
+      semanticRole: 'equipment_nameplate',
+      position: [fanX + fanDiameter * 0.12, centerY - fanDiameter * 0.22, fanDiameter * 0.32],
+      material: 'stainless_steel',
+      params: {
+        length: fanDiameter * 0.22,
+        width: 0.008,
+        height: fanDiameter * 0.09,
+        cornerRadius: 0.006,
+        cornerSegments: 4,
+      },
+    }),
+  )
+
+  if (params.includeSilencer ?? true) {
+    parts.push(
+      spec({
+        id: `${params.id}.inlet_silencer`,
+        kind: 'cylinder',
+        semanticRole: 'inlet_silencer',
+        position: [inletX, centerY, fanDiameter * 0.22],
+        rotation: { axis: 'z', degrees: 90 },
+        material: 'stainless_steel',
+        params: { radius: ductRadius * 1.18, height: fanDiameter * 0.58, radialSegments: 56 },
+      }),
+    )
+    for (const dx of [-0.22, 0, 0.22]) {
+      parts.push(
+        spec({
+          id: `${params.id}.silencer_band.${dx}`,
+          kind: 'box',
+          semanticRole: 'silencer_band',
+          position: [inletX + fanDiameter * dx, centerY + ductRadius * 1.34, fanDiameter * 0.22],
+          material: 'cast_iron',
+          params: {
+            length: fanDiameter * 0.045,
+            width: ductRadius * 1.6,
+            height: fanDiameter * 0.05,
+            cornerRadius: fanDiameter * 0.01,
+            cornerSegments: 4,
+          },
+        }),
+      )
+    }
+  }
+
+  if (params.includeFilter ?? true) {
+    parts.push(
+      spec({
+        id: `${params.id}.inlet_filter_box`,
+        kind: 'box',
+        semanticRole: 'inlet_filter',
+        position: [inletX - fanDiameter * 0.48, centerY, fanDiameter * 0.22],
+        material: 'wire_mesh',
+        params: {
+          length: fanDiameter * 0.28,
+          width: fanDiameter * 0.52,
+          height: fanDiameter * 0.52,
+          cornerRadius: fanDiameter * 0.02,
+          cornerSegments: 5,
+        },
+      }),
+    )
+  }
+
+  if (params.includeCabinet ?? true) {
+    parts.push(
+      spec({
+        id: `${params.id}.local_control_cabinet`,
+        kind: 'box',
+        semanticRole: 'control_cabinet',
+        position: [length * 0.34, baseY + fanDiameter * 0.42, -width * 0.42],
+        material: 'painted_steel',
+        params: {
+          length: fanDiameter * 0.24,
+          width: fanDiameter * 0.14,
+          height: fanDiameter * 0.52,
+          cornerRadius: fanDiameter * 0.018,
+          cornerSegments: 5,
+        },
+      }),
+      spec({
+        id: `${params.id}.local_control_panel`,
+        kind: 'box',
+        semanticRole: 'control_panel_glass',
+        position: [length * 0.34, baseY + fanDiameter * 0.48, -width * 0.5],
+        material: 'control_panel_glass',
+        params: {
+          length: fanDiameter * 0.15,
+          width: 0.008,
+          height: fanDiameter * 0.16,
+          cornerRadius: 0.006,
+          cornerSegments: 4,
+        },
+      }),
+    )
   }
 
   return parts

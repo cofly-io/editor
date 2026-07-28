@@ -4,6 +4,7 @@ export type IndustrialEquipmentFamily =
   | 'belt_conveyor'
   | 'control_cabinet'
   | 'pump_skid'
+  | 'fan_blower'
   | 'process_vessel'
   | 'dust_collector'
   | 'heat_exchanger'
@@ -45,6 +46,11 @@ const FAMILY_SPECS: Record<IndustrialEquipmentFamily, FamilySpec> = {
     required: ['skid_base', 'volute_casing', 'drive_motor', 'flange_port'],
     recommended: ['pipe_run', 'sheet_cover_panel', 'equipment_nameplate'],
     maxAnonymousPrimitiveRatio: 0.2,
+  },
+  fan_blower: {
+    required: ['fan_volute_casing', 'fan_inlet_ring', 'fan_outlet_duct', 'fan_impeller_blade'],
+    recommended: ['drive_motor', 'coupling_guard', 'bearing_block', 'equipment_nameplate'],
+    maxAnonymousPrimitiveRatio: 0.18,
   },
   process_vessel: {
     required: ['vessel_shell', 'vessel_head', 'flange_port'],
@@ -141,6 +147,7 @@ export function reviewAssemblyRealism(
   checkConveyorDetails(ir, roles, opts.source, issues, warnings)
   checkControlCabinetDetails(ir, roles, issues, warnings)
   checkPumpSkidDetails(ir, roles, issues, warnings)
+  checkFanBlowerDetails(ir, roles, issues, warnings)
   checkProcessVesselDetails(ir, roles, issues, warnings)
   checkDustCollectorDetails(ir, roles, issues, warnings)
   checkHeatExchangerDetails(ir, roles, issues, warnings)
@@ -169,6 +176,16 @@ function inferIndustrialFamily(
     .map((p) => p.id)
     .join(' ')
     .toLowerCase()
+  if (
+    hasRoleLike(roles, 'fan_volute_casing') ||
+    hasRoleLike(roles, 'fan_impeller_blade') ||
+    /\b(centrifugal[_\s-]?fan|blower|air[_\s-]?mover|induced[_\s-]?draft|forced[_\s-]?draft|fan[_\s-]?package|blowerpackage)\b/.test(
+      sourceText,
+    ) ||
+    /\b(fan|blower|silencer)\b/.test(idText)
+  ) {
+    return 'fan_blower'
+  }
   if (
     hasRoleLike(roles, 'control_cabinet') ||
     /\b(controlcabinet|control[_\s-]?cabinet|electrical[_\s-]?cabinet|plc[_\s-]?cabinet)\b/.test(
@@ -261,6 +278,12 @@ function hasRoleLike(roles: Set<string>, needle: string): boolean {
   const n = needle.toLowerCase()
   for (const role of roles) {
     const r = role.toLowerCase()
+    if (n === 'volute_casing') {
+      if (r === 'volute_casing' || r.includes('pump_casing') || r.includes('pump_volute')) {
+        return true
+      }
+      continue
+    }
     if (r === n || r.includes(n)) return true
     if (n === 'safety_guard_cover' && (r.includes('guard') || r.includes('cover'))) return true
     if (n === 'support_frame' && (r.includes('frame') || r.includes('support'))) return true
@@ -268,7 +291,16 @@ function hasRoleLike(roles: Set<string>, needle: string): boolean {
     if (n === 'control_cabinet' && r.includes('cabinet')) return true
     if (n === 'control_panel_glass' && (r.includes('glass') || r.includes('panel'))) return true
     if (n === 'skid_base' && r.includes('skid')) return true
-    if (n === 'volute_casing' && (r.includes('volute') || r.includes('pump_casing'))) return true
+    if (n === 'fan_volute_casing' && r.includes('fan_volute')) return true
+    if (n === 'fan_inlet_ring' && (r.includes('fan_inlet') || r.includes('inlet_ring'))) {
+      return true
+    }
+    if (n === 'fan_outlet_duct' && (r.includes('fan_outlet') || r.includes('discharge_duct'))) {
+      return true
+    }
+    if (n === 'fan_impeller_blade' && r.includes('fan_impeller')) return true
+    if (n === 'coupling_guard' && r.includes('coupling_guard')) return true
+    if (n === 'bearing_block' && r.includes('bearing')) return true
     if (n === 'flange_port' && (r.includes('flange') || r.includes('port'))) {
       return true
     }
@@ -467,7 +499,7 @@ function checkPumpSkidDetails(
   issues: string[],
   warnings: string[],
 ): void {
-  if (!hasRoleLike(roles, 'volute_casing') && !hasRoleLike(roles, 'skid_base')) return
+  if (!hasRoleLike(roles, 'volute_casing') && !hasRoleLike(roles, 'pump_suction_nozzle')) return
 
   if (ir.parts.length < 16) {
     issues.push(
@@ -540,6 +572,72 @@ function checkPumpSkidDetails(
     warnings.push(
       'realism_pump_coupling_guard_missing: pump skids usually need a coupling guard or sheet cover between pump and motor.',
     )
+  }
+}
+
+function checkFanBlowerDetails(
+  ir: AssemblyIR,
+  roles: Set<string>,
+  issues: string[],
+  warnings: string[],
+): void {
+  if (!hasRoleLike(roles, 'fan_volute_casing') && !hasRoleLike(roles, 'fan_impeller_blade')) {
+    return
+  }
+
+  if (ir.parts.length < 20) {
+    issues.push(
+      `realism_fan_under_detailed: fan_blower has only ${ir.parts.length} parts; use centrifugalFan() or blowerPackage() so it has volute casing, inlet ring/nozzle, outlet duct, impeller cues, bearing pedestal, motor, coupling guard, base, flanges, and nameplate.`,
+    )
+  }
+
+  const casing = ir.parts.find((p) => p.semanticRole === 'fan_volute_casing')
+  if (casing?.geometry.kind === 'primitive-recipe') {
+    if (casing.geometry.recipeId !== 'primitive.cylinder') {
+      issues.push(
+        'realism_fan_casing_shape: centrifugal fan volute casing should be a rounded cylinder-like shell.',
+      )
+    }
+    const radialSegments = casing.geometry.params.radialSegments
+    if (typeof radialSegments !== 'number' || radialSegments < 64) {
+      issues.push(
+        'realism_fan_casing_faceting: fan volute casing should use at least 64 radialSegments.',
+      )
+    }
+  }
+
+  const blades = ir.parts.filter((p) => p.semanticRole === 'fan_impeller_blade')
+  if (blades.length < 6) {
+    issues.push(
+      `realism_fan_impeller_blade_count: fan has only ${blades.length} visible impeller blades; add repeated impeller blade cues.`,
+    )
+  }
+
+  if (!hasRoleLike(roles, 'fan_inlet_ring') && !hasRoleLike(roles, 'fan_inlet_nozzle')) {
+    issues.push('realism_fan_inlet_missing: fan needs a visible inlet ring or inlet nozzle.')
+  }
+  if (!hasRoleLike(roles, 'fan_outlet_duct')) {
+    issues.push('realism_fan_outlet_missing: fan needs a rectangular/tangential outlet duct.')
+  }
+  if (!hasRoleLike(roles, 'bearing_block')) {
+    issues.push('realism_fan_bearing_missing: fan needs a bearing pedestal/block near the shaft.')
+  }
+  if (!hasRoleLike(roles, 'drive_motor')) {
+    issues.push('realism_fan_motor_missing: fan/blower packages need a visible drive motor.')
+  }
+  if (!hasRoleLike(roles, 'coupling_guard')) {
+    warnings.push('realism_fan_coupling_guard_missing: add a yellow coupling/belt guard.')
+  }
+  if (!hasRoleLike(roles, 'skid_base')) {
+    warnings.push(
+      'realism_fan_base_missing: add skid/base rails so the fan reads as package equipment.',
+    )
+  }
+  if (!hasRoleLike(roles, 'flange_port')) {
+    warnings.push('realism_fan_flange_missing: add inlet or discharge flange detail.')
+  }
+  if (!hasRoleLike(roles, 'equipment_nameplate')) {
+    warnings.push('realism_fan_nameplate_missing: fan should include a nameplate.')
   }
 }
 

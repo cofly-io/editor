@@ -13,11 +13,14 @@ import {
   type AgitatorTankParams,
   type BearingBlockParams,
   type BeltParams,
+  type BlowerPackageParams,
   type BoxFrameParams,
   buildAgitatorTank,
   buildBearingBlock,
   buildBelt,
+  buildBlowerPackage,
   buildBoxFrame,
+  buildCentrifugalFan,
   buildControlCabinet,
   buildDustCollector,
   buildEquipment,
@@ -37,6 +40,7 @@ import {
   buildSheetCover,
   buildSkidBase,
   buildVerticalVessel,
+  type CentrifugalFanParams,
   type ControlCabinetParams,
   type DustCollectorParams,
   EQUIPMENT_MATERIALS,
@@ -750,6 +754,8 @@ export function createDslApiBuilders(opts: CreateBuildersOptions) {
     dustCollector: (o: DustCollectorParams) => registerEquipmentSpecs(buildDustCollector(o)),
     heatExchanger: (o: HeatExchangerParams) => registerEquipmentSpecs(buildHeatExchanger(o)),
     agitatorTank: (o: AgitatorTankParams) => registerEquipmentSpecs(buildAgitatorTank(o)),
+    centrifugalFan: (o: CentrifugalFanParams) => registerEquipmentSpecs(buildCentrifugalFan(o)),
+    blowerPackage: (o: BlowerPackageParams) => registerEquipmentSpecs(buildBlowerPackage(o)),
 
     hinge: (o: {
       part: string

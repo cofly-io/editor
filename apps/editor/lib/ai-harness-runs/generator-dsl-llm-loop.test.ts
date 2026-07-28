@@ -402,6 +402,39 @@ describe('runDslSourceLoop', () => {
     expect(seen[seen.length - 1]).toContain('skidBase')
   })
 
+  it('fan blower realism failures feed the same repair loop', async () => {
+    const toyFan = `
+      part('fan.casing', cylinder({ radius: 0.55, height: 0.32, material: 'metal', color: '#64748b', radialSegments: 16 }))
+        .atWorld([0, 0.72, 0])
+        .rotate({ axis: 'x', degrees: 90 })
+        .withRole('fan_volute_casing');
+      part('fan.outlet', box({ length: 0.6, width: 0.32, height: 0.28, material: 'metal', color: '#64748b' }))
+        .atWorld([0.75, 0.9, 0])
+        .withRole('fan_outlet_duct');
+      part('fan.blade', box({ length: 0.28, width: 0.03, height: 0.03, material: 'metal', color: '#cccccc' }))
+        .atWorld([0, 0.72, 0.24])
+        .withRole('fan_impeller_blade');
+    `
+    const sdkFan = "blowerPackage({ id: 'blower', length: 3.2, width: 1.3, fanDiameter: 0.95 });"
+    let call = 0
+    const seen: string[] = []
+    const result = await runDslSourceLoop({
+      userPrompt:
+        'generate a realistic centrifugal blower package with motor silencer filter outlet flange and coupling guard',
+      callLlm: async (msgs) => {
+        seen.push(msgs.map((m) => m.content).join('\n'))
+        return call++ === 0 ? toyFan : sdkFan
+      },
+      runAttempt: directAttempt,
+    })
+
+    expect(result.kind).toBe('ok')
+    expect(result.attempts).toBe(2)
+    expect(seen[seen.length - 1]).toContain('Industrial realism gate feedback')
+    expect(seen[seen.length - 1]).toContain('realism_fan_under_detailed')
+    expect(seen[seen.length - 1]).toContain('blowerPackage')
+  })
+
   it('access realism failures feed the same repair loop', async () => {
     const baseConveyor = `
       belt({ id: 'belt', length: 6, width: 0.72 });
@@ -589,6 +622,8 @@ describe('prompt + repair message content', () => {
     expect(prompt).toContain('flangePort')
     expect(prompt).toContain('controlCabinet')
     expect(prompt).toContain('pumpCasing')
+    expect(prompt).toContain('centrifugalFan')
+    expect(prompt).toContain('blowerPackage')
     expect(prompt).toContain('skidBase')
     expect(prompt).toContain('gearbox')
     expect(prompt).toContain('bearingBlock')

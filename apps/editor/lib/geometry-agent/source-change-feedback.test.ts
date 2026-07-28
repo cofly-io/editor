@@ -135,4 +135,29 @@ agitatorTank({ id: 'reactor', diameter: 1.5, height: 3.6, bladeCount: 4 });
     ])
     expect(feedback.text).toContain('agitatorTank(reactor)')
   })
+
+  test('tracks blower package source changes', () => {
+    const beforeSource = `
+blowerPackage({ id: 'blower', length: 3.2, width: 1.3, fanDiameter: 0.95 });
+`
+    const feedback = summarizeGeometryAgentSourceChange({
+      beforeSource,
+      afterSource: beforeSource
+        .replace('fanDiameter: 0.95', 'fanDiameter: 1.1')
+        .replace('width: 1.3', 'width: 1.45'),
+      instruction: 'make the blower package wider and increase fan diameter',
+    })
+
+    expect(feedback.changed).toEqual([
+      {
+        id: 'blower',
+        functionName: 'blowerPackage',
+        changedParams: [
+          { name: 'fanDiameter', before: '0.95', after: '1.1' },
+          { name: 'width', before: '1.3', after: '1.45' },
+        ],
+      },
+    ])
+    expect(feedback.text).toContain('blowerPackage(blower)')
+  })
 })

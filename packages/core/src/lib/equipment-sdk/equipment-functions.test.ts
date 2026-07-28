@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import {
   buildAgitatorTank,
   buildBearingBlock,
+  buildBlowerPackage,
+  buildCentrifugalFan,
   buildControlCabinet,
   buildDustCollector,
   buildFlangePort,
@@ -181,6 +183,38 @@ describe('equipment SDK realism builders', () => {
     expect(parts.some((p) => p.semanticRole === 'pump_suction_nozzle')).toBe(true)
     expect(parts.some((p) => p.semanticRole === 'pump_discharge_nozzle')).toBe(true)
     expect(parts.find((p) => p.semanticRole === 'volute_casing')?.params.radialSegments).toBe(64)
+  })
+
+  test('centrifugalFan creates volute casing inlet outlet impeller motor and guard details', () => {
+    const parts = buildCentrifugalFan({ id: 'fan', diameter: 1.2 })
+
+    expect(parts.length).toBeGreaterThanOrEqual(24)
+    expect(parts.some((p) => p.semanticRole === 'fan_volute_casing')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'fan_inlet_ring')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'fan_inlet_nozzle')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'fan_outlet_duct')).toBe(true)
+    expect(parts.filter((p) => p.semanticRole === 'fan_impeller_blade').length).toBe(8)
+    expect(parts.some((p) => p.semanticRole === 'bearing_block')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'drive_motor')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'coupling_guard')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'equipment_nameplate')).toBe(true)
+    expect(parts.find((p) => p.semanticRole === 'fan_volute_casing')?.params.radialSegments).toBe(
+      80,
+    )
+  })
+
+  test('blowerPackage creates skid-mounted fan with silencer filter duct flange and controls', () => {
+    const parts = buildBlowerPackage({ id: 'blower', length: 3.2, width: 1.3 })
+
+    expect(parts.length).toBeGreaterThanOrEqual(34)
+    expect(parts.some((p) => p.semanticRole === 'fan_volute_casing')).toBe(true)
+    expect(parts.filter((p) => p.semanticRole === 'skid_base').length).toBe(2)
+    expect(parts.some((p) => p.semanticRole === 'inlet_silencer')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'inlet_filter')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'fan_outlet_duct')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'flange_port')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'control_cabinet')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'equipment_nameplate')).toBe(true)
   })
 
   test('verticalVessel creates a detailed vessel with heads ports access and nameplate', () => {

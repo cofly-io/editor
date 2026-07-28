@@ -118,4 +118,21 @@ agitatorTank({ id: 'reactor', diameter: 1.5, height: 3.6, bladeCount: 4 });
     expect(review.allowedFunctions).toContain('agitatorTank')
     expect(review.changedIds).toEqual(['reactor'])
   })
+
+  test('allows local edits to blower package calls', () => {
+    const source = `
+blowerPackage({ id: 'blower', length: 3.2, width: 1.3, fanDiameter: 0.95 });
+`
+    const review = reviewGeometryAgentPatchLocality({
+      instruction: 'make the blower fan diameter larger and keep the silencer',
+      beforeSource: source,
+      afterSource: source.replace('fanDiameter: 0.95', 'fanDiameter: 1.1'),
+    })
+
+    expect(review.passed).toBe(true)
+    expect(review.allowedFunctions).toEqual(
+      expect.arrayContaining(['centrifugalFan', 'blowerPackage']),
+    )
+    expect(review.changedIds).toEqual(['blower'])
+  })
 })
