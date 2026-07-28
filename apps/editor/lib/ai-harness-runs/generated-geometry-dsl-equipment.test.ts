@@ -104,6 +104,25 @@ describe('compileDsl — equipment semantic constructors', () => {
     expect(bearing?.geometry.params.radialSegments).toBeGreaterThanOrEqual(48)
   })
 
+  test('compiles platform ladder and handrail constructors through the same DSL pipeline', () => {
+    const result = compileDsl(`
+      skidBase({ id: 'skid', length: 2.4, width: 0.9 });
+      platform({ id: 'service_platform', target: 'skid', side: 'front' });
+      ladder({ id: 'access_ladder', target: 'service_platform', side: 'front' });
+      handrail({ id: 'platform_handrail', target: 'service_platform', side: 'all' });
+    `)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const roles = new Set(result.ir.parts.map((p) => p.semanticRole))
+    expect(roles.has('platform_grating')).toBe(true)
+    expect(roles.has('platform_support_leg')).toBe(true)
+    expect(roles.has('ladder_side_rail')).toBe(true)
+    expect(roles.has('ladder_rung')).toBe(true)
+    expect(roles.has('handrail_top_rail')).toBe(true)
+    expect(roles.has('handrail_post')).toBe(true)
+  })
+
   test('compiles pump skid SDK constructors through the same DSL pipeline', () => {
     const result = compileDsl(`
       skidBase({ id: 'skid', length: 2.4, width: 0.9 });

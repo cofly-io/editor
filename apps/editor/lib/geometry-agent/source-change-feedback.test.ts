@@ -85,4 +85,29 @@ bearingBlock({ id: 'rear_bearing', target: 'belt', side: 'right', position: 'rea
     expect(feedback.added).toEqual([{ id: 'rear_bearing', functionName: 'bearingBlock' }])
     expect(feedback.unchangedImportantIds).toContain('belt')
   })
+
+  test('tracks platform access SDK additions and changes', () => {
+    const beforeSource = `${SOURCE}
+platform({ id: 'service_platform', target: 'frame', side: 'front', width: 0.9 });
+`
+    const feedback = summarizeGeometryAgentSourceChange({
+      beforeSource,
+      afterSource: `${beforeSource.replace(
+        "platform({ id: 'service_platform', target: 'frame', side: 'front', width: 0.9 });",
+        "platform({ id: 'service_platform', target: 'frame', side: 'front', width: 1.1 });",
+      )}
+ladder({ id: 'access_ladder', target: 'service_platform', side: 'front' });
+handrail({ id: 'platform_handrail', target: 'service_platform', side: 'all' });
+`,
+      instruction: 'make the platform wider and add ladder with handrail',
+    })
+
+    expect(feedback.changed.map((change) => [change.functionName, change.id])).toEqual([
+      ['platform', 'service_platform'],
+    ])
+    expect(feedback.added).toEqual([
+      { id: 'access_ladder', functionName: 'ladder' },
+      { id: 'platform_handrail', functionName: 'handrail' },
+    ])
+  })
 })

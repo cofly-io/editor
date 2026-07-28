@@ -11,6 +11,9 @@ const EQUIPMENT_CALLS = [
   'motor',
   'gearbox',
   'bearingBlock',
+  'platform',
+  'ladder',
+  'handrail',
   'inspectionDoor',
   'nameplate',
   'sheetCover',
@@ -168,6 +171,16 @@ function allowedFunctionsForInstruction(instruction: string): EquipmentCallName[
   if (/(bearing|pillow|shaft|轴承|轴承座|支承座|支撑座|转轴)/i.test(text)) {
     allowed.add('bearingBlock')
   }
+  if (/(platform|walkway|service|access|grating|平台|检修平台|走台|踏板|格栅)/i.test(text)) {
+    allowed.add('platform')
+    allowed.add('handrail')
+  }
+  if (/(ladder|rung|access|爬梯|梯子|踏棍|踏步)/i.test(text)) {
+    allowed.add('ladder')
+  }
+  if (/(handrail|rail|guardrail|栏杆|扶手|护栏)/i.test(text)) {
+    allowed.add('handrail')
+  }
   if (/(铭牌|nameplate|标签|label|编号)/i.test(text)) {
     allowed.add('nameplate')
   }
@@ -194,6 +207,9 @@ function allowedFunctionsForInstruction(instruction: string): EquipmentCallName[
     allowed.add('motor')
     allowed.add('gearbox')
     allowed.add('bearingBlock')
+    allowed.add('platform')
+    allowed.add('ladder')
+    allowed.add('handrail')
     allowed.add('flangePort')
     allowed.add('pipeRun')
     allowed.add('sheetCover')

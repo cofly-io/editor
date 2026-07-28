@@ -154,6 +154,13 @@ describe('extractDslSource', () => {
     )
     expect(out?.startsWith('gearbox(')).toBe(true)
   })
+
+  it('accepts platform access SDK constructors as DSL source', () => {
+    const out = extractDslSource(
+      "Here is the source:\n\nplatform({ id: 'platform' });\nladder({ id: 'ladder', target: 'platform' });\nhandrail({ id: 'rail', target: 'platform' });",
+    )
+    expect(out?.startsWith('platform(')).toBe(true)
+  })
 })
 
 describe('runDslSourceLoop', () => {
@@ -419,6 +426,9 @@ describe('prompt + repair message content', () => {
     expect(prompt).toContain('skidBase')
     expect(prompt).toContain('gearbox')
     expect(prompt).toContain('bearingBlock')
+    expect(prompt).toContain('platform')
+    expect(prompt).toContain('ladder')
+    expect(prompt).toContain('handrail')
     expect(prompt).toContain('prefer semantic constructors')
     expect(prompt).toContain('keyboard.key.r')
     expect(prompt).toContain(`Prompt version: ${DSL_AUTHOR_PROMPT_VERSION}`)

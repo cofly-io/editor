@@ -227,6 +227,9 @@ export type DSLGlobalEnv = {
   motor: unknown
   gearbox: unknown
   bearingBlock: unknown
+  platform: unknown
+  ladder: unknown
+  handrail: unknown
   inspectionDoor: unknown
   nameplate: unknown
   sheetCover: unknown
@@ -264,6 +267,9 @@ export const DSL_ALLOWED_GLOBALS: ReadonlyArray<keyof DSLGlobalEnv> = [
   'motor',
   'gearbox',
   'bearingBlock',
+  'platform',
+  'ladder',
+  'handrail',
   'inspectionDoor',
   'nameplate',
   'sheetCover',

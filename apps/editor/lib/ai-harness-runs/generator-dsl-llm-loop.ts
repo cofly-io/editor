@@ -36,6 +36,9 @@ const DSL_EQUIPMENT_API_SUMMARY = `
   motor({ id, target?, side?, position?, diameter?, length?, material?, color? }) — ribbed industrial drive motor, end caps, terminal box and feet
   gearbox({ id, target?, side?, position?, length?, width?, height?, material?, color? }) — cast gearbox housing with shafts, feet, cover bolts and nameplate
   bearingBlock({ id, target?, side?, position?, width?, height?, depth?, material?, color? }) — pillow bearing block with bearing ring, shaft hint and mounting bolts
+  platform({ id, target?, side?, length?, width?, height?, thickness?, legCount?, material?, color? }) — service platform with grating, edge beams and support legs
+  ladder({ id, target?, side?, height?, width?, rungCount?, material?, color? }) — access ladder with side rails and repeated rungs
+  handrail({ id, target?, side?, length?, width?, height?, postCount?, material?, color? }) — handrail with top rail, mid rail and posts
   inspectionDoor({ id, target?, side?, count?, width?, height?, material?, color? }) — door panels, handles and hinge strips
   nameplate({ id, target?, side?, width?, height?, text? }) — small equipment nameplate
   sheetCover({ id, target?, side?, length?, width?, height?, thickness?, clearance?, material?, color? }) — rounded sheet-metal cover with stiffeners
@@ -146,7 +149,9 @@ const DSL_RULES = `
     nameplate(). Process or factory devices should use sheetCover(),
     flangePort(), pipeRun(), and controlCabinet() for covers, nozzles,
     piping and controls. Pump skids should use skidBase(), pumpCasing(),
-    motor(), gearbox(), flangePort(), pipeRun(), sheetCover(), and nameplate(). Only add
+    motor(), gearbox(), flangePort(), pipeRun(), sheetCover(), and nameplate().
+    Tall vessels, hoppers, dust collectors and serviceable equipment should use
+    platform(), ladder(), and handrail() for access details. Only add
     raw part(..., box/cylinder/...) for missing details that the semantic
     constructor does not cover.
 `.trim()
@@ -200,7 +205,7 @@ export function extractDslSource(reply: string): string | null {
     // No fence: drop leading prose lines until the first DSL-looking line.
     const lines = text.split('\n')
     const start = lines.findIndex((l) =>
-      /^\s*(const|function|part\(|equipment\(|belt\(|rollerArray\(|boxFrame\(|guardCover\(|motor\(|gearbox\(|bearingBlock\(|inspectionDoor\(|nameplate\(|sheetCover\(|flangePort\(|pipeRun\(|controlCabinet\(|skidBase\(|pumpCasing\(|for\s*\(|if\s*\(|hinge\(|grid\(|connect\(|let\b)/.test(
+      /^\s*(const|function|part\(|equipment\(|belt\(|rollerArray\(|boxFrame\(|guardCover\(|motor\(|gearbox\(|bearingBlock\(|platform\(|ladder\(|handrail\(|inspectionDoor\(|nameplate\(|sheetCover\(|flangePort\(|pipeRun\(|controlCabinet\(|skidBase\(|pumpCasing\(|for\s*\(|if\s*\(|hinge\(|grid\(|connect\(|let\b)/.test(
         l,
       ),
     )
@@ -209,7 +214,7 @@ export function extractDslSource(reply: string): string | null {
   }
   // Sanity: must reference at least one whitelisted global.
   if (
-    !/\b(part|params|box|cylinder|sphere|cone|frustum|torus|lathe|extrude|sweep|equipment|belt|rollerArray|boxFrame|guardCover|motor|gearbox|bearingBlock|inspectionDoor|nameplate|sheetCover|flangePort|pipeRun|controlCabinet|skidBase|pumpCasing)\s*\(/.test(
+    !/\b(part|params|box|cylinder|sphere|cone|frustum|torus|lathe|extrude|sweep|equipment|belt|rollerArray|boxFrame|guardCover|motor|gearbox|bearingBlock|platform|ladder|handrail|inspectionDoor|nameplate|sheetCover|flangePort|pipeRun|controlCabinet|skidBase|pumpCasing)\s*\(/.test(
       text,
     )
   ) {

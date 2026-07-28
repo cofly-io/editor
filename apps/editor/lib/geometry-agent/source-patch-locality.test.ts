@@ -83,4 +83,22 @@ bearingBlock({ id: 'rear_bearing', target: 'belt', side: 'right', position: 'rea
     expect(review.allowedFunctions).toEqual(expect.arrayContaining(['gearbox', 'bearingBlock']))
     expect(review.addedIds).toEqual(['gearbox', 'rear_bearing'])
   })
+
+  test('allows adding platform access details as local serviceability details', () => {
+    const review = reviewGeometryAgentPatchLocality({
+      instruction: 'add a service platform with ladder and handrail',
+      beforeSource: CONVEYOR_SOURCE,
+      afterSource: `${CONVEYOR_SOURCE}
+platform({ id: 'service_platform', target: 'frame', side: 'front' });
+ladder({ id: 'access_ladder', target: 'service_platform', side: 'front' });
+handrail({ id: 'platform_handrail', target: 'service_platform', side: 'all' });
+`,
+    })
+
+    expect(review.passed).toBe(true)
+    expect(review.allowedFunctions).toEqual(
+      expect.arrayContaining(['platform', 'ladder', 'handrail']),
+    )
+    expect(review.addedIds).toEqual(['access_ladder', 'platform_handrail', 'service_platform'])
+  })
 })

@@ -5,9 +5,12 @@ import {
   buildFlangePort,
   buildGearbox,
   buildGuardCover,
+  buildHandrail,
   buildInspectionDoor,
+  buildLadder,
   buildMotor,
   buildPipeRun,
+  buildPlatform,
   buildPumpCasing,
   buildSheetCover,
   buildSkidBase,
@@ -82,6 +85,39 @@ describe('equipment SDK realism builders', () => {
     const ring = parts.find((p) => p.semanticRole === 'bearing_ring')
     expect(ring?.kind).toBe('cylinder')
     expect(ring?.params.radialSegments).toBeGreaterThanOrEqual(48)
+  })
+
+  test('platform builds grating, edge beams and support legs', () => {
+    const parts = buildPlatform({ id: 'service_platform', target: 'belt', side: 'front' }, context)
+
+    expect(parts.some((p) => p.semanticRole === 'platform_grating')).toBe(true)
+    expect(parts.filter((p) => p.semanticRole === 'platform_edge_beam').length).toBe(2)
+    expect(
+      parts.filter((p) => p.semanticRole === 'platform_support_leg').length,
+    ).toBeGreaterThanOrEqual(4)
+    expect(parts[0]?.material).toBe('wire_mesh')
+    expect(parts[0]?.params.cornerRadius).toBeGreaterThan(0)
+  })
+
+  test('ladder builds side rails and repeated rungs at human scale', () => {
+    const parts = buildLadder({ id: 'access_ladder', target: 'belt', side: 'front' }, context)
+
+    expect(parts.filter((p) => p.semanticRole === 'ladder_side_rail').length).toBe(2)
+    expect(parts.filter((p) => p.semanticRole === 'ladder_rung').length).toBeGreaterThanOrEqual(4)
+    expect(
+      parts.find((p) => p.semanticRole === 'ladder_rung')?.params.radialSegments,
+    ).toBeGreaterThanOrEqual(20)
+  })
+
+  test('handrail builds top rails, mid rails and posts', () => {
+    const parts = buildHandrail({ id: 'handrail', target: 'belt', side: 'front' }, context)
+
+    expect(parts.some((p) => p.semanticRole === 'handrail_top_rail')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'handrail_mid_rail')).toBe(true)
+    expect(parts.filter((p) => p.semanticRole === 'handrail_post').length).toBeGreaterThanOrEqual(2)
+    expect(
+      parts.find((p) => p.semanticRole === 'handrail_top_rail')?.params.radialSegments,
+    ).toBeGreaterThanOrEqual(24)
   })
 
   test('inspectionDoor creates panel handle and hinge details instead of anonymous boxes', () => {

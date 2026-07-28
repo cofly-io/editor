@@ -189,6 +189,33 @@ export type BearingBlockParams = CommonParams & {
   depth?: number
 }
 
+export type PlatformParams = CommonParams & {
+  target?: string
+  side?: 'front' | 'back' | 'left' | 'right'
+  length?: number
+  width?: number
+  height?: number
+  thickness?: number
+  legCount?: number
+}
+
+export type LadderParams = CommonParams & {
+  target?: string
+  side?: 'front' | 'back' | 'left' | 'right'
+  height?: number
+  width?: number
+  rungCount?: number
+}
+
+export type HandrailParams = CommonParams & {
+  target?: string
+  side?: 'front' | 'back' | 'left' | 'right' | 'all'
+  length?: number
+  width?: number
+  height?: number
+  postCount?: number
+}
+
 const round = (value: number) => Number(value.toFixed(4))
 
 const clamp = (value: unknown, fallback: number, min: number, max: number): number => {
@@ -801,6 +828,224 @@ export function buildBearingBlock(
         params: { radius: height * 0.045, height: height * 0.06, radialSegments: 20 },
       }),
     )
+  }
+  return parts
+}
+
+export function buildPlatform(
+  params: PlatformParams,
+  context: EquipmentBuildContext = {},
+): EquipmentPartSpec[] {
+  const target = context.resolveTarget?.(params.target)
+  const side = params.side ?? 'front'
+  const length = clamp(params.length, target ? target.size[0] * 0.7 : 1.8, 0.4, 12)
+  const width = clamp(params.width, target ? Math.min(target.size[2] * 0.7, 1.2) : 0.9, 0.35, 3)
+  const height = clamp(
+    params.height,
+    target ? target.center[1] + target.size[1] * 0.58 : 1.2,
+    0.3,
+    8,
+  )
+  const thickness = clamp(params.thickness, 0.045, 0.018, 0.16)
+  const legCount = Math.round(
+    clamp(params.legCount, Math.max(4, Math.ceil(length / 1.4) * 2), 4, 16),
+  )
+  const base = target?.center ?? ([0, height, 0] satisfies Vec3)
+  const xSign = side === 'left' ? -1 : side === 'right' ? 1 : 0
+  const zSign = side === 'back' ? -1 : side === 'front' ? 1 : 0
+  const center: Vec3 = [
+    base[0] + xSign * ((target?.size[0] ?? length) / 2 + width / 2 + 0.08),
+    height,
+    base[2] + zSign * ((target?.size[2] ?? width) / 2 + width / 2 + 0.08),
+  ]
+  const longAxis = side === 'left' || side === 'right' ? 'z' : 'x'
+  const deckLength = longAxis === 'x' ? length : width
+  const deckWidth = longAxis === 'x' ? width : length
+  const parts: EquipmentPartSpec[] = [
+    spec({
+      id: `${params.id}.grating_panel`,
+      kind: 'box',
+      semanticRole: 'platform_grating',
+      position: center,
+      size: [deckLength, thickness, deckWidth],
+      material: params.material ?? 'wire_mesh',
+      color: params.color,
+      params: {
+        length: deckLength,
+        width: deckWidth,
+        height: thickness,
+        cornerRadius: thickness * 0.18,
+        cornerSegments: 4,
+      },
+    }),
+  ]
+  const rail = Math.max(thickness * 0.9, 0.035)
+  for (const offset of [-deckWidth / 2, deckWidth / 2]) {
+    parts.push(
+      spec({
+        id: `${params.id}.edge_beam.${offset < 0 ? 'inner' : 'outer'}`,
+        kind: 'box',
+        semanticRole: 'platform_edge_beam',
+        position: [center[0], center[1] - thickness * 0.65, center[2] + offset],
+        material: 'yellow_safety',
+        params: {
+          length: deckLength,
+          width: rail,
+          height: rail,
+          cornerRadius: rail * 0.18,
+          cornerSegments: 4,
+        },
+      }),
+    )
+  }
+  const legPairs = Math.max(2, Math.floor(legCount / 2))
+  for (let i = 0; i < legPairs; i += 1) {
+    const t = legPairs === 1 ? 0 : i / (legPairs - 1)
+    const along = -deckLength / 2 + deckLength * t
+    for (const sideOffset of [-deckWidth / 2, deckWidth / 2]) {
+      parts.push(
+        spec({
+          id: `${params.id}.support_leg.${i}.${sideOffset < 0 ? 'inner' : 'outer'}`,
+          kind: 'box',
+          semanticRole: 'platform_support_leg',
+          position: [center[0] + along, center[1] / 2, center[2] + sideOffset],
+          material: 'aluminum_frame',
+          params: {
+            length: rail,
+            width: rail,
+            height: center[1],
+            cornerRadius: rail * 0.16,
+            cornerSegments: 4,
+          },
+        }),
+      )
+    }
+  }
+  return parts
+}
+
+export function buildLadder(
+  params: LadderParams,
+  context: EquipmentBuildContext = {},
+): EquipmentPartSpec[] {
+  const target = context.resolveTarget?.(params.target)
+  const side = params.side ?? 'front'
+  const height = clamp(params.height, target ? target.size[1] * 0.9 : 2.2, 0.8, 12)
+  const width = clamp(params.width, 0.48, 0.32, 0.75)
+  const rungCount = Math.round(
+    clamp(params.rungCount, Math.max(4, Math.ceil(height / 0.28)), 4, 48),
+  )
+  const base = target?.center ?? ([0, height / 2, 0] satisfies Vec3)
+  const xSign = side === 'left' ? -1 : side === 'right' ? 1 : 0
+  const zSign = side === 'back' ? -1 : side === 'front' ? 1 : 0
+  const center: Vec3 = [
+    base[0] + xSign * ((target?.size[0] ?? 1) / 2 + 0.08),
+    height / 2,
+    base[2] + zSign * ((target?.size[2] ?? 1) / 2 + 0.08),
+  ]
+  const railRadius = 0.025
+  const horizontalAxis = side === 'left' || side === 'right' ? 'z' : 'x'
+  const parts: EquipmentPartSpec[] = []
+  for (const offset of [-width / 2, width / 2]) {
+    parts.push(
+      spec({
+        id: `${params.id}.side_rail.${offset < 0 ? 'left' : 'right'}`,
+        kind: 'cylinder',
+        semanticRole: 'ladder_side_rail',
+        position:
+          horizontalAxis === 'x'
+            ? [center[0] + offset, center[1], center[2]]
+            : [center[0], center[1], center[2] + offset],
+        material: params.material ?? 'yellow_safety',
+        color: params.color,
+        params: { radius: railRadius, height, radialSegments: 24 },
+      }),
+    )
+  }
+  for (let i = 0; i < rungCount; i += 1) {
+    const y = 0.18 + (height - 0.36) * (i / Math.max(1, rungCount - 1))
+    parts.push(
+      spec({
+        id: `${params.id}.rung.${i}`,
+        kind: 'cylinder',
+        semanticRole: 'ladder_rung',
+        position: [center[0], y, center[2]],
+        rotation: { axis: horizontalAxis === 'x' ? 'z' : 'x', degrees: 90 },
+        material: params.material ?? 'yellow_safety',
+        color: params.color,
+        params: { radius: railRadius * 0.8, height: width, radialSegments: 20 },
+      }),
+    )
+  }
+  return parts
+}
+
+export function buildHandrail(
+  params: HandrailParams,
+  context: EquipmentBuildContext = {},
+): EquipmentPartSpec[] {
+  const target = context.resolveTarget?.(params.target)
+  const side = params.side ?? 'front'
+  const length = clamp(params.length, target ? target.size[0] : 1.8, 0.4, 16)
+  const width = clamp(params.width, target ? target.size[2] : 0.9, 0.3, 6)
+  const height = clamp(params.height, 1.1, 0.8, 1.3)
+  const postCount = Math.round(
+    clamp(params.postCount, Math.max(2, Math.ceil(length / 1.1) + 1), 2, 24),
+  )
+  const base = target?.center ?? ([0, 1.2, 0] satisfies Vec3)
+  const yBase = target ? target.center[1] + target.size[1] / 2 : base[1]
+  const railY = yBase + height
+  const radius = 0.025
+  const sides = side === 'all' ? (['front', 'back', 'left', 'right'] as const) : ([side] as const)
+  const parts: EquipmentPartSpec[] = []
+  for (const s of sides) {
+    const isX = s === 'front' || s === 'back'
+    const railLength = isX ? length : width
+    const fixedOffset = (isX ? width : length) / 2
+    const sign = s === 'back' || s === 'left' ? -1 : 1
+    const center: Vec3 = isX
+      ? [base[0], railY, base[2] + sign * fixedOffset]
+      : [base[0] + sign * fixedOffset, railY, base[2]]
+    parts.push(
+      spec({
+        id: `${params.id}.${s}.top_rail`,
+        kind: 'cylinder',
+        semanticRole: 'handrail_top_rail',
+        position: center,
+        rotation: { axis: isX ? 'z' : 'x', degrees: 90 },
+        material: params.material ?? 'yellow_safety',
+        color: params.color,
+        params: { radius, height: railLength, radialSegments: 24 },
+      }),
+      spec({
+        id: `${params.id}.${s}.mid_rail`,
+        kind: 'cylinder',
+        semanticRole: 'handrail_mid_rail',
+        position: [center[0], yBase + height * 0.55, center[2]],
+        rotation: { axis: isX ? 'z' : 'x', degrees: 90 },
+        material: params.material ?? 'yellow_safety',
+        color: params.color,
+        params: { radius: radius * 0.8, height: railLength, radialSegments: 20 },
+      }),
+    )
+    for (let i = 0; i < postCount; i += 1) {
+      const t = postCount === 1 ? 0 : i / (postCount - 1)
+      const along = -railLength / 2 + railLength * t
+      const postPosition: Vec3 = isX
+        ? [base[0] + along, yBase + height / 2, center[2]]
+        : [center[0], yBase + height / 2, base[2] + along]
+      parts.push(
+        spec({
+          id: `${params.id}.${s}.post.${i}`,
+          kind: 'cylinder',
+          semanticRole: 'handrail_post',
+          position: postPosition,
+          material: params.material ?? 'yellow_safety',
+          color: params.color,
+          params: { radius: radius * 0.9, height, radialSegments: 20 },
+        }),
+      )
+    }
   }
   return parts
 }
