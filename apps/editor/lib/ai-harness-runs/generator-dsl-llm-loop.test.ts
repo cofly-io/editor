@@ -133,6 +133,13 @@ describe('extractDslSource', () => {
     )
     expect(out?.startsWith('belt(')).toBe(true)
   })
+
+  it('accepts broader industrial SDK constructors as DSL source', () => {
+    const out = extractDslSource(
+      "Here is the source:\n\ncontrolCabinet({ id: 'cabinet' });\npipeRun({ id: 'pipe' });",
+    )
+    expect(out?.startsWith('controlCabinet(')).toBe(true)
+  })
 })
 
 describe('runDslSourceLoop', () => {
@@ -322,6 +329,8 @@ describe('prompt + repair message content', () => {
     expect(prompt).toContain('DSL API (version 1.1.0)')
     expect(prompt).toContain('rotateAround')
     expect(prompt).toContain('guardCover')
+    expect(prompt).toContain('flangePort')
+    expect(prompt).toContain('controlCabinet')
     expect(prompt).toContain('prefer semantic constructors')
     expect(prompt).toContain('keyboard.key.r')
     expect(prompt).toContain(`Prompt version: ${DSL_AUTHOR_PROMPT_VERSION}`)

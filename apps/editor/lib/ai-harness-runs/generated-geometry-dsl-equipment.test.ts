@@ -58,4 +58,27 @@ describe('compileDsl — equipment semantic constructors', () => {
     expect(cover).toBeDefined()
     expect(door?.transform.position[1]).toBeGreaterThan(1)
   })
+
+  test('compiles broader industrial SDK constructors through the same DSL pipeline', () => {
+    const result = compileDsl(`
+      controlCabinet({ id: 'control_cabinet', width: 0.7, height: 1.4, depth: 0.35 });
+      sheetCover({ id: 'cabinet_top_cover', target: 'control_cabinet', side: 'top' });
+      flangePort({ id: 'cabinet_inlet', target: 'control_cabinet', side: 'front', nominalDiameter: 0.16 });
+      pipeRun({ id: 'process_pipe', from: [-1, 1, 0.4], to: [1, 1, 0.4], radius: 0.05 });
+    `)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const roles = new Set(result.ir.parts.map((p) => p.semanticRole))
+    expect(roles.has('control_cabinet')).toBe(true)
+    expect(roles.has('control_panel_glass')).toBe(true)
+    expect(roles.has('sheet_cover_panel')).toBe(true)
+    expect(roles.has('flange_port')).toBe(true)
+    expect(roles.has('pipe_run')).toBe(true)
+    expect(roles.has('pipe_flange')).toBe(true)
+
+    const pipe = result.ir.parts.find((p) => p.semanticRole === 'pipe_run')
+    expect(pipe?.geometry.recipeId).toBe('primitive.sweep')
+    expect(pipe?.geometry.params.radialSegments).toBeGreaterThanOrEqual(32)
+  })
 })

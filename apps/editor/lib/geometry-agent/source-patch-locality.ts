@@ -11,6 +11,10 @@ const EQUIPMENT_CALLS = [
   'motor',
   'inspectionDoor',
   'nameplate',
+  'sheetCover',
+  'flangePort',
+  'pipeRun',
+  'controlCabinet',
 ] as const
 
 type EquipmentCallName = (typeof EQUIPMENT_CALLS)[number]
@@ -163,6 +167,16 @@ function allowedFunctionsForInstruction(instruction: string): EquipmentCallName[
   }
   if (/(框架|机架|frame|支腿|leg|rail)/i.test(text)) {
     allowed.add('boxFrame')
+  }
+  if (/(sheet|cover|guard|罩|防护|护罩)/i.test(text)) {
+    allowed.add('sheetCover')
+  }
+  if (/(pipe|piping|flange|port|nozzle|inlet|outlet|管道|法兰|进口|出口)/i.test(text)) {
+    allowed.add('pipeRun')
+    allowed.add('flangePort')
+  }
+  if (/(cabinet|control|panel|electrical|plc|电柜|控制|控制柜|面板)/i.test(text)) {
+    allowed.add('controlCabinet')
   }
   return Array.from(allowed)
 }

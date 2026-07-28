@@ -51,4 +51,21 @@ describe('geometry-agent source patch locality', () => {
     expect(review.passed).toBe(true)
     expect(review.addedIds).toEqual(['right_doors'])
   })
+
+  test('allows local edits to broader industrial SDK calls', () => {
+    const source = `${CONVEYOR_SOURCE}
+controlCabinet({ id: 'control_cabinet', target: 'frame', side: 'right', width: 0.7 });
+pipeRun({ id: 'process_pipe', from: [-1, 1, 0], to: [1, 1, 0], radius: 0.05 });
+`
+    const review = reviewGeometryAgentPatchLocality({
+      instruction: 'make the control cabinet wider and pipe larger',
+      beforeSource: source,
+      afterSource: source
+        .replace('width: 0.7 });', 'width: 0.9 });')
+        .replace('radius: 0.05', 'radius: 0.08'),
+    })
+
+    expect(review.passed).toBe(true)
+    expect(review.changedIds).toEqual(['control_cabinet', 'process_pipe'])
+  })
 })

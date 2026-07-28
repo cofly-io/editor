@@ -47,4 +47,23 @@ describe('geometry-agent source change feedback', () => {
     expect(feedback.added).toEqual([{ id: 'right_doors', functionName: 'inspectionDoor' }])
     expect(feedback.text).toContain('新增：inspectionDoor(right_doors)')
   })
+
+  test('tracks broader industrial SDK source changes', () => {
+    const beforeSource = `${SOURCE}
+controlCabinet({ id: 'control_cabinet', target: 'frame', side: 'right', width: 0.7 });
+pipeRun({ id: 'process_pipe', from: [-1, 1, 0], to: [1, 1, 0], radius: 0.05 });
+`
+    const feedback = summarizeGeometryAgentSourceChange({
+      beforeSource,
+      afterSource: beforeSource
+        .replace('width: 0.7 });', 'width: 0.9 });')
+        .replace('radius: 0.05', 'radius: 0.08'),
+      instruction: 'make the control cabinet wider and pipe larger',
+    })
+
+    expect(feedback.changed.map((change) => [change.functionName, change.id])).toEqual([
+      ['controlCabinet', 'control_cabinet'],
+      ['pipeRun', 'process_pipe'],
+    ])
+  })
 })

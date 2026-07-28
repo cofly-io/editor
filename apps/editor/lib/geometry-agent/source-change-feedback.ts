@@ -7,6 +7,10 @@ const EQUIPMENT_CALLS = [
   'motor',
   'inspectionDoor',
   'nameplate',
+  'sheetCover',
+  'flangePort',
+  'pipeRun',
+  'controlCabinet',
 ] as const
 
 type EquipmentCallName = (typeof EQUIPMENT_CALLS)[number]
@@ -31,7 +35,16 @@ export type GeometryAgentChangeFeedback = {
   text: string
 }
 
-const IMPORTANT_IDS = ['belt', 'frame', 'rollers', 'drive_motor', 'top_guard_cover', 'nameplate']
+const IMPORTANT_IDS = [
+  'belt',
+  'frame',
+  'rollers',
+  'drive_motor',
+  'top_guard_cover',
+  'nameplate',
+  'control_cabinet',
+  'process_pipe',
+]
 
 export function summarizeGeometryAgentSourceChange(input: {
   beforeSource: string

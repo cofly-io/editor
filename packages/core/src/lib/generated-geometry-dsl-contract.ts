@@ -227,6 +227,10 @@ export type DSLGlobalEnv = {
   motor: unknown
   inspectionDoor: unknown
   nameplate: unknown
+  sheetCover: unknown
+  flangePort: unknown
+  pipeRun: unknown
+  controlCabinet: unknown
   // Assembly
   part: unknown
   hinge: unknown
@@ -256,6 +260,10 @@ export const DSL_ALLOWED_GLOBALS: ReadonlyArray<keyof DSLGlobalEnv> = [
   'motor',
   'inspectionDoor',
   'nameplate',
+  'sheetCover',
+  'flangePort',
+  'pipeRun',
+  'controlCabinet',
   'part',
   'hinge',
   'grid',

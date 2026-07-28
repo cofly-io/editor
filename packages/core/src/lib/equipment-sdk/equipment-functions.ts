@@ -126,6 +126,38 @@ export type NameplateParams = CommonParams & {
   height?: number
 }
 
+export type SheetCoverParams = CommonParams & {
+  target?: string
+  side?: 'top' | 'front' | 'back' | 'left' | 'right'
+  length?: number
+  width?: number
+  height?: number
+  thickness?: number
+  clearance?: number
+}
+
+export type FlangePortParams = CommonParams & {
+  target?: string
+  side?: 'front' | 'back' | 'left' | 'right' | 'top'
+  nominalDiameter?: number
+  length?: number
+}
+
+export type PipeRunParams = CommonParams & {
+  from?: Vec3
+  to?: Vec3
+  radius?: number
+  includeFlanges?: boolean
+}
+
+export type ControlCabinetParams = CommonParams & {
+  target?: string
+  side?: 'left' | 'right' | 'front' | 'back'
+  width?: number
+  height?: number
+  depth?: number
+}
+
 const round = (value: number) => Number(value.toFixed(4))
 
 const clamp = (value: unknown, fallback: number, min: number, max: number): number => {
@@ -606,6 +638,251 @@ export function buildNameplate(
       material: params.material ?? 'stainless_steel',
       color: params.color,
       params: { length: width, width: 0.008, height, cornerRadius: 0.006, cornerSegments: 4 },
+    }),
+  ]
+}
+
+export function buildSheetCover(
+  params: SheetCoverParams,
+  context: EquipmentBuildContext = {},
+): EquipmentPartSpec[] {
+  const target = context.resolveTarget?.(params.target)
+  const side = params.side ?? 'top'
+  const clearance = clamp(params.clearance, 0.045, 0.005, 0.35)
+  const length = clamp(params.length, target ? target.size[0] * 1.04 : 1.2, 0.12, 12)
+  const width = clamp(params.width, target ? target.size[2] * 1.04 : 0.7, 0.08, 6)
+  const height = clamp(params.height, target ? target.size[1] * 1.04 : 0.5, 0.08, 5)
+  const thickness = clamp(params.thickness, 0.018, 0.004, 0.08)
+  const rail = Math.max(thickness * 1.5, 0.018)
+  const material = params.material ?? 'painted_steel'
+  const base = target?.center ?? ([0, 1, 0] satisfies Vec3)
+  const x = base[0]
+  const y = side === 'top' ? base[1] + (target?.size[1] ?? height) / 2 + clearance : base[1]
+  const z =
+    side === 'front'
+      ? base[2] + (target?.size[2] ?? width) / 2 + clearance
+      : side === 'back'
+        ? base[2] - (target?.size[2] ?? width) / 2 - clearance
+        : base[2]
+  const panelSize: Vec3 =
+    side === 'top'
+      ? [length, thickness, width]
+      : side === 'left' || side === 'right'
+        ? [length, height, thickness]
+        : [length, height, thickness]
+  const panelPosition: Vec3 =
+    side === 'left'
+      ? [x, y, base[2] - (target?.size[2] ?? width) / 2 - clearance]
+      : side === 'right'
+        ? [x, y, base[2] + (target?.size[2] ?? width) / 2 + clearance]
+        : [x, y, z]
+  const panelWidth = side === 'top' ? width : thickness
+  const cr = Math.min(Math.min(length, width, height) * 0.025, 0.035)
+  const parts: EquipmentPartSpec[] = [
+    spec({
+      id: `${params.id}.panel`,
+      kind: 'box',
+      semanticRole: 'sheet_cover_panel',
+      position: panelPosition,
+      size: panelSize,
+      material,
+      color: params.color,
+      params: {
+        length: panelSize[0],
+        width: panelWidth,
+        height: panelSize[1],
+        cornerRadius: cr,
+        cornerSegments: 6,
+      },
+    }),
+  ]
+  for (const dx of [-length / 2, length / 2]) {
+    parts.push(
+      spec({
+        id: `${params.id}.stiffener.${dx < 0 ? 'left' : 'right'}`,
+        kind: 'box',
+        semanticRole: 'cover_stiffener',
+        position: [panelPosition[0] + dx, panelPosition[1] - thickness * 0.9, panelPosition[2]],
+        material: 'aluminum_frame',
+        params: {
+          length: rail,
+          width: side === 'top' ? width : rail,
+          height: rail,
+          cornerRadius: rail * 0.18,
+          cornerSegments: 4,
+        },
+      }),
+    )
+  }
+  return parts
+}
+
+export function buildFlangePort(
+  params: FlangePortParams,
+  context: EquipmentBuildContext = {},
+): EquipmentPartSpec[] {
+  const target = context.resolveTarget?.(params.target)
+  const side = params.side ?? 'front'
+  const diameter = clamp(params.nominalDiameter, 0.18, 0.04, 1.4)
+  const length = clamp(params.length, diameter * 0.9, 0.04, 1.2)
+  const base = target?.center ?? ([0, 0.9, 0] satisfies Vec3)
+  const half = target?.size ?? ([1, 1, 1] satisfies Vec3)
+  const zSign = side === 'back' ? -1 : 1
+  const xSign = side === 'left' ? -1 : 1
+  const position: Vec3 =
+    side === 'left' || side === 'right'
+      ? [base[0] + xSign * (half[0] / 2 + length / 2), base[1], base[2]]
+      : side === 'top'
+        ? [base[0], base[1] + half[1] / 2 + length / 2, base[2]]
+        : [base[0], base[1], base[2] + zSign * (half[2] / 2 + length / 2)]
+  const rotation =
+    side === 'left' || side === 'right'
+      ? ({ axis: 'z', degrees: 90 } as const)
+      : side === 'top'
+        ? undefined
+        : ({ axis: 'x', degrees: 90 } as const)
+  return [
+    spec({
+      id: `${params.id}.neck`,
+      kind: 'cylinder',
+      semanticRole: 'flange_port',
+      position,
+      ...(rotation ? { rotation } : {}),
+      material: params.material ?? 'stainless_steel',
+      color: params.color,
+      params: { radius: diameter / 2, height: length, radialSegments: 48 },
+    }),
+    spec({
+      id: `${params.id}.flange_ring`,
+      kind: 'cylinder',
+      semanticRole: 'flange_ring',
+      position:
+        side === 'left' || side === 'right'
+          ? [position[0] + xSign * length * 0.45, position[1], position[2]]
+          : side === 'top'
+            ? [position[0], position[1] + length * 0.45, position[2]]
+            : [position[0], position[1], position[2] + zSign * length * 0.45],
+      ...(rotation ? { rotation } : {}),
+      material: 'cast_iron',
+      params: { radius: diameter * 0.72, height: diameter * 0.14, radialSegments: 56 },
+    }),
+  ]
+}
+
+export function buildPipeRun(params: PipeRunParams): EquipmentPartSpec[] {
+  const from = params.from ?? ([-1, 1, 0] satisfies Vec3)
+  const to = params.to ?? ([1, 1, 0] satisfies Vec3)
+  const radius = clamp(params.radius, 0.06, 0.015, 0.45)
+  const parts: EquipmentPartSpec[] = [
+    spec({
+      id: `${params.id}.pipe`,
+      kind: 'sweep',
+      semanticRole: 'pipe_run',
+      position: [0, 0, 0],
+      material: params.material ?? 'stainless_steel',
+      color: params.color,
+      params: { path: [from, to], radius, radialSegments: 32, tubularSegments: 24 },
+    }),
+  ]
+  if (params.includeFlanges ?? true) {
+    for (const [label, p] of [
+      ['from', from],
+      ['to', to],
+    ] as const) {
+      parts.push(
+        spec({
+          id: `${params.id}.flange.${label}`,
+          kind: 'cylinder',
+          semanticRole: 'pipe_flange',
+          position: p,
+          rotation: { axis: 'x', degrees: 90 },
+          material: 'cast_iron',
+          params: { radius: radius * 1.55, height: radius * 0.45, radialSegments: 48 },
+        }),
+      )
+    }
+  }
+  return parts
+}
+
+export function buildControlCabinet(
+  params: ControlCabinetParams,
+  context: EquipmentBuildContext = {},
+): EquipmentPartSpec[] {
+  const target = context.resolveTarget?.(params.target)
+  const width = clamp(params.width, 0.72, 0.25, 2.4)
+  const height = clamp(params.height, 1.4, 0.45, 3)
+  const depth = clamp(params.depth, 0.36, 0.12, 1.2)
+  const side = params.side ?? 'right'
+  const base = target?.center ?? ([0, height / 2, 0] satisfies Vec3)
+  const x =
+    side === 'left'
+      ? base[0] - (target?.size[0] ?? 1) / 2 - width / 2 - 0.12
+      : side === 'right'
+        ? base[0] + (target?.size[0] ?? 1) / 2 + width / 2 + 0.12
+        : base[0]
+  const z =
+    side === 'front'
+      ? base[2] + (target?.size[2] ?? 1) / 2 + depth / 2 + 0.12
+      : side === 'back'
+        ? base[2] - (target?.size[2] ?? 1) / 2 - depth / 2 - 0.12
+        : base[2]
+  const y = height / 2
+  return [
+    spec({
+      id: `${params.id}.body`,
+      kind: 'box',
+      semanticRole: 'control_cabinet',
+      position: [x, y, z],
+      size: [width, height, depth],
+      material: params.material ?? 'painted_steel',
+      color: params.color,
+      params: { length: width, width: depth, height, cornerRadius: 0.035, cornerSegments: 8 },
+    }),
+    spec({
+      id: `${params.id}.door_seam`,
+      kind: 'box',
+      semanticRole: 'cabinet_door_seam',
+      position: [x, y, z + depth / 2 + 0.006],
+      material: 'dark_fastener',
+      params: { length: 0.01, width: 0.008, height: height * 0.86, cornerRadius: 0.002 },
+    }),
+    spec({
+      id: `${params.id}.window`,
+      kind: 'box',
+      semanticRole: 'control_panel_glass',
+      position: [x - width * 0.18, y + height * 0.18, z + depth / 2 + 0.012],
+      material: 'control_panel_glass',
+      params: {
+        length: width * 0.32,
+        width: 0.012,
+        height: height * 0.16,
+        cornerRadius: 0.01,
+        cornerSegments: 5,
+      },
+    }),
+    spec({
+      id: `${params.id}.handle`,
+      kind: 'cylinder',
+      semanticRole: 'cabinet_handle',
+      position: [x + width * 0.32, y, z + depth / 2 + 0.03],
+      rotation: { axis: 'x', degrees: 90 },
+      material: 'dark_fastener',
+      params: { radius: 0.014, height: height * 0.22, radialSegments: 24 },
+    }),
+    spec({
+      id: `${params.id}.nameplate`,
+      kind: 'box',
+      semanticRole: 'equipment_nameplate',
+      position: [x, y - height * 0.28, z + depth / 2 + 0.014],
+      material: 'stainless_steel',
+      params: {
+        length: width * 0.38,
+        width: 0.008,
+        height: height * 0.07,
+        cornerRadius: 0.006,
+        cornerSegments: 4,
+      },
     }),
   ]
 }

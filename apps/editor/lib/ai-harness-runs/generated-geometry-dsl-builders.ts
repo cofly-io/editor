@@ -26,21 +26,29 @@ import {
   type BoxFrameParams,
   buildBelt,
   buildBoxFrame,
+  buildControlCabinet,
   buildEquipment,
+  buildFlangePort,
   buildGuardCover,
   buildInspectionDoor,
   buildMotor,
   buildNameplate,
+  buildPipeRun,
   buildRollerArray,
+  buildSheetCover,
+  type ControlCabinetParams,
   EQUIPMENT_MATERIALS,
   type EquipmentBounds,
   type EquipmentBuildContext,
   type EquipmentPartSpec,
+  type FlangePortParams,
   type GuardCoverParams,
   type InspectionDoorParams,
   type MotorParams,
   type NameplateParams,
+  type PipeRunParams,
   type RollerArrayParams,
+  type SheetCoverParams,
 } from '../../../../packages/core/src/lib/equipment-sdk/equipment-functions'
 
 // ---------------------------------------------------------------------------
@@ -700,6 +708,13 @@ export function createDslApiBuilders(opts: CreateBuildersOptions) {
     inspectionDoor: (o: InspectionDoorParams) =>
       registerEquipmentSpecs(buildInspectionDoor(o, equipmentContext)),
     nameplate: (o: NameplateParams) => registerEquipmentSpecs(buildNameplate(o, equipmentContext)),
+    sheetCover: (o: SheetCoverParams) =>
+      registerEquipmentSpecs(buildSheetCover(o, equipmentContext)),
+    flangePort: (o: FlangePortParams) =>
+      registerEquipmentSpecs(buildFlangePort(o, equipmentContext)),
+    pipeRun: (o: PipeRunParams) => registerEquipmentSpecs(buildPipeRun(o)),
+    controlCabinet: (o: ControlCabinetParams) =>
+      registerEquipmentSpecs(buildControlCabinet(o, equipmentContext)),
 
     hinge: (o: {
       part: string
