@@ -68,4 +68,19 @@ pipeRun({ id: 'process_pipe', from: [-1, 1, 0], to: [1, 1, 0], radius: 0.05 });
     expect(review.passed).toBe(true)
     expect(review.changedIds).toEqual(['control_cabinet', 'process_pipe'])
   })
+
+  test('allows adding gearbox and bearing block as local drivetrain details', () => {
+    const review = reviewGeometryAgentPatchLocality({
+      instruction: 'add a gearbox and a bearing block near the rear drive shaft',
+      beforeSource: CONVEYOR_SOURCE,
+      afterSource: `${CONVEYOR_SOURCE}
+gearbox({ id: 'gearbox', target: 'belt', side: 'right', position: 'rear' });
+bearingBlock({ id: 'rear_bearing', target: 'belt', side: 'right', position: 'rear' });
+`,
+    })
+
+    expect(review.passed).toBe(true)
+    expect(review.allowedFunctions).toEqual(expect.arrayContaining(['gearbox', 'bearingBlock']))
+    expect(review.addedIds).toEqual(['gearbox', 'rear_bearing'])
+  })
 })

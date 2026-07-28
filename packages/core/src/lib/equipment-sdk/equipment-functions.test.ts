@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  buildBearingBlock,
   buildControlCabinet,
   buildFlangePort,
+  buildGearbox,
   buildGuardCover,
   buildInspectionDoor,
   buildMotor,
@@ -51,6 +53,35 @@ describe('equipment SDK realism builders', () => {
     const body = parts.find((p) => p.id === 'drive_motor.ribbed_body')
     expect(body?.kind).toBe('cylinder')
     expect(body?.params.radialSegments).toBeGreaterThanOrEqual(48)
+  })
+
+  test('gearbox builds cast housing with shafts, feet, cover bolts and nameplate', () => {
+    const parts = buildGearbox({ id: 'gearbox', target: 'belt', side: 'right' }, context)
+
+    expect(parts.length).toBeGreaterThanOrEqual(11)
+    expect(parts.some((p) => p.semanticRole === 'gearbox_housing')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'gearbox_input_shaft')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'gearbox_output_shaft')).toBe(true)
+    expect(parts.filter((p) => p.semanticRole === 'gearbox_mounting_foot').length).toBe(2)
+    expect(parts.filter((p) => p.semanticRole === 'gearbox_cover_bolt').length).toBe(4)
+
+    const housing = parts.find((p) => p.semanticRole === 'gearbox_housing')
+    expect(housing?.material).toBe('cast_iron')
+    expect(housing?.params.cornerRadius).toBeGreaterThan(0)
+  })
+
+  test('bearingBlock builds a pillow block with bearing ring, shaft and mounting bolts', () => {
+    const parts = buildBearingBlock({ id: 'bearing', target: 'belt', side: 'right' }, context)
+
+    expect(parts.length).toBeGreaterThanOrEqual(6)
+    expect(parts.some((p) => p.semanticRole === 'bearing_block')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'bearing_ring')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'bearing_shaft')).toBe(true)
+    expect(parts.filter((p) => p.semanticRole === 'bearing_mounting_bolt').length).toBe(2)
+
+    const ring = parts.find((p) => p.semanticRole === 'bearing_ring')
+    expect(ring?.kind).toBe('cylinder')
+    expect(ring?.params.radialSegments).toBeGreaterThanOrEqual(48)
   })
 
   test('inspectionDoor creates panel handle and hinge details instead of anonymous boxes', () => {

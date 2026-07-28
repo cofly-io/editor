@@ -225,6 +225,8 @@ export type DSLGlobalEnv = {
   rollerArray: unknown
   guardCover: unknown
   motor: unknown
+  gearbox: unknown
+  bearingBlock: unknown
   inspectionDoor: unknown
   nameplate: unknown
   sheetCover: unknown
@@ -260,6 +262,8 @@ export const DSL_ALLOWED_GLOBALS: ReadonlyArray<keyof DSLGlobalEnv> = [
   'rollerArray',
   'guardCover',
   'motor',
+  'gearbox',
+  'bearingBlock',
   'inspectionDoor',
   'nameplate',
   'sheetCover',

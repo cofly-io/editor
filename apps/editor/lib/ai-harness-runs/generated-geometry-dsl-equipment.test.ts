@@ -82,6 +82,28 @@ describe('compileDsl — equipment semantic constructors', () => {
     expect(pipe?.geometry.params.radialSegments).toBeGreaterThanOrEqual(32)
   })
 
+  test('compiles gearbox and bearing block constructors through the same DSL pipeline', () => {
+    const result = compileDsl(`
+      belt({ id: 'belt', length: 5.2, width: 0.68 });
+      gearbox({ id: 'gearbox', target: 'belt', side: 'right', position: 'rear' });
+      bearingBlock({ id: 'rear_bearing', target: 'belt', side: 'right', position: 'rear' });
+    `)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const roles = new Set(result.ir.parts.map((p) => p.semanticRole))
+    expect(roles.has('gearbox_housing')).toBe(true)
+    expect(roles.has('gearbox_input_shaft')).toBe(true)
+    expect(roles.has('gearbox_output_shaft')).toBe(true)
+    expect(roles.has('bearing_block')).toBe(true)
+    expect(roles.has('bearing_ring')).toBe(true)
+
+    const gearbox = result.ir.parts.find((p) => p.semanticRole === 'gearbox_housing')
+    const bearing = result.ir.parts.find((p) => p.semanticRole === 'bearing_ring')
+    expect(gearbox?.geometry.params.cornerRadius).toBeGreaterThan(0)
+    expect(bearing?.geometry.params.radialSegments).toBeGreaterThanOrEqual(48)
+  })
+
   test('compiles pump skid SDK constructors through the same DSL pipeline', () => {
     const result = compileDsl(`
       skidBase({ id: 'skid', length: 2.4, width: 0.9 });

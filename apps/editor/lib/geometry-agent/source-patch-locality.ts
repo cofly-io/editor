@@ -9,6 +9,8 @@ const EQUIPMENT_CALLS = [
   'rollerArray',
   'guardCover',
   'motor',
+  'gearbox',
+  'bearingBlock',
   'inspectionDoor',
   'nameplate',
   'sheetCover',
@@ -160,6 +162,12 @@ function allowedFunctionsForInstruction(instruction: string): EquipmentCallName[
   if (/(电机|motor|drive|右侧|左侧|前部|后部)/i.test(text)) {
     allowed.add('motor')
   }
+  if (/(gearbox|gear|reducer|speed\s*reducer|减速机|减速箱|齿轮箱|传动箱)/i.test(text)) {
+    allowed.add('gearbox')
+  }
+  if (/(bearing|pillow|shaft|轴承|轴承座|支承座|支撑座|转轴)/i.test(text)) {
+    allowed.add('bearingBlock')
+  }
   if (/(铭牌|nameplate|标签|label|编号)/i.test(text)) {
     allowed.add('nameplate')
   }
@@ -184,6 +192,8 @@ function allowedFunctionsForInstruction(instruction: string): EquipmentCallName[
     allowed.add('pumpCasing')
     allowed.add('skidBase')
     allowed.add('motor')
+    allowed.add('gearbox')
+    allowed.add('bearingBlock')
     allowed.add('flangePort')
     allowed.add('pipeRun')
     allowed.add('sheetCover')

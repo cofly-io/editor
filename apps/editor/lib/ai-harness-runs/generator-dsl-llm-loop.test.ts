@@ -147,6 +147,13 @@ describe('extractDslSource', () => {
     )
     expect(out?.startsWith('skidBase(')).toBe(true)
   })
+
+  it('accepts gearbox and bearing block SDK constructors as DSL source', () => {
+    const out = extractDslSource(
+      "Here is the source:\n\ngearbox({ id: 'gearbox', target: 'belt' });\nbearingBlock({ id: 'bearing', target: 'belt' });",
+    )
+    expect(out?.startsWith('gearbox(')).toBe(true)
+  })
 })
 
 describe('runDslSourceLoop', () => {
@@ -410,6 +417,8 @@ describe('prompt + repair message content', () => {
     expect(prompt).toContain('controlCabinet')
     expect(prompt).toContain('pumpCasing')
     expect(prompt).toContain('skidBase')
+    expect(prompt).toContain('gearbox')
+    expect(prompt).toContain('bearingBlock')
     expect(prompt).toContain('prefer semantic constructors')
     expect(prompt).toContain('keyboard.key.r')
     expect(prompt).toContain(`Prompt version: ${DSL_AUTHOR_PROMPT_VERSION}`)

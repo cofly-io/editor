@@ -171,6 +171,24 @@ export type PumpCasingParams = CommonParams & {
   width?: number
 }
 
+export type GearboxParams = CommonParams & {
+  target?: string
+  side?: 'left' | 'right' | 'front' | 'back'
+  position?: 'front' | 'rear' | 'center'
+  length?: number
+  width?: number
+  height?: number
+}
+
+export type BearingBlockParams = CommonParams & {
+  target?: string
+  side?: 'left' | 'right'
+  position?: 'front' | 'rear' | 'center'
+  width?: number
+  height?: number
+  depth?: number
+}
+
 const round = (value: number) => Number(value.toFixed(4))
 
 const clamp = (value: unknown, fallback: number, min: number, max: number): number => {
@@ -561,6 +579,226 @@ export function buildMotor(
           cornerRadius: diameter * 0.02,
           cornerSegments: 4,
         },
+      }),
+    )
+  }
+  return parts
+}
+
+export function buildGearbox(
+  params: GearboxParams,
+  context: EquipmentBuildContext = {},
+): EquipmentPartSpec[] {
+  const target = context.resolveTarget?.(params.target)
+  const side = params.side ?? 'right'
+  const length = clamp(params.length, target ? target.size[2] * 0.62 : 0.56, 0.16, 2.4)
+  const width = clamp(params.width, target ? target.size[2] * 0.52 : 0.42, 0.12, 1.8)
+  const height = clamp(params.height, target ? target.size[2] * 0.46 : 0.36, 0.1, 1.6)
+  const targetLength = target?.size[0] ?? 4
+  const targetWidth = target?.size[2] ?? 0.8
+  const x =
+    params.position === 'front'
+      ? (target?.center[0] ?? 0) + targetLength * 0.42
+      : params.position === 'center'
+        ? (target?.center[0] ?? 0)
+        : (target?.center[0] ?? 0) - targetLength * 0.42
+  const y = (target?.center[1] ?? 0.8) + height * 0.1
+  const zSign = side === 'left' || side === 'back' ? -1 : 1
+  const z =
+    side === 'front' || side === 'back'
+      ? (target?.center[2] ?? 0) + zSign * (targetWidth / 2 + length * 0.5)
+      : (target?.center[2] ?? 0) + zSign * (targetWidth / 2 + width * 0.6)
+  const shaftRotation =
+    side === 'front' || side === 'back'
+      ? ({ axis: 'x', degrees: 90 } as const)
+      : ({ axis: 'z', degrees: 90 } as const)
+  const shaftOffset: Vec3 =
+    side === 'front' || side === 'back'
+      ? [0, 0, zSign * length * 0.54]
+      : [zSign * width * 0.54, 0, 0]
+  const parts: EquipmentPartSpec[] = [
+    spec({
+      id: `${params.id}.housing`,
+      kind: 'box',
+      semanticRole: 'gearbox_housing',
+      position: [x, y, z],
+      size: [length, height, width],
+      material: params.material ?? 'cast_iron',
+      color: params.color,
+      params: {
+        length,
+        width,
+        height,
+        cornerRadius: Math.min(length, width, height) * 0.08,
+        cornerSegments: 8,
+      },
+    }),
+    spec({
+      id: `${params.id}.input_shaft`,
+      kind: 'cylinder',
+      semanticRole: 'gearbox_input_shaft',
+      position: [x - length * 0.42, y, z],
+      rotation: { axis: 'z', degrees: 90 },
+      material: 'stainless_steel',
+      params: { radius: height * 0.12, height: length * 0.34, radialSegments: 40 },
+    }),
+    spec({
+      id: `${params.id}.output_shaft`,
+      kind: 'cylinder',
+      semanticRole: 'gearbox_output_shaft',
+      position: [x + shaftOffset[0], y + shaftOffset[1], z + shaftOffset[2]],
+      rotation: shaftRotation,
+      material: 'stainless_steel',
+      params: { radius: height * 0.14, height: width * 0.42, radialSegments: 40 },
+    }),
+    spec({
+      id: `${params.id}.inspection_plate`,
+      kind: 'box',
+      semanticRole: 'gearbox_inspection_plate',
+      position: [x, y + height * 0.52, z],
+      material: 'painted_steel',
+      params: {
+        length: length * 0.48,
+        width: width * 0.34,
+        height: 0.012,
+        cornerRadius: Math.min(length, width) * 0.018,
+        cornerSegments: 4,
+      },
+    }),
+    spec({
+      id: `${params.id}.nameplate`,
+      kind: 'box',
+      semanticRole: 'equipment_nameplate',
+      position: [x + length * 0.22, y + height * 0.08, z + width * 0.51],
+      material: 'stainless_steel',
+      params: {
+        length: length * 0.24,
+        width: 0.008,
+        height: height * 0.18,
+        cornerRadius: 0.004,
+        cornerSegments: 3,
+      },
+    }),
+  ]
+  for (const dx of [-length * 0.28, length * 0.28]) {
+    parts.push(
+      spec({
+        id: `${params.id}.mount_foot.${dx < 0 ? 'rear' : 'front'}`,
+        kind: 'box',
+        semanticRole: 'gearbox_mounting_foot',
+        position: [x + dx, y - height * 0.52, z],
+        material: 'cast_iron',
+        params: {
+          length: length * 0.22,
+          width: width * 0.62,
+          height: height * 0.12,
+          cornerRadius: height * 0.025,
+          cornerSegments: 4,
+        },
+      }),
+    )
+  }
+  for (const [label, bx, bz] of [
+    ['fl', -length * 0.2, width * 0.18],
+    ['fr', length * 0.2, width * 0.18],
+    ['bl', -length * 0.2, -width * 0.18],
+    ['br', length * 0.2, -width * 0.18],
+  ] as const) {
+    parts.push(
+      spec({
+        id: `${params.id}.cover_bolt.${label}`,
+        kind: 'cylinder',
+        semanticRole: 'gearbox_cover_bolt',
+        position: [x + bx, y + height * 0.54, z + bz],
+        material: 'dark_fastener',
+        params: { radius: height * 0.025, height: 0.018, radialSegments: 20 },
+      }),
+    )
+  }
+  return parts
+}
+
+export function buildBearingBlock(
+  params: BearingBlockParams,
+  context: EquipmentBuildContext = {},
+): EquipmentPartSpec[] {
+  const target = context.resolveTarget?.(params.target)
+  const side = params.side ?? 'right'
+  const width = clamp(params.width, target ? target.size[2] * 0.28 : 0.28, 0.08, 1.2)
+  const height = clamp(params.height, width * 0.8, 0.06, 1.2)
+  const depth = clamp(params.depth, width * 0.56, 0.05, 0.9)
+  const targetLength = target?.size[0] ?? 4
+  const targetWidth = target?.size[2] ?? 0.8
+  const x =
+    params.position === 'front'
+      ? (target?.center[0] ?? 0) + targetLength * 0.42
+      : params.position === 'center'
+        ? (target?.center[0] ?? 0)
+        : (target?.center[0] ?? 0) - targetLength * 0.42
+  const zSign = side === 'left' ? -1 : 1
+  const z = (target?.center[2] ?? 0) + zSign * (targetWidth / 2 + depth * 0.54)
+  const y = (target?.center[1] ?? 0.72) + height * 0.08
+  const parts: EquipmentPartSpec[] = [
+    spec({
+      id: `${params.id}.base`,
+      kind: 'box',
+      semanticRole: 'bearing_block_base',
+      position: [x, y - height * 0.38, z],
+      size: [width * 1.28, height * 0.22, depth * 1.18],
+      material: params.material ?? 'cast_iron',
+      color: params.color,
+      params: {
+        length: width * 1.28,
+        width: depth * 1.18,
+        height: height * 0.22,
+        cornerRadius: height * 0.035,
+        cornerSegments: 4,
+      },
+    }),
+    spec({
+      id: `${params.id}.pillow_housing`,
+      kind: 'box',
+      semanticRole: 'bearing_block',
+      position: [x, y, z],
+      size: [width, height, depth],
+      material: params.material ?? 'cast_iron',
+      color: params.color,
+      params: {
+        length: width,
+        width: depth,
+        height,
+        cornerRadius: height * 0.16,
+        cornerSegments: 8,
+      },
+    }),
+    spec({
+      id: `${params.id}.bearing_ring`,
+      kind: 'cylinder',
+      semanticRole: 'bearing_ring',
+      position: [x, y + height * 0.08, z + zSign * depth * 0.54],
+      rotation: { axis: 'x', degrees: 90 },
+      material: 'stainless_steel',
+      params: { radius: height * 0.28, height: depth * 0.14, radialSegments: 48 },
+    }),
+    spec({
+      id: `${params.id}.shaft_hint`,
+      kind: 'cylinder',
+      semanticRole: 'bearing_shaft',
+      position: [x, y + height * 0.08, z + zSign * depth * 0.64],
+      rotation: { axis: 'x', degrees: 90 },
+      material: 'dark_fastener',
+      params: { radius: height * 0.12, height: depth * 0.72, radialSegments: 36 },
+    }),
+  ]
+  for (const dx of [-width * 0.42, width * 0.42]) {
+    parts.push(
+      spec({
+        id: `${params.id}.base_bolt.${dx < 0 ? 'left' : 'right'}`,
+        kind: 'cylinder',
+        semanticRole: 'bearing_mounting_bolt',
+        position: [x + dx, y - height * 0.24, z],
+        material: 'dark_fastener',
+        params: { radius: height * 0.045, height: height * 0.06, radialSegments: 20 },
       }),
     )
   }

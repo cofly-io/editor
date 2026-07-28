@@ -66,4 +66,23 @@ pipeRun({ id: 'process_pipe', from: [-1, 1, 0], to: [1, 1, 0], radius: 0.05 });
       ['pipeRun', 'process_pipe'],
     ])
   })
+
+  test('tracks drivetrain SDK source additions and changes', () => {
+    const beforeSource = `${SOURCE}
+gearbox({ id: 'gearbox', target: 'belt', side: 'right', position: 'rear', height: 0.36 });
+`
+    const feedback = summarizeGeometryAgentSourceChange({
+      beforeSource,
+      afterSource: `${beforeSource.replace('height: 0.36', 'height: 0.42')}
+bearingBlock({ id: 'rear_bearing', target: 'belt', side: 'right', position: 'rear' });
+`,
+      instruction: 'make the gearbox taller and add a rear bearing block',
+    })
+
+    expect(feedback.changed.map((change) => [change.functionName, change.id])).toEqual([
+      ['gearbox', 'gearbox'],
+    ])
+    expect(feedback.added).toEqual([{ id: 'rear_bearing', functionName: 'bearingBlock' }])
+    expect(feedback.unchangedImportantIds).toContain('belt')
+  })
 })

@@ -10,13 +10,16 @@
  */
 
 import {
+  type BearingBlockParams,
   type BeltParams,
   type BoxFrameParams,
+  buildBearingBlock,
   buildBelt,
   buildBoxFrame,
   buildControlCabinet,
   buildEquipment,
   buildFlangePort,
+  buildGearbox,
   buildGuardCover,
   buildInspectionDoor,
   buildMotor,
@@ -32,6 +35,7 @@ import {
   type EquipmentBuildContext,
   type EquipmentPartSpec,
   type FlangePortParams,
+  type GearboxParams,
   type GuardCoverParams,
   type InspectionDoorParams,
   type MotorParams,
@@ -709,6 +713,9 @@ export function createDslApiBuilders(opts: CreateBuildersOptions) {
     guardCover: (o: GuardCoverParams) =>
       registerEquipmentSpecs(buildGuardCover(o, equipmentContext)),
     motor: (o: MotorParams) => registerEquipmentSpecs(buildMotor(o, equipmentContext)),
+    gearbox: (o: GearboxParams) => registerEquipmentSpecs(buildGearbox(o, equipmentContext)),
+    bearingBlock: (o: BearingBlockParams) =>
+      registerEquipmentSpecs(buildBearingBlock(o, equipmentContext)),
     inspectionDoor: (o: InspectionDoorParams) =>
       registerEquipmentSpecs(buildInspectionDoor(o, equipmentContext)),
     nameplate: (o: NameplateParams) => registerEquipmentSpecs(buildNameplate(o, equipmentContext)),
