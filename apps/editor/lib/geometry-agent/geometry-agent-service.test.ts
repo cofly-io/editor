@@ -60,6 +60,7 @@ function okRun(nextIr = ir([part('belt'), part('cover')])): DslRunResult {
         partCount: nextIr.parts.length,
         semanticRoles: ['belt'],
         anonymousPrimitiveRatio: 0,
+        materialPresetRatio: 1,
       },
     },
     attempts: [{ attempt: 1, sandboxMs: 0, diagnostics: [] }],

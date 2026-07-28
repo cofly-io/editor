@@ -13,6 +13,7 @@ export type RealismGateReview = {
     partCount: number
     semanticRoles: string[]
     anonymousPrimitiveRatio: number
+    materialPresetRatio: number
   }
 }
 
@@ -24,11 +25,24 @@ type FamilySpec = {
 
 const FAMILY_SPECS: Record<IndustrialEquipmentFamily, FamilySpec> = {
   belt_conveyor: {
-    required: ['belt', 'roller', 'support_frame'],
+    required: ['belt', 'roller', 'support_frame', 'drive_motor'],
     recommended: ['drive_motor', 'safety_guard_cover', 'inspection_door', 'equipment_nameplate'],
     maxAnonymousPrimitiveRatio: 0.25,
   },
 }
+
+const EQUIPMENT_MATERIAL_PRESETS = new Set([
+  'painted_steel',
+  'stainless_steel',
+  'cast_iron',
+  'transparent_polycarbonate',
+  'wire_mesh',
+  'rubber_belt',
+  'aluminum_frame',
+  'yellow_safety',
+  'dark_fastener',
+  'control_panel_glass',
+])
 
 const EMPTY_REVIEW: RealismGateReview = {
   applicable: false,
@@ -36,7 +50,7 @@ const EMPTY_REVIEW: RealismGateReview = {
   score: 1,
   issues: [],
   warnings: [],
-  evidence: { partCount: 0, semanticRoles: [], anonymousPrimitiveRatio: 0 },
+  evidence: { partCount: 0, semanticRoles: [], anonymousPrimitiveRatio: 0, materialPresetRatio: 0 },
 }
 
 export function reviewAssemblyRealism(
@@ -68,6 +82,12 @@ export function reviewAssemblyRealism(
     )
   }
 
+  if (evidence.materialPresetRatio < 0.65) {
+    issues.push(
+      `realism_material_preset_ratio: ${family} uses equipment material presets on only ${(evidence.materialPresetRatio * 100).toFixed(0)}% of parts; use named equipment materials instead of raw/default materials.`,
+    )
+  }
+
   for (const recommended of spec.recommended) {
     if (!hasRoleLike(roles, recommended)) {
       warnings.push(
@@ -76,7 +96,7 @@ export function reviewAssemblyRealism(
     }
   }
 
-  checkConveyorDetails(ir, roles, issues, warnings)
+  checkConveyorDetails(ir, roles, opts.source, issues, warnings)
 
   const score = Math.max(0, Math.min(1, 1 - issues.length * 0.25 - warnings.length * 0.06))
   return {
@@ -113,10 +133,16 @@ function inferIndustrialFamily(
 
 function evidenceFor(ir: AssemblyIR, roles: Set<string>): RealismGateReview['evidence'] {
   const anonymous = ir.parts.filter(isAnonymousPrimitive).length
+  const withPreset = ir.parts.filter(
+    (part) =>
+      typeof part.material.preset === 'string' &&
+      EQUIPMENT_MATERIAL_PRESETS.has(part.material.preset),
+  ).length
   return {
     partCount: ir.parts.length,
     semanticRoles: [...roles].sort(),
     anonymousPrimitiveRatio: ir.parts.length === 0 ? 0 : anonymous / ir.parts.length,
+    materialPresetRatio: ir.parts.length === 0 ? 0 : withPreset / ir.parts.length,
   }
 }
 
@@ -142,10 +168,17 @@ function hasRoleLike(roles: Set<string>, needle: string): boolean {
 function checkConveyorDetails(
   ir: AssemblyIR,
   roles: Set<string>,
+  source: string | undefined,
   issues: string[],
   warnings: string[],
 ): void {
   if (!hasRoleLike(roles, 'belt') && !hasRoleLike(roles, 'roller')) return
+
+  if (ir.parts.length < 16) {
+    issues.push(
+      `realism_conveyor_under_detailed: belt_conveyor has only ${ir.parts.length} parts; use equipment SDK constructors so it has visible rollers, frame, motor, guard, and detail parts.`,
+    )
+  }
 
   const belt = ir.parts.find((p) => p.semanticRole === 'belt')
   if (belt?.geometry.kind === 'primitive-recipe') {
@@ -160,25 +193,78 @@ function checkConveyorDetails(
 
   const rollers = ir.parts.filter((p) => p.semanticRole === 'roller')
   if (rollers.length < 4) {
-    warnings.push(
+    issues.push(
       `realism_low_roller_count: conveyor has only ${rollers.length} rollers; industrial conveyors usually need repeated rollers.`,
     )
   }
 
   const motor = ir.parts.find((p) => p.semanticRole === 'drive_motor')
+  const motorDetails = ir.parts.filter((p) => p.semanticRole?.startsWith('motor_'))
+  const hasMotorMount = motorDetails.some((p) => p.semanticRole === 'motor_mounting_foot')
+  const hasTerminalBox = motorDetails.some((p) => p.semanticRole === 'motor_terminal_box')
+  if (motor && (!hasMotorMount || !hasTerminalBox)) {
+    issues.push(
+      'realism_motor_detail_missing: drive motor must include mounting feet and a terminal box, not just a bare cylinder.',
+    )
+  }
   if (motor?.geometry.kind === 'primitive-recipe') {
     const radialSegments = motor.geometry.params.radialSegments
     if (typeof radialSegments !== 'number' || radialSegments < 32) {
-      warnings.push(
+      issues.push(
         'realism_motor_faceting: drive motor cylinder should use at least 32 radialSegments.',
       )
     }
   }
 
+  const supportLegs = ir.parts.filter((p) => p.semanticRole === 'support_leg')
+  if (supportLegs.length < 4) {
+    issues.push(
+      `realism_support_leg_count: conveyor frame has only ${supportLegs.length} support legs; long material-handling equipment needs visible supports.`,
+    )
+  }
+
   const cover = ir.parts.find((p) => p.semanticRole === 'safety_guard_cover')
+  if (!cover && sourceRequestsGuard(source)) {
+    issues.push(
+      'realism_guard_missing: guarded conveyor requests must include guardCover()/safety_guard_cover parts.',
+    )
+  }
+  const coverParts = ir.parts.filter((p) =>
+    /guard|cover/.test(`${p.semanticRole ?? ''} ${p.id}`.toLowerCase()),
+  )
+  const coverFrames = ir.parts.filter((p) => p.semanticRole === 'cover_frame_rail')
+  const coverMounts = ir.parts.filter((p) => p.semanticRole === 'cover_mounting_bracket')
+  if (cover && (coverParts.length < 8 || coverFrames.length < 2 || coverMounts.length < 2)) {
+    issues.push(
+      'realism_guard_too_simple: guarded conveyor cover must include panels plus frame rails and mounting brackets, not a single box.',
+    )
+  }
   if (cover && cover.material.opacity === undefined && cover.material.preset !== 'wire_mesh') {
     warnings.push(
       'realism_guard_material: safety cover should be transparent_polycarbonate, wire_mesh, or expose opacity.',
     )
   }
+
+  const roundedSheetParts = ir.parts.filter(
+    (p) =>
+      p.geometry.kind === 'primitive-recipe' &&
+      p.geometry.recipeId === 'primitive.box' &&
+      /cover|panel|door|frame|leg|mount|plate/.test(`${p.semanticRole ?? ''} ${p.id}`),
+  )
+  const sharpSheetParts = roundedSheetParts.filter((p) => {
+    const radius =
+      p.geometry.kind === 'primitive-recipe' ? p.geometry.params.cornerRadius : undefined
+    return typeof radius !== 'number' || radius <= 0
+  })
+  if (roundedSheetParts.length > 0 && sharpSheetParts.length / roundedSheetParts.length > 0.35) {
+    issues.push(
+      'realism_sheet_metal_sharp: sheet-metal panels/frames should use cornerRadius defaults instead of sharp raw boxes.',
+    )
+  }
+}
+
+function sourceRequestsGuard(source: string | undefined): boolean {
+  return /\b(guard|guarded|guardcover|safety|protective|cover)\b|防护|護罩|护罩|罩/.test(
+    source?.toLowerCase() ?? '',
+  )
 }

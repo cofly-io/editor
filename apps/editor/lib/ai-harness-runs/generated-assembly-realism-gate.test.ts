@@ -13,6 +13,47 @@ const GOOD_CONVEYOR = `
   nameplate({ id: 'nameplate', target: 'cover', side: 'front' });
 `
 
+const NO_MOTOR_CONVEYOR = `
+  belt({ id: 'belt', length: 6, width: 0.72 });
+  rollerArray({ id: 'rollers', length: 6, width: 0.78, count: 8 });
+  boxFrame({ id: 'frame', length: 6, width: 0.92, height: 0.78 });
+  guardCover({ id: 'cover', target: 'belt', side: 'top', length: 3.8 });
+`
+
+const NO_GUARD_CONVEYOR = `
+  belt({ id: 'belt', length: 6, width: 0.72 });
+  rollerArray({ id: 'rollers', length: 6, width: 0.78, count: 8 });
+  boxFrame({ id: 'frame', length: 6, width: 0.92, height: 0.78 });
+  motor({ id: 'drive_motor', target: 'belt', side: 'right', position: 'rear' });
+`
+
+const SINGLE_BOX_GUARD_CONVEYOR = `
+  part('belt.surface', box({ length: 6, width: 0.72, height: 0.055, material: 'plastic', color: '#222222' }))
+    .atWorld([0, 0.82, 0])
+    .withRole('belt');
+  part('roller.0', cylinder({ radius: 0.03, height: 0.78, material: 'metal', color: '#cccccc' }))
+    .atWorld([-2, 0.72, 0])
+    .rotate({ axis: 'x', degrees: 90 })
+    .withRole('roller');
+  part('roller.1', cylinder({ radius: 0.03, height: 0.78, material: 'metal', color: '#cccccc' }))
+    .atWorld([2, 0.72, 0])
+    .rotate({ axis: 'x', degrees: 90 })
+    .withRole('roller');
+  part('frame.left', box({ length: 6, width: 0.04, height: 0.04, material: 'metal', color: '#aaaaaa' }))
+    .atWorld([0, 0.78, -0.46])
+    .withRole('support_frame');
+  part('frame.right', box({ length: 6, width: 0.04, height: 0.04, material: 'metal', color: '#aaaaaa' }))
+    .atWorld([0, 0.78, 0.46])
+    .withRole('support_frame');
+  part('motor.body', cylinder({ radius: 0.18, height: 0.5, material: 'metal', color: '#666666' }))
+    .atWorld([-2.4, 0.84, 0.72])
+    .rotate({ axis: 'z', degrees: 90 })
+    .withRole('drive_motor');
+  part('cover.single', box({ length: 3.8, width: 0.9, height: 0.5, material: 'glass', color: '#d4f0ff' }))
+    .atWorld([0, 1.25, 0])
+    .withRole('safety_guard_cover');
+`
+
 function makePrimitiveConveyor(): AssemblyIR {
   return {
     schemaVersion: 1,
@@ -60,6 +101,7 @@ describe('reviewAssemblyRealism', () => {
     expect(review.family).toBe('belt_conveyor')
     expect(review.passed).toBe(true)
     expect(review.evidence.anonymousPrimitiveRatio).toBe(0)
+    expect(review.evidence.materialPresetRatio).toBe(1)
   })
 
   test('rejects anonymous primitive conveyor-shaped output', () => {
@@ -71,5 +113,50 @@ describe('reviewAssemblyRealism', () => {
     expect(review.passed).toBe(false)
     expect(review.issues.some((i) => i.startsWith('realism_missing_required_role'))).toBe(true)
     expect(review.issues.some((i) => i.startsWith('realism_anonymous_primitive_ratio'))).toBe(true)
+  })
+
+  test('rejects a conveyor without a drive motor', () => {
+    const result = compileDsl(NO_MOTOR_CONVEYOR)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const review = reviewAssemblyRealism(result.ir, { source: NO_MOTOR_CONVEYOR })
+    expect(review.passed).toBe(false)
+    expect(review.issues).toContain(
+      'realism_missing_required_role: belt_conveyor must include semantic role "drive_motor".',
+    )
+  })
+
+  test('rejects a guarded conveyor request without guard cover parts', () => {
+    const result = compileDsl(NO_GUARD_CONVEYOR)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const review = reviewAssemblyRealism(result.ir, {
+      source: `// guarded conveyor\n${NO_GUARD_CONVEYOR}`,
+    })
+    expect(review.passed).toBe(false)
+    expect(review.issues).toContain(
+      'realism_guard_missing: guarded conveyor requests must include guardCover()/safety_guard_cover parts.',
+    )
+  })
+
+  test('rejects a guarded conveyor approximated with a single cover box and bare motor cylinder', () => {
+    const result = compileDsl(SINGLE_BOX_GUARD_CONVEYOR)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const review = reviewAssemblyRealism(result.ir, { source: SINGLE_BOX_GUARD_CONVEYOR })
+    expect(review.passed).toBe(false)
+    expect(review.issues).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('realism_low_roller_count'),
+        expect.stringContaining('realism_material_preset_ratio'),
+        expect.stringContaining('realism_motor_detail_missing'),
+        expect.stringContaining('realism_support_leg_count'),
+        expect.stringContaining('realism_guard_too_simple'),
+        expect.stringContaining('realism_sheet_metal_sharp'),
+      ]),
+    )
   })
 })

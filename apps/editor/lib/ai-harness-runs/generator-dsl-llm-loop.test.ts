@@ -57,6 +57,33 @@ async function directAttempt(source: string): Promise<DslRunResult> {
     }
   }
   const realism = reviewAssemblyRealism(compiled.ir, { source })
+  const attempt = {
+    attempt: 1,
+    sandboxMs: 0,
+    diagnostics: [],
+    irHash: compiled.irHash,
+    spatial,
+    realism,
+  }
+  if (!realism.passed) {
+    return {
+      kind: 'failed',
+      downgrade: {
+        reason: 'realism_gate_failed',
+        message: realism.issues[0] ?? 'realism gate failed',
+        attempts: 1,
+        diagnosticCodes: realism.issues.map((i) => i.split(':')[0] ?? 'realism'),
+        route,
+      },
+      attempts: [attempt],
+      budgetUsage: {
+        sandboxAttempts: 1,
+        totalSandboxMs: 0,
+        partCount: compiled.ir.parts.length,
+        wallTimeBudgetMs: 5000,
+      },
+    }
+  }
   return {
     kind: 'ok',
     ir: compiled.ir,
@@ -66,7 +93,7 @@ async function directAttempt(source: string): Promise<DslRunResult> {
     nodeIdByPartId: new Map(),
     spatial,
     realism,
-    attempts: [{ attempt: 1, sandboxMs: 0, diagnostics: [], irHash: compiled.irHash, spatial }],
+    attempts: [attempt],
     budgetUsage: {
       sandboxAttempts: 1,
       totalSandboxMs: 0,
@@ -235,6 +262,46 @@ describe('runDslSourceLoop', () => {
     expect(result.kind).toBe('ok')
     expect(result.attempts).toBe(2)
     expect(seen[seen.length - 1]).toContain('gate_duplicate_position')
+  })
+
+  it('realism gate failures also feed the repair loop before user sees the result', async () => {
+    const toyConveyor = `
+      part('belt.surface', box({ length: 6, width: 0.72, height: 0.055, material: 'plastic', color: '#222222' }))
+        .atWorld([0, 0.82, 0])
+        .withRole('belt');
+      part('roller.0', cylinder({ radius: 0.03, height: 0.78, material: 'metal', color: '#cccccc' }))
+        .atWorld([-2, 0.72, 0])
+        .rotate({ axis: 'x', degrees: 90 })
+        .withRole('roller');
+      part('frame.left', box({ length: 6, width: 0.04, height: 0.04, material: 'metal', color: '#aaaaaa' }))
+        .atWorld([0, 0.78, -0.46])
+        .withRole('support_frame');
+    `
+    const sdkConveyor = `
+      belt({ id: 'belt', length: 6, width: 0.72 });
+      rollerArray({ id: 'rollers', length: 6, width: 0.78, count: 8 });
+      boxFrame({ id: 'frame', length: 6, width: 0.92, height: 0.78 });
+      guardCover({ id: 'cover', target: 'belt', side: 'top', length: 3.8 });
+      motor({ id: 'drive_motor', target: 'belt', side: 'right', position: 'rear' });
+      inspectionDoor({ id: 'doors', target: 'cover', side: 'right', count: 2 });
+      nameplate({ id: 'nameplate', target: 'cover', side: 'front' });
+    `
+    let call = 0
+    const seen: string[] = []
+    const result = await runDslSourceLoop({
+      userPrompt: 'generate a guarded belt conveyor',
+      callLlm: async (msgs) => {
+        seen.push(msgs.map((m) => m.content).join('\n---\n'))
+        return call++ === 0 ? toyConveyor : sdkConveyor
+      },
+      runAttempt: directAttempt,
+    })
+
+    expect(result.kind).toBe('ok')
+    expect(result.attempts).toBe(2)
+    expect(seen[seen.length - 1]).toContain('Industrial realism gate feedback')
+    expect(seen[seen.length - 1]).toContain('realism_missing_required_role')
+    expect(seen[seen.length - 1]).toContain('guardCover')
   })
 
   it('reply without DSL → nudges the model once and counts the attempt', async () => {
