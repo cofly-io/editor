@@ -74,6 +74,8 @@ describe('generated node persistence round-trip', () => {
     expect(revived).toEqual(mesh)
     expect(revived.partId).toBe('keyboard.key.r3.c7')
     expect(revived.fingerprint).toBe('fp-abc123')
+    expect(revived.geometry.kind).toBe('primitive-recipe')
+    if (revived.geometry.kind !== 'primitive-recipe') return
     expect(revived.geometry.recipeId).toBe('primitive.box')
   })
 

@@ -60,11 +60,15 @@ function boundsOf(positions: number[]): { min: Vec3; max: Vec3 } {
   const min: Vec3 = [Infinity, Infinity, Infinity]
   const max: Vec3 = [-Infinity, -Infinity, -Infinity]
   for (let i = 0; i < positions.length; i += 3) {
-    for (let axis = 0; axis < 3; axis += 1) {
-      const value = positions[i + axis]!
-      min[axis] = Math.min(min[axis], value)
-      max[axis] = Math.max(max[axis], value)
-    }
+    const x = positions[i]!
+    const y = positions[i + 1]!
+    const z = positions[i + 2]!
+    min[0] = Math.min(min[0], x)
+    min[1] = Math.min(min[1], y)
+    min[2] = Math.min(min[2], z)
+    max[0] = Math.max(max[0], x)
+    max[1] = Math.max(max[1], y)
+    max[2] = Math.max(max[2], z)
   }
   return { min, max }
 }
