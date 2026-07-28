@@ -64,10 +64,12 @@ export type GeometryAgentRunResponse = GeometryAgentSnapshot & {
     sourceAvailable: boolean
   }
   generatedAssembly?: {
+    ir: Extract<DslRunResult, { kind: 'ok' }>['ir']
     rootNode: Extract<DslRunResult, { kind: 'ok' }>['rootNode']
     patches: Extract<DslRunResult, { kind: 'ok' }>['patches']
     nodeIdByPartId: Record<string, string>
   }
+  rerunPlan?: NonNullable<Awaited<ReturnType<typeof editGeometryAgentSession>>['rerun']>['plan']
   rerunSummary?: GeometryAgentRerunSummary
 }
 
@@ -149,6 +151,7 @@ export async function sendGeometryAgentMessageFromRequest(
     ...(result.kind === 'ok' && result.finalRun.kind === 'ok'
       ? { generatedAssembly: generatedAssemblyFromRun(result.finalRun) }
       : {}),
+    ...(rerun ? { rerunPlan: rerun.plan } : {}),
     ...(rerun ? { rerunSummary: rerun.summary } : {}),
   }
 }
@@ -272,6 +275,7 @@ function defaultRunAttempt(source: string): Promise<DslRunResult> {
 
 function generatedAssemblyFromRun(run: Extract<DslRunResult, { kind: 'ok' }>) {
   return {
+    ir: run.ir,
     rootNode: run.rootNode,
     patches: run.patches,
     nodeIdByPartId: Object.fromEntries(run.nodeIdByPartId),

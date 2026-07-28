@@ -3,7 +3,7 @@ import type { ArticraftJoint, ArticraftLink, ArticraftModelData } from '@pascal-
 import type { GeometryToolExecutionResult } from '../../../../../lib/ai-geometry-tool-executor'
 import type { GeometryContextDecision } from '../../../../../lib/ai-chat-harness'
 import type { GeneratedGeometryArtifact } from '../../../../../lib/ai-generated-geometry'
-import type { GeometryAgentSnapshot } from '../../../../../lib/geometry-agent-client-types'
+import type { GeometryAgentRunResponse } from '../../../../../lib/geometry-agent-client-types'
 
 export type FactoryRunSummary = {
   title: string
@@ -33,7 +33,7 @@ export interface ChatMessage {
     mode: 'articraft' | 'image-to-3d' | 'primitive' | 'factory' | 'geometry-agent'
     status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
   }
-  geometryAgentSession?: GeometryAgentSnapshot
+  geometryAgentSession?: GeometryAgentRunResponse
   articraftResult?: ArticraftResult
   imageTo3dResult?: ImageTo3DResult
   factoryRunSummary?: FactoryRunSummary

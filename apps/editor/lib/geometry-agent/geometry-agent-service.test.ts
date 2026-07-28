@@ -105,6 +105,7 @@ describe('geometry-agent service', () => {
       expect(response.source).toContain('guardCover')
       expect(response.lastRun).toMatchObject({ kind: 'ok', partCount: 2 })
       expect(response.generatedAssembly).toMatchObject({
+        ir: { parts: [{ id: 'belt' }, { id: 'cover' }] },
         rootNode: { id: 'assembly_test' },
         patches: [],
         nodeIdByPartId: {},
@@ -181,6 +182,11 @@ describe('geometry-agent service', () => {
         unchanged: 1,
       })
       expect(response.generatedAssembly?.rootNode).toMatchObject({ id: 'assembly_test' })
+      expect(response.rerunPlan).toMatchObject({
+        updates: expect.any(Array),
+        creates: expect.any(Array),
+        deletes: expect.any(Array),
+      })
     })
   })
 

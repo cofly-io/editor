@@ -1,4 +1,5 @@
 import { type AnyNode, useScene } from '@pascal-app/core'
+import type { GeneratedAssemblyNode, GeneratedMeshNode } from '@pascal-app/core/schema'
 import type { Dispatch, SetStateAction } from 'react'
 import {
   createGeometryAgentSessionClient,
@@ -6,15 +7,16 @@ import {
   sendGeometryAgentMessageClient,
 } from '../../../../../lib/geometry-agent-client'
 import type { GeometryAgentRunResponse } from '../../../../../lib/geometry-agent-client-types'
+import { commitGeneratedAssemblyRerun } from '../../../../../lib/generated-assembly-rerun'
 import { t } from '../../../../../i18n'
 import { isAbortError } from './chat-utils'
 import { buildGeometryAgentResultSummary } from './run-summaries'
 import type { ChatImageAttachment, ChatMessage } from './types'
 
-function latestGeometryAgentSessionId(messages: readonly ChatMessage[]): string | null {
+function latestGeometryAgentResponse(messages: readonly ChatMessage[]): GeometryAgentRunResponse | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const sessionId = messages[index]?.geometryAgentSession?.sessionId
-    if (sessionId) return sessionId
+    const response = messages[index]?.geometryAgentSession
+    if (response?.sessionId) return response
   }
   return null
 }
@@ -23,7 +25,7 @@ export function shouldUseGeometryAgentForPrimitivePrompt(input: {
   text: string
   messages: readonly ChatMessage[]
 }): boolean {
-  if (latestGeometryAgentSessionId(input.messages)) return true
+  if (latestGeometryAgentResponse(input.messages)) return true
   const text = input.text.trim().toLowerCase()
   if (!text) return false
   return (
@@ -58,6 +60,80 @@ function applyGeneratedAssembly(response: GeometryAgentRunResponse): {
   }
 }
 
+function generatedAssemblyPartNodesFromRoot(
+  root: GeneratedAssemblyNode,
+  nodes: Record<string, AnyNode>,
+): GeneratedMeshNode[] {
+  const partNodes: GeneratedMeshNode[] = []
+  const visited = new Set<string>()
+  const queue = [...(root.children ?? [])]
+
+  while (queue.length > 0) {
+    const nodeId = queue.shift()
+    if (!nodeId || visited.has(nodeId)) continue
+    visited.add(nodeId)
+
+    const node = nodes[nodeId]
+    if (!node) continue
+    if (node.type === 'generated-mesh') partNodes.push(node as GeneratedMeshNode)
+    if ('children' in node && Array.isArray(node.children)) queue.push(...node.children)
+  }
+
+  return partNodes
+}
+
+function buildRerunContextFromScene(response: GeometryAgentRunResponse) {
+  const rootId = response.generatedAssembly?.rootNode.id
+  const previousIr = response.generatedAssembly?.ir
+  if (!rootId || !previousIr) return null
+  const scene = useScene.getState()
+  const root = scene.nodes[rootId]
+  if (!root || root.type !== 'generated-assembly') return null
+  const existingParts = generatedAssemblyPartNodesFromRoot(root as GeneratedAssemblyNode, scene.nodes)
+  return {
+    existingRoot: root as GeneratedAssemblyNode,
+    existingParts,
+    previousIr,
+    detectedAt: new Date().toISOString(),
+  }
+}
+
+function applyRerunPlan(response: GeometryAgentRunResponse): {
+  applied: boolean
+  patchCount: number
+  applyError?: string
+} {
+  const rootId = response.rerunPlan?.updates[0]?.id
+  if (!rootId || !response.rerunPlan) return { applied: false, patchCount: 0 }
+  const root = useScene.getState().nodes[rootId]
+  if (!root || root.type !== 'generated-assembly') {
+    return { applied: false, patchCount: 0, applyError: 'Generated assembly root is missing.' }
+  }
+  const result = commitGeneratedAssemblyRerun(
+    useScene,
+    rootId,
+    (root as GeneratedAssemblyNode).revision ?? 0,
+    response.rerunPlan,
+  )
+  if (result.kind !== 'committed') {
+    return {
+      applied: false,
+      patchCount: 0,
+      applyError:
+        result.kind === 'conflict'
+          ? `Assembly changed while rerun was pending (${result.expectedRevision} → ${result.actualRevision}).`
+          : 'Generated assembly root is missing.',
+    }
+  }
+  return {
+    applied: true,
+    patchCount:
+      response.rerunPlan.updates.length +
+      response.rerunPlan.creates.length +
+      response.rerunPlan.deletes.length,
+  }
+}
+
 export function useGeometryAgentChat({
   activeAbortControllerRef,
   input,
@@ -89,7 +165,8 @@ export function useGeometryAgentChat({
     setImageAttachment(undefined)
     setLoading(true)
 
-    const existingSessionId = latestGeometryAgentSessionId(messages)
+    const previousResponse = latestGeometryAgentResponse(messages)
+    const existingSessionId = previousResponse?.sessionId ?? null
     const runId = existingSessionId ?? `geo_agent_pending_${Date.now()}`
     const userMsg: ChatMessage = { role: 'user', content: text }
     const pendingMsg: ChatMessage = {
@@ -108,7 +185,12 @@ export function useGeometryAgentChat({
       const response = existingSessionId
         ? await sendGeometryAgentMessageClient(
             existingSessionId,
-            { instruction: text },
+            {
+              instruction: text,
+              ...(previousResponse
+                ? { rerun: buildRerunContextFromScene(previousResponse) ?? undefined }
+                : {}),
+            },
             { signal: controller.signal },
           )
         : await createGeometryAgentSessionClient(
@@ -116,9 +198,7 @@ export function useGeometryAgentChat({
             { signal: controller.signal },
           )
 
-      const applyResult = existingSessionId
-        ? { applied: false, patchCount: 0 }
-        : applyGeneratedAssembly(response)
+      const applyResult = existingSessionId ? applyRerunPlan(response) : applyGeneratedAssembly(response)
       const summary = buildGeometryAgentResultSummary({
         prompt: text,
         status:
