@@ -1,0 +1,30 @@
+import { NextResponse } from 'next/server'
+import {
+  GeometryAgentHttpError,
+  readGeometryAgentSnapshot,
+} from '@/lib/geometry-agent/geometry-agent-service'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+type RouteParams = { params: Promise<{ sessionId: string }> }
+
+export async function GET(_request: Request, { params }: RouteParams) {
+  try {
+    const { sessionId } = await params
+    return NextResponse.json(await readGeometryAgentSnapshot(sessionId))
+  } catch (error) {
+    return geometryAgentErrorResponse(error)
+  }
+}
+
+function geometryAgentErrorResponse(error: unknown) {
+  if (error instanceof GeometryAgentHttpError) {
+    return NextResponse.json(
+      { error: error.code, message: error.message },
+      { status: error.status },
+    )
+  }
+  const message = error instanceof Error ? error.message : String(error)
+  return NextResponse.json({ error: 'geometry_agent_failed', message }, { status: 500 })
+}
