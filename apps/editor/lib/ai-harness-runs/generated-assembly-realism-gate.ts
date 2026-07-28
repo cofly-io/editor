@@ -1,6 +1,6 @@
 import type { AssemblyIR, AssemblyPart } from '@pascal-app/core/lib/generated-assembly-ir'
 
-export type IndustrialEquipmentFamily = 'belt_conveyor'
+export type IndustrialEquipmentFamily = 'belt_conveyor' | 'control_cabinet'
 
 export type RealismGateReview = {
   applicable: boolean
@@ -28,6 +28,11 @@ const FAMILY_SPECS: Record<IndustrialEquipmentFamily, FamilySpec> = {
     required: ['belt', 'roller', 'support_frame', 'drive_motor'],
     recommended: ['drive_motor', 'safety_guard_cover', 'inspection_door', 'equipment_nameplate'],
     maxAnonymousPrimitiveRatio: 0.25,
+  },
+  control_cabinet: {
+    required: ['control_cabinet', 'cabinet_door_seam', 'cabinet_handle'],
+    recommended: ['control_panel_glass', 'equipment_nameplate'],
+    maxAnonymousPrimitiveRatio: 0.2,
   },
 }
 
@@ -97,6 +102,7 @@ export function reviewAssemblyRealism(
   }
 
   checkConveyorDetails(ir, roles, opts.source, issues, warnings)
+  checkControlCabinetDetails(ir, roles, issues, warnings)
 
   const score = Math.max(0, Math.min(1, 1 - issues.length * 0.25 - warnings.length * 0.06))
   return {
@@ -120,6 +126,15 @@ function inferIndustrialFamily(
     .map((p) => p.id)
     .join(' ')
     .toLowerCase()
+  if (
+    hasRoleLike(roles, 'control_cabinet') ||
+    /\b(controlcabinet|control[_\s-]?cabinet|electrical[_\s-]?cabinet|plc[_\s-]?cabinet)\b/.test(
+      sourceText,
+    ) ||
+    /control[_\s-]?cabinet|electrical[_\s-]?cabinet|plc/.test(idText)
+  ) {
+    return 'control_cabinet'
+  }
   if (
     hasRoleLike(roles, 'belt') ||
     hasRoleLike(roles, 'roller') ||
@@ -161,6 +176,8 @@ function hasRoleLike(roles: Set<string>, needle: string): boolean {
     if (n === 'safety_guard_cover' && (r.includes('guard') || r.includes('cover'))) return true
     if (n === 'support_frame' && (r.includes('frame') || r.includes('support'))) return true
     if (n === 'drive_motor' && r.includes('motor')) return true
+    if (n === 'control_cabinet' && r.includes('cabinet')) return true
+    if (n === 'control_panel_glass' && (r.includes('glass') || r.includes('panel'))) return true
   }
   return false
 }
@@ -259,6 +276,73 @@ function checkConveyorDetails(
   if (roundedSheetParts.length > 0 && sharpSheetParts.length / roundedSheetParts.length > 0.35) {
     issues.push(
       'realism_sheet_metal_sharp: sheet-metal panels/frames should use cornerRadius defaults instead of sharp raw boxes.',
+    )
+  }
+}
+
+function checkControlCabinetDetails(
+  ir: AssemblyIR,
+  roles: Set<string>,
+  issues: string[],
+  warnings: string[],
+): void {
+  if (!hasRoleLike(roles, 'control_cabinet')) return
+
+  if (ir.parts.length < 5) {
+    issues.push(
+      `realism_cabinet_under_detailed: control_cabinet has only ${ir.parts.length} parts; use controlCabinet() so it has body, door seam, glass/panel, handle, and nameplate.`,
+    )
+  }
+
+  const body = ir.parts.find((p) => p.semanticRole === 'control_cabinet')
+  if (body?.geometry.kind === 'primitive-recipe') {
+    const cornerRadius = body.geometry.params.cornerRadius
+    const cornerSegments = body.geometry.params.cornerSegments
+    if (typeof cornerRadius !== 'number' || cornerRadius <= 0) {
+      issues.push(
+        'realism_cabinet_body_sharp: control cabinet body must use rounded sheet-metal cornerRadius.',
+      )
+    }
+    if (typeof cornerSegments !== 'number' || cornerSegments < 5) {
+      warnings.push(
+        'realism_cabinet_corner_segments: control cabinet body should use at least 5 cornerSegments.',
+      )
+    }
+    const material = body.material.preset
+    if (material !== 'painted_steel' && material !== 'stainless_steel') {
+      issues.push(
+        'realism_cabinet_body_material: control cabinet body should use painted_steel or stainless_steel.',
+      )
+    }
+  }
+
+  const hasGlassOrPanel =
+    hasRoleLike(roles, 'control_panel_glass') ||
+    ir.parts.some((p) =>
+      /display|hmi|indicator|button|panel/.test(`${p.semanticRole ?? ''} ${p.id}`),
+    )
+  if (!hasGlassOrPanel) {
+    issues.push(
+      'realism_cabinet_missing_operator_panel: control cabinet must include a visible glass/panel/display area.',
+    )
+  }
+
+  const handle = ir.parts.find((p) => p.semanticRole === 'cabinet_handle')
+  if (handle?.geometry.kind === 'primitive-recipe') {
+    if (handle.geometry.recipeId !== 'primitive.cylinder') {
+      issues.push('realism_cabinet_handle_shape: cabinet handle should be cylindrical.')
+    }
+    const radialSegments = handle.geometry.params.radialSegments
+    if (typeof radialSegments !== 'number' || radialSegments < 16) {
+      warnings.push(
+        'realism_cabinet_handle_faceting: cabinet handle should use at least 16 radialSegments.',
+      )
+    }
+  }
+
+  if (!hasRoleLike(roles, 'equipment_nameplate')) {
+    issues.push(
+      'realism_cabinet_missing_nameplate: control cabinet needs an equipment nameplate or label.',
     )
   }
 }

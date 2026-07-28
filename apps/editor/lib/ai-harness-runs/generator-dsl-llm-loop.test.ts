@@ -311,6 +311,32 @@ describe('runDslSourceLoop', () => {
     expect(seen[seen.length - 1]).toContain('guardCover')
   })
 
+  it('control cabinet realism failures feed the same repair loop', async () => {
+    const toyCabinet = `
+      part('control_cabinet.body', box({ length: 0.7, width: 0.35, height: 1.4, material: 'metal', color: '#64748b' }))
+        .atWorld([0, 0.7, 0])
+        .withRole('control_cabinet');
+    `
+    const sdkCabinet =
+      "controlCabinet({ id: 'control_cabinet', width: 0.7, height: 1.4, depth: 0.35 });"
+    let call = 0
+    const seen: string[] = []
+    const result = await runDslSourceLoop({
+      userPrompt: 'generate an industrial control cabinet',
+      callLlm: async (msgs) => {
+        seen.push(msgs.map((m) => m.content).join('\n---\n'))
+        return call++ === 0 ? toyCabinet : sdkCabinet
+      },
+      runAttempt: directAttempt,
+    })
+
+    expect(result.kind).toBe('ok')
+    expect(result.attempts).toBe(2)
+    expect(seen[seen.length - 1]).toContain('Industrial realism gate feedback')
+    expect(seen[seen.length - 1]).toContain('realism_cabinet_under_detailed')
+    expect(seen[seen.length - 1]).toContain('controlCabinet')
+  })
+
   it('reply without DSL → nudges the model once and counts the attempt', async () => {
     let call = 0
     const result = await runDslSourceLoop({
