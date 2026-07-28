@@ -24,6 +24,7 @@ import {
   buildGeneratedAssemblyCreatePatches,
   type GeneratedAssemblyPatchPlan,
 } from '../../../../packages/editor/src/lib/generated-geometry-placement'
+import { type RealismGateReview, reviewAssemblyRealism } from './generated-assembly-realism-gate'
 import { reviewAssemblySpatial, type SpatialGateReview } from './generated-assembly-spatial-gate'
 import { type RunSandboxOptions, runDslSandbox } from './generated-geometry-sandbox-runner'
 import type { GenerationRouteDecision } from './generation-route'
@@ -42,6 +43,8 @@ export type DslRunAttempt = {
   irHash?: string
   /** Spatial gate result (only computed when IR is valid). */
   spatial?: SpatialGateReview
+  /** Industrial realism gate result (only applicable for recognized equipment families). */
+  realism?: RealismGateReview
 }
 
 export type DslRunBudgetUsage = {
@@ -53,7 +56,12 @@ export type DslRunBudgetUsage = {
 
 export type DslDowngradeRecord = {
   /** Why the DSL run could not produce an artifact. */
-  reason: 'compile_diagnostics' | 'sandbox_error' | 'spatial_gate_failed' | 'budget_exceeded'
+  reason:
+    | 'compile_diagnostics'
+    | 'sandbox_error'
+    | 'spatial_gate_failed'
+    | 'realism_gate_failed'
+    | 'budget_exceeded'
   /** Human-readable summary (localized by the caller). */
   message: string
   /** Attempts made before downgrading. */
@@ -73,6 +81,7 @@ export type DslRunResult =
       rootNode: GeneratedAssemblyPatchPlan['rootNode']
       nodeIdByPartId: Map<string, string>
       spatial: SpatialGateReview
+      realism: RealismGateReview
       attempts: DslRunAttempt[]
       budgetUsage: DslRunBudgetUsage
     }
@@ -179,14 +188,16 @@ export async function executeGeneratorDslRun(input: ExecuteDslRunInput): Promise
     })
   }
 
-  // --- Layer 3: IR is valid (sandbox validated it); run the spatial gate ----
+  // --- Layer 3: IR is valid (sandbox validated it); run quality gates --------
   const ir = sandboxResult.ir
   const spatial = reviewAssemblySpatial(ir)
+  const realism = reviewAssemblyRealism(ir, { source: input.source })
   const attempt: DslRunAttempt = {
     ...attemptBase,
     diagnostics: [...sandboxResult.diagnostics],
     irHash: sandboxResult.irHash,
     spatial,
+    realism,
   }
 
   if (!spatial.passed) {
@@ -198,6 +209,18 @@ export async function executeGeneratorDslRun(input: ExecuteDslRunInput): Promise
       partCount: ir.parts.length,
       route: input.route,
       extraCodes: spatial.issues.map((i) => i.split(':')[0] ?? 'gate'),
+    })
+  }
+
+  if (!realism.passed) {
+    return fail({
+      reason: 'realism_gate_failed',
+      message: `Industrial realism gate rejected the assembly: ${realism.issues[0] ?? 'unknown'}`,
+      attempts: [attempt],
+      budgetBase,
+      partCount: ir.parts.length,
+      route: input.route,
+      extraCodes: realism.issues.map((i) => i.split(':')[0] ?? 'realism'),
     })
   }
 
@@ -225,6 +248,7 @@ export async function executeGeneratorDslRun(input: ExecuteDslRunInput): Promise
     rootNode: plan.rootNode,
     nodeIdByPartId: plan.nodeIdByPartId,
     spatial,
+    realism,
     attempts: [attempt],
     budgetUsage: { ...budgetBase, partCount: ir.parts.length },
   }
@@ -283,6 +307,8 @@ export function summarizeDslRunForEvents(result: DslRunResult): Record<string, u
       })),
       irHash: a.irHash,
       spatialScore: a.spatial?.score,
+      realismScore: a.realism?.score,
+      realismFamily: a.realism?.family,
     })),
   }
   if (result.kind === 'ok') {
@@ -293,6 +319,9 @@ export function summarizeDslRunForEvents(result: DslRunResult): Record<string, u
       partCount: result.ir.parts.length,
       spatialScore: result.spatial.score,
       spatialWarnings: result.spatial.warnings,
+      realismScore: result.realism.score,
+      realismFamily: result.realism.family,
+      realismWarnings: result.realism.warnings,
     }
   }
   return {

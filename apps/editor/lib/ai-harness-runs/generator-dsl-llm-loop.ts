@@ -231,6 +231,13 @@ export function buildDslRepairMessage(result: Extract<DslRunResult, { kind: 'fai
     lines.push('', 'Spatial quality gate issues:')
     for (const issue of gateIssues.slice(0, 10)) lines.push(`- ${issue}`)
   }
+  const realismIssues = result.attempts.flatMap((a) => a.realism?.issues ?? [])
+  const realismWarnings = result.attempts.flatMap((a) => a.realism?.warnings ?? [])
+  if (realismIssues.length > 0 || realismWarnings.length > 0) {
+    lines.push('', 'Industrial realism gate feedback:')
+    for (const issue of realismIssues.slice(0, 10)) lines.push(`- ERROR: ${issue}`)
+    for (const warning of realismWarnings.slice(0, 8)) lines.push(`- WARNING: ${warning}`)
+  }
   return lines.join('\n')
 }
 

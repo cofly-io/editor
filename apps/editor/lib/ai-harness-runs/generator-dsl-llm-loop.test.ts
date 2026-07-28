@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import { LAPTOP_DSL_SOURCE } from './fixtures/laptop.dsl'
+import { reviewAssemblyRealism } from './generated-assembly-realism-gate'
 import { reviewAssemblySpatial } from './generated-assembly-spatial-gate'
 import { compileDsl } from './generated-geometry-dsl-compiler'
 import { NO_SIGNALS, resolveGenerationMode } from './generation-route'
@@ -55,6 +56,7 @@ async function directAttempt(source: string): Promise<DslRunResult> {
       },
     }
   }
+  const realism = reviewAssemblyRealism(compiled.ir, { source })
   return {
     kind: 'ok',
     ir: compiled.ir,
@@ -63,6 +65,7 @@ async function directAttempt(source: string): Promise<DslRunResult> {
     rootNode: {} as never,
     nodeIdByPartId: new Map(),
     spatial,
+    realism,
     attempts: [{ attempt: 1, sandboxMs: 0, diagnostics: [], irHash: compiled.irHash, spatial }],
     budgetUsage: {
       sandboxAttempts: 1,
