@@ -388,11 +388,66 @@ function stripPrimitiveArrayFields<T extends PrimitiveArrayExpandableShape>(shap
   } as T
 }
 
+export type PrimitiveArrayDiagnostic = {
+  code: string
+  message: string
+  path?: string
+}
+
+/**
+ * Fields that expandPrimitiveShapeArrays understands. Anything else carrying
+ * array-expansion intent (e.g. `subArray`, `grid`, unknown relation offsets) is
+ * NOT silently dropped — it is reported via onDiagnostic so the caller can fail
+ * loudly instead of collapsing repeated parts onto one position.
+ */
+const KNOWN_ARRAY_FIELDS = new Set([
+  'array',
+  'arrayCount',
+  'arrayStep',
+  'arrayAxis',
+  'arrayColumns',
+  'arrayRows',
+  'arrayLayers',
+  'arraySpacing',
+  'count',
+  'columns',
+  'rows',
+  'layers',
+  'spacing',
+  'step',
+  'axis',
+])
+
+function collectUnrecognizedArrayFields(record: Record<string, unknown>): string[] {
+  const found = new Set<string>()
+  // High-confidence array-expansion intent keys. Deliberately excludes generic
+  // words like "layout" (too many legitimate non-array uses) to avoid false
+  // positives that would block creation under strict mode.
+  const intentPattern = /^(sub_?array|gridarray|array_?grid|repeatarray|tilearray|matrixarray)$|^.*subarray$/i
+  const scan = (bag: Record<string, unknown> | undefined, prefix: string) => {
+    if (!bag) return
+    for (const key of Object.keys(bag)) {
+      if (KNOWN_ARRAY_FIELDS.has(key)) continue
+      if (intentPattern.test(key)) {
+        found.add(prefix ? `${prefix}.${key}` : key)
+      }
+    }
+  }
+  scan(record, '')
+  scan(isRecord(record.params) ? (record.params as Record<string, unknown>) : undefined, 'params')
+  scan(isRecord(record.array) ? (record.array as Record<string, unknown>) : undefined, 'array')
+  return [...found]
+}
+
 export function expandPrimitiveShapeArrays<T extends PrimitiveArrayExpandableShape>(
   rawShapes: T[],
-  options: { maxExpandedPerShape?: number } = {},
+  options: {
+    maxExpandedPerShape?: number
+    onDiagnostic?: (diagnostic: PrimitiveArrayDiagnostic) => void
+  } = {},
 ): T[] {
   const maxExpandedPerShape = integerField(options.maxExpandedPerShape, 80, 1, 1000)
+  const onDiagnostic = options.onDiagnostic
   const expanded: T[] = []
   for (const shape of rawShapes) {
     const record = shape as Record<string, unknown>
@@ -405,6 +460,26 @@ export function expandPrimitiveShapeArrays<T extends PrimitiveArrayExpandableSha
     const explicitCount = numberField(read('arrayCount') ?? read('count'))
     const linearCount = explicitCount != null ? integerField(explicitCount, 1, 1, 80) : 1
     const total = columns * rows * layers > 1 ? columns * rows * layers : linearCount
+
+    const shapeLabel =
+      typeof (record.name ?? params.name) === 'string'
+        ? ((record.name ?? params.name) as string)
+        : typeof record.kind === 'string'
+          ? (record.kind as string)
+          : undefined
+
+    // Fail loudly on unrecognized array semantics instead of silently collapsing.
+    if (onDiagnostic) {
+      const unrecognized = collectUnrecognizedArrayFields(record)
+      for (const field of unrecognized) {
+        onDiagnostic({
+          code: 'array_semantics_unrecognized',
+          message: `unrecognized array/layout field "${field}" was NOT applied. Supported array fields: columns, rows, layers, count, spacing, step, axis (optionally under "array" or "params"). Repeated parts were not expanded for this field.`,
+          ...(shapeLabel ? { path: shapeLabel } : {}),
+        })
+      }
+    }
+
     if (total <= 1) {
       expanded.push(stripPrimitiveArrayFields(shape))
       continue

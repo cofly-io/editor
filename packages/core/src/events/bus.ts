@@ -19,6 +19,8 @@ import type {
   ExtrudeNode,
   FenceNode,
   FrustumNode,
+  GeneratedAssemblyNode,
+  GeneratedMeshNode,
   GuideNode,
   HalfCylinderNode,
   HemisphereNode,
@@ -89,6 +91,8 @@ export interface NodeEvent<T extends AnyNode = AnyNode> {
 
 export type BoxEvent = NodeEvent<BoxNode>
 export type AssemblyEvent = NodeEvent<AssemblyNode>
+export type GeneratedAssemblyEvent = NodeEvent<GeneratedAssemblyNode>
+export type GeneratedMeshEvent = NodeEvent<GeneratedMeshNode>
 export type CableTrayEvent = NodeEvent<CableTrayNode>
 export type CylinderEvent = NodeEvent<CylinderNode>
 export type DataChartEvent = NodeEvent<DataChartNode>
@@ -251,6 +255,8 @@ type AIChatEvents = {
 
 type EditorEvents = GridEvents &
   NodeEvents<'assembly', AssemblyEvent> &
+  NodeEvents<'generated-assembly', GeneratedAssemblyEvent> &
+  NodeEvents<'generated-mesh', GeneratedMeshEvent> &
   NodeEvents<'box', BoxEvent> &
   NodeEvents<'cable-tray', CableTrayEvent> &
   NodeEvents<'cylinder', CylinderEvent> &

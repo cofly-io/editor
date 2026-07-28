@@ -267,6 +267,51 @@ export function buildPrimitiveResultSummary(artifact: GeneratedGeometryArtifact 
   }
 }
 
+/**
+ * Summary for the generator_dsl route. The DSL pipeline does not produce a
+ * GeneratedGeometryArtifact; it produces a generatedAssembly patch plan that
+ * is applied to the scene directly by completePrimitiveRun. This summary
+ * reflects that reality: geometry built via DSL, spatial gate score, and
+ * whether the scene apply succeeded.
+ */
+export function buildGeneratorDslResultSummary(input: {
+  partCount: number
+  patchCount: number
+  spatialScore?: number
+  applied: boolean
+  applyError?: string
+}): FactoryRunSummary {
+  const { partCount, patchCount, spatialScore, applied, applyError } = input
+  const metrics: FactoryRunSummary['metrics'] = [
+    { label: '部件', value: `${partCount}` },
+    { label: '场景节点', value: `${patchCount}` },
+  ]
+  if (typeof spatialScore === 'number') {
+    metrics.push({ label: '空间质量', value: `${Math.round(spatialScore * 100)}/100` })
+  }
+  metrics.push({ label: '路线', value: 'generator_dsl' })
+
+  return {
+    title: applied ? '设备几何已生成' : '设备几何需要检查',
+    icon: deviceRunIcon('primitive'),
+    status: applied ? 'succeeded' : 'failed',
+    description: applied
+      ? `已通过 Generator DSL 生成 ${partCount} 个部件并应用到画布，可继续参数化修改。`
+      : `Generator DSL 生成了 ${partCount} 个部件，但应用到画布失败${applyError ? `：${applyError}` : '。'}可在控制台查看详情后重试。`,
+    steps: [
+      { label: '理解设备需求', status: 'done' },
+      { label: 'DSL 源码生成', status: 'done' },
+      { label: 'Sandbox 编译 / IR', status: 'done' },
+      {
+        label: `空间质量门 ${typeof spatialScore === 'number' ? `${Math.round(spatialScore * 100)}分` : '通过'}`,
+        status: 'done',
+      },
+      { label: '应用到画布', status: applied ? 'done' : 'failed' },
+    ],
+    metrics,
+  }
+}
+
 export function buildPrimitiveResourceSelectionSummary(resourceSelection: unknown): FactoryRunSummary {
   const candidates =
     isRecord(resourceSelection) && Array.isArray(resourceSelection.candidates)

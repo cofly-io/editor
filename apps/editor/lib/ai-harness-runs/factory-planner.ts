@@ -193,6 +193,15 @@ function normalizeStation(value: unknown, index: number): ProcessStationPlan | n
     ...(stringValue(value.displayLabel) ? { displayLabel: stringValue(value.displayLabel) } : {}),
     role,
     equipmentHint: stringValue(value.equipmentHint) ?? label,
+    ...(value.generationMode === 'recipe' ||
+    value.generationMode === 'primitive' ||
+    value.generationMode === 'generator_dsl'
+      ? { generationMode: value.generationMode }
+      : {}),
+    ...(stringValue(value.generatorDslSource)
+      ? { generatorDslSource: stringValue(value.generatorDslSource) }
+      : {}),
+    ...(isRecord(value.generatorDslParams) ? { generatorDslParams: value.generatorDslParams } : {}),
     footprintHint:
       value.footprintHint === 'small' ||
       value.footprintHint === 'medium' ||

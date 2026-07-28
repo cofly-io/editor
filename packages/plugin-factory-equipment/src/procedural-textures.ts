@@ -60,10 +60,7 @@ export function valueNoise(x: number, y: number, scale: number, seed: number): n
 
 /** 2-octave fractal noise for richer patterns. */
 function fbm(x: number, y: number, scale: number, seed: number): number {
-  return (
-    valueNoise(x, y, scale, seed) * 0.65 +
-    valueNoise(x, y, scale * 2.7, seed + 7) * 0.35
-  )
+  return valueNoise(x, y, scale, seed) * 0.65 + valueNoise(x, y, scale * 2.7, seed + 7) * 0.35
 }
 
 function seedOf(spec: TextureSpec): number {
@@ -117,7 +114,7 @@ function heightAt(spec: TextureSpec, u: number, v: number, seed: number): number
   if (spec.noise === 'brushed-lines') {
     return brushedHeight(u, v, seed, spec.anisotropyAngle ?? 0)
   }
-  const fn = HEIGHT_FNS[spec.noise] ?? HEIGHT_FNS.none
+  const fn = HEIGHT_FNS[spec.noise] ?? HEIGHT_FNS.none ?? (() => 0.5)
   return fn(u, v, seed)
 }
 
@@ -151,8 +148,7 @@ function buildNormal(spec: TextureSpec, seed: number): Uint8Array {
     }
   }
   const bumpScale = spec.strength * 6
-  const hAt = (x: number, y: number) =>
-    heights[((y + res) % res) * res + ((x + res) % res)]
+  const hAt = (x: number, y: number) => heights[((y + res) % res) * res + ((x + res) % res)] ?? 0.5
   for (let y = 0; y < res; y += 1) {
     for (let x = 0; x < res; x += 1) {
       const dx = (hAt(x + 1, y) - hAt(x - 1, y)) * bumpScale

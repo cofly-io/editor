@@ -1,4 +1,5 @@
 import { useCallback, useRef, type Dispatch, type SetStateAction } from 'react'
+import { type AnyNode, useScene } from '@pascal-app/core'
 import { t } from '../../../../../i18n'
 import type { GeneratedGeometryArtifact } from '../../../../../lib/ai-generated-geometry'
 import {
@@ -10,12 +11,28 @@ import {
 } from './chat-utils'
 import {
   buildDeviceProgressSummary,
+  buildGeneratorDslResultSummary,
   buildPrimitiveResourceSelectionSummary,
   buildPrimitiveResultSummary,
   formatPrimitiveRunMessage,
   formatVisibleGeometryResults,
 } from './run-summaries'
 import type { ChatMessage } from './types'
+
+function debugString(value: unknown, maxLength = 360) {
+  if (typeof value === 'string') return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value
+  try {
+    const text = JSON.stringify(value)
+    return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text
+  } catch {
+    return String(value)
+  }
+}
+
+function diagnosticCodesFromDslDowngrade(dslDowngrade: unknown) {
+  if (!isRecord(dslDowngrade) || !Array.isArray(dslDowngrade.diagnosticCodes)) return []
+  return dslDowngrade.diagnosticCodes.map((code) => String(code)).filter(Boolean)
+}
 
 export function usePrimitiveRuns({
   closeRunEventSource,
@@ -35,10 +52,46 @@ export function usePrimitiveRuns({
   trackRunEventSource: (runId: string, source: EventSource) => void
 }) {
   const primitiveRunAnalysisRef = useRef<Map<string, string>>(new Map())
+  const primitiveRunDebugRef = useRef<Map<string, string[]>>(new Map())
 
   const completePrimitiveRun = useCallback(
     (runId: string, resultData: unknown) => {
       const data = isRecord(resultData) ? resultData : {}
+      const runDebugLines = primitiveRunDebugRef.current.get(runId) ?? []
+      const completionDebugDetails = [`runId=${runId}`, '', ...runDebugLines]
+        .filter(Boolean)
+        .join('\n')
+
+      // generator_dsl route: the run result carries a patch plan instead of
+      // a GeneratedGeometryArtifact. Apply it to the scene atomically
+      // (all-or-nothing per plan §3.5) before rendering the chat summary.
+      // Recipe runs never set generatedAssembly, so this is a no-op for them.
+      let dslApply: { applied: boolean; applyError?: string; patchCount: number } | undefined
+      if (isRecord(data.generatedAssembly) && Array.isArray(data.generatedAssembly.patches)) {
+        const patches = data.generatedAssembly.patches as Array<{
+          op: 'create'
+          node: AnyNode
+          parentId?: string
+        }>
+        const createOps = patches
+          .filter((p) => p && p.op === 'create' && isRecord(p.node))
+          .map((p) => ({ node: p.node, ...(p.parentId ? { parentId: p.parentId } : {}) }))
+        dslApply = { applied: false, patchCount: createOps.length }
+        if (createOps.length > 0) {
+          try {
+            useScene.getState().createNodes(createOps as never)
+            dslApply = { applied: true, patchCount: createOps.length }
+          } catch (applyError) {
+            dslApply = {
+              applied: false,
+              patchCount: createOps.length,
+              applyError: applyError instanceof Error ? applyError.message : String(applyError),
+            }
+            console.error('[generator_dsl] failed to apply scene patches', applyError)
+          }
+        }
+      }
+
       const artifact = isRecord(data.artifact)
         ? (data.artifact as unknown as GeneratedGeometryArtifact)
         : undefined
@@ -50,6 +103,79 @@ export function usePrimitiveRuns({
       const analysis =
         typeof data.analysis === 'string' ? data.analysis : primitiveRunAnalysisRef.current.get(runId)
 
+      // generator_dsl summary: part count comes from shapeCount (the DSL
+      // payload sets it to ir.parts.length); spatial score from metrics.
+      const dslSpatialScore = isRecord(data.metrics) && isRecord(data.metrics.primitiveRoute)
+        ? (data.metrics.primitiveRoute as { dslSpatialScore?: unknown }).dslSpatialScore
+        : undefined
+      const primitiveRoute = isRecord(data.metrics) && isRecord(data.metrics.primitiveRoute)
+        ? data.metrics.primitiveRoute
+        : undefined
+      const dslDowngrade = data.dslDowngrade ?? (isRecord(primitiveRoute) ? primitiveRoute.dslDowngrade : undefined)
+      const dslDowngradeMessage =
+        isRecord(dslDowngrade) && typeof dslDowngrade.message === 'string'
+          ? dslDowngrade.message
+          : undefined
+      const dslDowngradeReason =
+        isRecord(dslDowngrade) && typeof dslDowngrade.reason === 'string'
+          ? dslDowngrade.reason
+          : undefined
+      const dslDiagnosticCodes = diagnosticCodesFromDslDowngrade(dslDowngrade)
+      const repairCallCount =
+        isRecord(primitiveRoute) && typeof primitiveRoute.repairCallCount === 'number'
+          ? primitiveRoute.repairCallCount
+          : undefined
+      const dslFailureSummary =
+        dslDowngradeMessage || dslDowngradeReason || dslDiagnosticCodes.length
+          ? {
+              title: '设备几何需要检查',
+              icon: 'mdi:shape-plus',
+              status: 'failed' as const,
+              description:
+                dslDowngradeMessage ??
+                'Generator DSL did not produce an assembly that can be applied to the canvas.',
+              steps: [
+                { label: '理解设备需求', status: 'done' as const },
+                { label: 'DSL 路由声明', status: 'done' as const },
+                { label: 'DSL 源码生成', status: 'done' as const },
+                {
+                  label: dslDowngradeReason === 'compile_diagnostics' ? 'Sandbox 编译 / IR' : 'Sandbox 编译 / IR',
+                  status: dslDowngradeReason === 'compile_diagnostics' ? ('failed' as const) : ('done' as const),
+                },
+                {
+                  label: dslDowngradeReason === 'spatial_gate_failed' ? '空间质量门失败' : '空间质量门',
+                  status: dslDowngradeReason === 'spatial_gate_failed' ? ('failed' as const) : ('pending' as const),
+                },
+                { label: '应用到画布', status: 'pending' as const },
+              ],
+              metrics: [
+                { label: '路线', value: 'generator_dsl' },
+                { label: '诊断码', value: dslDiagnosticCodes.length ? dslDiagnosticCodes.join(', ') : 'none' },
+                ...(repairCallCount != null ? [{ label: 'repair', value: `${repairCallCount}` }] : []),
+              ],
+              details: [
+                `runId=${runId}`,
+                dslDowngradeReason ? `reason=${dslDowngradeReason}` : undefined,
+                dslDiagnosticCodes.length ? `codes=${dslDiagnosticCodes.join(', ')}` : undefined,
+                '',
+                ...runDebugLines,
+              ].filter(Boolean).join('\n'),
+            }
+          : undefined
+      const dslPartCount = typeof data.shapeCount === 'number' ? data.shapeCount : 0
+      const dslSummary = dslApply
+        ? {
+            ...buildGeneratorDslResultSummary({
+              partCount: dslPartCount,
+              patchCount: dslApply.patchCount,
+              ...(typeof dslSpatialScore === 'number' ? { spatialScore: dslSpatialScore } : {}),
+              applied: dslApply.applied,
+              ...(dslApply.applyError ? { applyError: dslApply.applyError } : {}),
+            }),
+            ...(completionDebugDetails ? { details: completionDebugDetails } : {}),
+          }
+        : undefined
+
       setMessages((prev) => {
         const updated = [...prev]
         const runMessageIndex = updated.findIndex((message) => message.generationRun?.id === runId)
@@ -58,13 +184,22 @@ export function usePrimitiveRuns({
             ? formatVisibleGeometryResults(results)
             : lastContent || '(no output)'
         const content = formatPrimitiveRunMessage(analysis, generate)
+        const fallbackSummary = needsResourceSelection
+          ? buildPrimitiveResourceSelectionSummary(data.resourceSelection)
+          : buildPrimitiveResultSummary(artifact)
+        const summary = dslSummary
+          ? dslSummary
+          : dslFailureSummary
+            ? dslFailureSummary
+            : {
+                ...fallbackSummary,
+                ...(completionDebugDetails ? { details: completionDebugDetails } : {}),
+              }
         const resultMessage: ChatMessage = {
           role: 'assistant',
           content,
           generationRun: { id: runId, mode: 'primitive', status: 'succeeded' },
-          factoryRunSummary: needsResourceSelection
-            ? buildPrimitiveResourceSelectionSummary(data.resourceSelection)
-            : buildPrimitiveResultSummary(artifact),
+          factoryRunSummary: summary,
           ...(artifact ? { geometryArtifact: artifact } : {}),
         }
         if (runMessageIndex >= 0) {
@@ -88,6 +223,7 @@ export function usePrimitiveRuns({
           }
         }
         primitiveRunAnalysisRef.current.delete(runId)
+        primitiveRunDebugRef.current.delete(runId)
         return updated
       })
     },
@@ -102,6 +238,7 @@ export function usePrimitiveRuns({
       setLoading(true)
 
       const progressLines: string[] = []
+      primitiveRunDebugRef.current.set(run.id, [])
       setMessages((prev) => {
         if (prev.some((message) => message.generationRun?.id === run.id)) return prev
         const pendingIndex = findPendingPrimitiveRunMessageIndex(prev)
@@ -143,9 +280,11 @@ export function usePrimitiveRuns({
       trackRunEventSource(run.id, source)
 
       source.addEventListener('progress', (event) => {
-        const parsed = JSON.parse(event.data) as { message?: string }
+        const parsed = JSON.parse(event.data) as { message?: string; data?: unknown }
         const message = String(parsed.message ?? '').trim()
         if (message) {
+          const debugLines = primitiveRunDebugRef.current.get(run.id)
+          debugLines?.push(`[progress] ${message}`)
           progressLines.push(message)
           if (progressLines.length > ARTICRAFT_PROGRESS_LINE_LIMIT) {
             progressLines.splice(0, progressLines.length - ARTICRAFT_PROGRESS_LINE_LIMIT)
@@ -175,7 +314,14 @@ export function usePrimitiveRuns({
 
       source.addEventListener('message', (event) => {
         const parsed = safeParseJson(event.data)
-        if (!isRecord(parsed) || !isRecord(parsed.data) || parsed.data.stage !== 'analysis') return
+        if (!isRecord(parsed)) return
+        const stage = isRecord(parsed.data) && typeof parsed.data.stage === 'string'
+          ? parsed.data.stage
+          : 'message'
+        const eventMessage = typeof parsed.message === 'string' ? parsed.message : ''
+        const debugLines = primitiveRunDebugRef.current.get(run.id)
+        debugLines?.push(`[${stage}] ${debugString(eventMessage || parsed.data)}`)
+        if (!isRecord(parsed.data) || parsed.data.stage !== 'analysis') return
         const analysis = typeof parsed.message === 'string' ? parsed.message : ''
         primitiveRunAnalysisRef.current.set(run.id, analysis)
         setMessages((prev) =>
@@ -202,6 +348,8 @@ export function usePrimitiveRuns({
         if (!isRecord(parsed)) return
         const message = typeof parsed.message === 'string' ? parsed.message : ''
         if (!message) return
+        const debugLines = primitiveRunDebugRef.current.get(run.id)
+        debugLines?.push(`[tool-result] ${debugString(message)}`)
         setMessages((prev) =>
           prev.map((messageItem) =>
             messageItem.generationRun?.id === run.id
@@ -226,6 +374,8 @@ export function usePrimitiveRuns({
 
       source.addEventListener('result', (event) => {
         const parsed = JSON.parse(event.data) as { data?: unknown }
+        const debugLines = primitiveRunDebugRef.current.get(run.id)
+        debugLines?.push(`[result] ${debugString(parsed.data)}`)
         closeRunEventSource(run.id)
         completePrimitiveRun(run.id, parsed.data)
       })

@@ -81,7 +81,8 @@ export function generateAssetComponentArtifact(input: {
     params: input.params ?? {},
     placement: { x: 0, y: 0, z: 0, rotationY: 0 },
   })
-  const parts = output?.assembly?.parts ?? []
+  const assembly = output?.assembly
+  const parts = assembly?.parts ?? []
   if (!parts.length) return null
   const shapes = parts.flatMap(shapesFromPart)
   const transforms = shapes.map((shape) => ({ position: shape.position, rotation: shape.rotation }))
@@ -93,7 +94,7 @@ export function generateAssetComponentArtifact(input: {
       profileId: input.profileId,
       componentPack: input.componentPack,
       generator: input.generator,
-      primarySemanticRole: output.assembly?.primarySemanticRole,
+      primarySemanticRole: assembly?.primarySemanticRole,
     },
     userPrompt: input.userPrompt,
     version: 1,
@@ -108,8 +109,8 @@ export function generateAssetComponentArtifact(input: {
       category: input.profileId,
       units: 'meters',
       expectedDimensions: input.expectedDimensions,
-      requiredRoles: output.assembly?.editableParts ?? [],
-      semanticRoles: output.assembly?.editableParts ?? [],
+      requiredRoles: assembly?.editableParts ?? [],
+      semanticRoles: assembly?.editableParts ?? [],
     },
   }
 }
@@ -447,7 +448,8 @@ export function createComponentGeneratorPatches(input: {
     params: input.equipmentContract.recipeParams ?? {},
     placement: { x: 0, y: 0, z: 0, rotationY: 0 },
   })
-  const parts = output?.assembly?.parts ?? []
+  const assembly = output?.assembly
+  const parts = assembly?.parts ?? []
   if (!parts.length) return null
   const shapes = parts.flatMap(shapesFromPart)
   const transforms = shapes.map((shape) => ({ position: shape.position, rotation: shape.rotation }))
@@ -460,7 +462,7 @@ export function createComponentGeneratorPatches(input: {
       profileId: input.equipmentContract.profileId,
       componentPack: generatorRef.componentPack,
       generator: generatorRef.generator,
-      primarySemanticRole: output.assembly?.primarySemanticRole,
+      primarySemanticRole: assembly?.primarySemanticRole,
     },
     userPrompt: input.station.equipmentHint,
     version: 1,
@@ -499,12 +501,12 @@ export function createComponentGeneratorPatches(input: {
         profileId: input.equipmentContract.profileId,
         recipeSource: 'asset-component-generator',
         equipmentFamily: input.equipmentContract.equipmentFamily,
-        primarySemanticRole: output.assembly?.primarySemanticRole,
+        primarySemanticRole: assembly?.primarySemanticRole,
         envelope: input.equipmentContract.envelope,
         ports: input.equipmentContract.ports,
         editablePartRoles: input.equipmentContract.requiredRoles ?? [],
-        dynamicBindings: output.assembly?.dataBindings ?? [],
-        runtimeEffects: output.assembly?.runtimeEffects ?? [],
+        dynamicBindings: assembly?.dataBindings ?? [],
+        runtimeEffects: assembly?.runtimeEffects ?? [],
       },
     },
   })

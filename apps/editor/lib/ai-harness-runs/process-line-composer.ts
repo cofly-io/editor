@@ -241,7 +241,7 @@ function connectionColor(connection: ProcessConnectionPlan, spec: ConnectionRend
   return typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color) ? color : spec.color
 }
 
-function connectionDiameter(connection: ProcessConnectionPlan, fallback: number | undefined) {
+function connectionDiameter(connection: ProcessConnectionPlan, fallback: number) {
   const diameter = connection.render?.diameter
   return typeof diameter === 'number' && Number.isFinite(diameter) && diameter > 0
     ? diameter
@@ -802,10 +802,11 @@ function createConnectionDetailPatches(input: {
       )
     }
 
-    if (input.connection.render?.insulationThickness && spec.nodeKind === 'pipe') {
+    const render = input.connection.render
+    if (render?.insulationThickness && spec.nodeKind === 'pipe') {
       const diameter =
         connectionDiameter(input.connection, spec.diameter ?? pipeDiameter(medium)) +
-        input.connection.render.insulationThickness * 2
+        render.insulationThickness * 2
       const node = PipeNode.parse({
         name: `${connectionSegmentName({
           connection: input.connection,
@@ -831,8 +832,8 @@ function createConnectionDetailPatches(input: {
       patches.push(parentPatch(node, input.placement))
     }
 
-    if (input.connection.render?.valves || input.connection.render?.expansionJoints) {
-      const fittingPoints = input.connection.render.expansionJoints ? [0.34, 0.66] : [0.5]
+    if (render?.valves || render?.expansionJoints) {
+      const fittingPoints = render.expansionJoints ? [0.34, 0.66] : [0.5]
       fittingPoints.forEach((t, fittingIndex) => {
         const [x, z] = interpolatedSegmentPoint(segment, t)
         patches.push(
@@ -842,10 +843,8 @@ function createConnectionDetailPatches(input: {
               connectionIndex: input.connectionIndex,
               segmentIndex,
               segmentCount: input.route.segments.length,
-            })} ${input.connection.render?.expansionJoints ? 'expansion joint' : 'valve'} ${fittingIndex + 1}`,
-            role: input.connection.render?.expansionJoints
-              ? 'process-line-expansion-joint'
-              : 'process-line-valve',
+            })} ${render.expansionJoints ? 'expansion joint' : 'valve'} ${fittingIndex + 1}`,
+            role: render.expansionJoints ? 'process-line-expansion-joint' : 'process-line-valve',
             position: [x, elevation, z],
             rotationY: angle,
             length: 0.34,
@@ -853,7 +852,7 @@ function createConnectionDetailPatches(input: {
               connectionDiameter(input.connection, spec.diameter ?? pipeDiameter(medium)) * 1.8,
             height:
               connectionDiameter(input.connection, spec.diameter ?? pipeDiameter(medium)) * 1.8,
-            color: input.connection.render?.expansionJoints ? '#a16207' : '#334155',
+            color: render.expansionJoints ? '#a16207' : '#334155',
             metadata: {
               ...metadata,
               resolver: input.connection.render?.expansionJoints

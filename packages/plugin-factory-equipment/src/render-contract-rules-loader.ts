@@ -12,7 +12,11 @@
  *   // rules can now be used by resolveIndustrialRenderContract
  */
 
-import type { IndustrialRenderContract } from '@pascal-app/core/registry'
+import {
+  INDUSTRIAL_RENDER_INSTANCING_HINTS,
+  type IndustrialRenderContract,
+  type IndustrialRenderInstancingHint,
+} from '@pascal-app/core/registry'
 
 export type RenderRuleDefinition = {
   id: string
@@ -37,6 +41,12 @@ export type IndustrialRenderRule = IndustrialRenderContract & {
   roles?: readonly string[]
   sourcePartKinds?: readonly string[]
   tokenPatterns?: readonly RegExp[]
+}
+
+function instancingHint(value: string | undefined): IndustrialRenderInstancingHint | undefined {
+  return INDUSTRIAL_RENDER_INSTANCING_HINTS.includes(value as IndustrialRenderInstancingHint)
+    ? (value as IndustrialRenderInstancingHint)
+    : undefined
 }
 
 export class RenderContractRulesLoader {
@@ -93,7 +103,7 @@ export class RenderContractRulesLoader {
       kernel: def.kernel as IndustrialRenderContract['kernel'],
       material: def.material as IndustrialRenderContract['material'],
       runtimeEffects: def.runtimeEffects ?? [],
-      instancingHint: def.instancingHint,
+      instancingHint: instancingHint(def.instancingHint),
     }
 
     // Remove existing rule with same id (replace semantics)

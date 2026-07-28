@@ -577,13 +577,30 @@ export async function listRecentRuns(limit = 20) {
   const root = await runsRoot()
   try {
     const entries = await fs.readdir(root, { withFileTypes: true })
-    const runs = await Promise.all(
-      entries.filter((entry) => entry.isDirectory()).map((entry) => loadRun(entry.name)),
+    const safeLimit = Math.max(1, limit)
+    const candidates = (
+      await Promise.all(
+        entries
+          .filter((entry) => entry.isDirectory())
+          .map(async (entry) => {
+            try {
+              const stat = await fs.stat(path.join(root, entry.name))
+              return { name: entry.name, updatedAtMs: stat.mtimeMs }
+            } catch {
+              return null
+            }
+          }),
+      )
     )
+      .filter((entry): entry is { name: string; updatedAtMs: number } => Boolean(entry))
+      .sort((a, b) => b.updatedAtMs - a.updatedAtMs)
+      .slice(0, Math.max(safeLimit * 2, 50))
+
+    const runs = await Promise.all(candidates.map((entry) => loadRun(entry.name)))
     return runs
       .filter((run): run is AiHarnessRun => Boolean(run))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-      .slice(0, limit)
+      .slice(0, safeLimit)
   } catch {
     return []
   }

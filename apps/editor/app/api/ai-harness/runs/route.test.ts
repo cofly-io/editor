@@ -6,11 +6,11 @@ import {
   markRunCancellationRequested,
   runDir,
 } from '../../../../lib/ai-harness-runs/run-store'
-import { parseAiHarnessRunRequestBody } from './route'
+import { parseJsonRequestBody } from '../../../../lib/request-json'
 
 describe('POST /api/ai-harness/runs body parsing', () => {
   test('decodes normal UTF-8 JSON bodies without corrupting Chinese prompts', async () => {
-    const body = await parseAiHarnessRunRequestBody(
+    const body = await parseJsonRequestBody(
       new Request('http://localhost/api/ai-harness/runs', {
         method: 'POST',
         headers: { 'content-type': 'application/json; charset=utf-8' },
@@ -31,7 +31,7 @@ describe('POST /api/ai-harness/runs body parsing', () => {
       193, 176, 232, 198, 247, 163, 172, 210, 187, 184, 246, 184, 203, 215, 211, 163, 172, 207, 194,
       195, 230, 202, 199, 200, 253, 198, 172, 189, 176, 210, 182, 34, 125,
     ])
-    const body = await parseAiHarnessRunRequestBody(
+    const body = await parseJsonRequestBody(
       new Request('http://localhost/api/ai-harness/runs', {
         method: 'POST',
         headers: { 'content-type': 'application/json; charset=gb18030' },

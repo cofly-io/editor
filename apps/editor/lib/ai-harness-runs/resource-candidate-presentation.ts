@@ -42,9 +42,10 @@ export function resourceCandidateOptions(
     reason: candidate.reason,
     source: candidate.profile.source,
     sourcePack: candidate.profile.sourcePack,
-    industry: candidate.profile.industry,
-    family: candidate.profile.family,
-    layoutFamily: candidate.profile.layoutFamily,
+    industry: candidate.profile.industry ?? 'generic',
+    family: candidate.profile.family ?? candidate.profile.id,
+    layoutFamily:
+      candidate.profile.layoutFamily ?? candidate.profile.family ?? candidate.profile.id,
     description: candidate.profile.description,
   }))
   const recommendedCandidateId = recommendedResourceCandidateId(baseCandidates)

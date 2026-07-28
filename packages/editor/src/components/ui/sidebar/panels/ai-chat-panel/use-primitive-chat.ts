@@ -106,6 +106,13 @@ export function usePrimitiveChat({
             sceneId,
             mode: 'primitive',
             prompt: userContent,
+            // Whitelist the generator_dsl route for UI-driven runs. The
+            // server-side flag (evaluateGeneratorDslFlag) treats
+            // params.generatorDsl === true as an explicit opt-in that
+            // bypasses the rollout bucket. Structured prompts (laptop-like:
+            // needs grid/hinge/hierarchy/computed-layout) will then route to
+            // the DSL pipeline instead of falling back to the recipe route.
+            params: { generatorDsl: true },
             context: {
               analysisContext,
               harnessContext: modelUserContent,

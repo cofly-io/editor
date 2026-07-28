@@ -89,9 +89,9 @@ export function composeInstanceMatrix(
 
   // Apply uniform scale to the 3x3 basis (w components at 3/7/11 stay 0)
   for (let col = 0; col < 3; col += 1) {
-    out[offset + col * 4] *= scale
-    out[offset + col * 4 + 1] *= scale
-    out[offset + col * 4 + 2] *= scale
+    out[offset + col * 4] = (out[offset + col * 4] ?? 0) * scale
+    out[offset + col * 4 + 1] = (out[offset + col * 4 + 1] ?? 0) * scale
+    out[offset + col * 4 + 2] = (out[offset + col * 4 + 2] ?? 0) * scale
   }
 
   // Apply rotationY: R = Ry(θ) · Basis — rotate basis columns in the XZ plane
@@ -99,8 +99,8 @@ export function composeInstanceMatrix(
     const cos = Math.cos(rotationY)
     const sin = Math.sin(rotationY)
     for (let col = 0; col < 3; col += 1) {
-      const bx = out[offset + col * 4]
-      const bz = out[offset + col * 4 + 2]
+      const bx = out[offset + col * 4] ?? 0
+      const bz = out[offset + col * 4 + 2] ?? 0
       out[offset + col * 4] = bx * cos + bz * sin
       out[offset + col * 4 + 2] = -bx * sin + bz * cos
     }
@@ -144,8 +144,6 @@ export function buildInstanceMatrices(batch: InstanceBatch): BatchInstanceData {
 /**
  * Build instance matrices for every batch of a plan.
  */
-export function buildPlanInstanceMatrices(
-  batches: readonly InstanceBatch[],
-): BatchInstanceData[] {
+export function buildPlanInstanceMatrices(batches: readonly InstanceBatch[]): BatchInstanceData[] {
   return batches.map((batch) => buildInstanceMatrices(batch))
 }

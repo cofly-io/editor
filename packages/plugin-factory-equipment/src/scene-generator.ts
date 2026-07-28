@@ -18,12 +18,7 @@ import type {
   SemanticRecipePart,
   SemanticRecipePort,
 } from '@pascal-app/core'
-import type {
-  Layout,
-  LayoutStation,
-  LoadedIndustryPack,
-  Profile,
-} from './industry-pack-loader'
+import type { Layout, LayoutStation, LoadedIndustryPack, Profile } from './industry-pack-loader'
 import { LayoutRealism, type ZoneGroundMaterial } from './layout-realism'
 
 // ─── Public Types ────────────────────────────────────────────────────────────
@@ -87,10 +82,7 @@ export type SceneGeneratorOptions = {
 
 // ─── Transform helpers ───────────────────────────────────────────────────────
 
-function rotateY(
-  point: [number, number, number],
-  radians: number,
-): [number, number, number] {
+function rotateY(point: [number, number, number], radians: number): [number, number, number] {
   const cos = Math.cos(radians)
   const sin = Math.sin(radians)
   const [x, y, z] = point
@@ -277,7 +269,7 @@ export class SceneGenerator {
         maxZ = Math.max(maxZ, station.position[2] + halfW)
       }
       const material = this.realism.zoneGroundMaterial(
-        stationById.get(stations[0].stationId)?.zone ?? zone,
+        stationById.get(stations[0]?.stationId ?? '')?.zone ?? zone,
       )
       grounds.push({
         zone,

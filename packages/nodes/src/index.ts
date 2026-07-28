@@ -18,6 +18,8 @@ import { elevatorDefinition } from './elevator'
 import { extrudeDefinition } from './extrude'
 import { fenceDefinition } from './fence'
 import { frustumDefinition } from './frustum'
+import { generatedAssemblyDefinition } from './generated-assembly'
+import { generatedMeshDefinition } from './generated-mesh'
 import { guideDefinition } from './guide'
 import { halfCylinderDefinition } from './half-cylinder'
 import { hemisphereDefinition } from './hemisphere'
@@ -72,6 +74,8 @@ export const builtinPlugin: Plugin = {
   nodes: [
     // Stage E-complete (full registry path)
     assemblyDefinition as unknown as AnyNodeDefinition,
+    generatedAssemblyDefinition as unknown as AnyNodeDefinition,
+    generatedMeshDefinition as unknown as AnyNodeDefinition,
     dataWidgetDefinition as unknown as AnyNodeDefinition,
     dataChartDefinition as unknown as AnyNodeDefinition,
     dataTableDefinition as unknown as AnyNodeDefinition,
@@ -145,6 +149,8 @@ export { elevatorDefinition } from './elevator'
 export { extrudeDefinition } from './extrude'
 export { fenceDefinition } from './fence'
 export { frustumDefinition } from './frustum'
+export { generatedAssemblyDefinition } from './generated-assembly'
+export { generatedMeshDefinition } from './generated-mesh'
 export { guideDefinition } from './guide'
 export { halfCylinderDefinition } from './half-cylinder'
 export { hemisphereDefinition } from './hemisphere'

@@ -49,6 +49,14 @@ export type PartBlueprint = {
     | 'compose_recipe'
     | 'compose_primitive'
     | 'revise_geometry'
+  /**
+   * LLM-declared generation pipeline (stage-6 LLM-routed mode). When the
+   * stage-1 analyst judges the object needs hierarchy / hinges / grids /
+   * computed layouts / freeform surfaces, it declares 'generator_dsl';
+   * simple primitives declare 'recipe'. The router treats this as the
+   * highest-priority signal (still flag-gated for DSL). Absent = heuristic.
+   */
+  generationMode?: 'recipe' | 'generator_dsl' | 'ai_3d'
   category?: string
   constraints?: Record<string, unknown>
   parts?: PartBlueprintItem[]

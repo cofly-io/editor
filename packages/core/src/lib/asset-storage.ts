@@ -1,4 +1,4 @@
-import { get, set } from 'idb-keyval'
+import { del, get, set } from 'idb-keyval'
 
 export const ASSET_PREFIX = 'asset_data:'
 
@@ -52,4 +52,16 @@ export async function loadAssetUrl(url: string): Promise<string | null> {
 
   // Legacy data URLs are returned as is
   return url
+}
+
+/** Delete an IndexedDB-backed asset and release any cached object URL. */
+export async function deleteAsset(url: string): Promise<void> {
+  if (!url.startsWith('asset://')) return
+  const id = url.replace('asset://', '')
+  const cachedUrl = urlCache.get(id)
+  if (cachedUrl) {
+    URL.revokeObjectURL(cachedUrl)
+    urlCache.delete(id)
+  }
+  await del(`${ASSET_PREFIX}${id}`)
 }

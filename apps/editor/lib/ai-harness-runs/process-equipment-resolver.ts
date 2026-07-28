@@ -4,12 +4,12 @@ import {
   resolvePrimitiveWorldTransforms,
 } from '@pascal-app/core/lib/primitive-compose'
 import { BoxNode, ItemNode, PipeFittingNode, PipeNode, TankNode } from '@pascal-app/core/schema'
+import type { Profile } from '@pascal-app/plugin-factory-equipment'
 import {
   STORAGE_TANK_EDITABLE_PART_ROLES,
   STORAGE_TANK_RECIPE_ID,
   synthesizeGeometryParts,
 } from '@pascal-app/plugin-factory-equipment'
-import type { Profile } from '@pascal-app/plugin-factory-equipment'
 import {
   computeGeneratedAssemblyPosition,
   createGeneratedGeometryId,
@@ -45,6 +45,7 @@ import type {
 export type ProcessStationEquipmentResolver =
   | 'catalog-item'
   | 'factory-node'
+  | 'generator-dsl'
   | 'native-box'
   | 'native-pipe'
   | 'native-pipe-fitting'
@@ -677,11 +678,14 @@ function createPrimitiveRequest(input: {
   metadata: Record<string, unknown>
   equipmentContract?: ProcessEquipmentContract
 }): ProcessPrimitiveRequest {
+  const generatorDsl = input.station.generationMode === 'generator_dsl'
   const metadata = {
     ...input.metadata,
     equipmentRole: input.station.role,
-    resolver: 'primitive',
-    resolverReason: 'no native industrial node matched',
+    resolver: generatorDsl ? 'generator-dsl' : 'primitive',
+    resolverReason: generatorDsl
+      ? 'station explicitly selected generator DSL'
+      : 'no native industrial node matched',
     ...equipmentContractMetadata(input.equipmentContract),
   }
   return {
@@ -821,9 +825,7 @@ function createProfilePartsPatch(input: {
 // an independent node (double-click → part-level editing), NOT a snapshot and
 // NOT instanced.
 
-function synthesizedProfileForContract(
-  equipmentContract: ProcessEquipmentContract,
-): Profile {
+function synthesizedProfileForContract(equipmentContract: ProcessEquipmentContract): Profile {
   const envelope = equipmentContract.envelope
   return {
     id: equipmentContract.profileId,
@@ -973,6 +975,24 @@ export function resolveProcessStationEquipment(input: {
     station: input.station,
   })
   const withContract = { ...input, equipmentContract }
+  if (input.station.generationMode === 'generator_dsl') {
+    return {
+      patches: [],
+      primitiveRequest: createPrimitiveRequest(withContract),
+      resolved: false,
+      resolver: 'generator-dsl',
+      reason: 'station explicitly selected generator DSL',
+    }
+  }
+  if (input.station.generationMode === 'primitive') {
+    return {
+      patches: [],
+      primitiveRequest: createPrimitiveRequest(withContract),
+      resolved: false,
+      resolver: 'primitive',
+      reason: 'station explicitly selected primitive generation',
+    }
+  }
   if (equipmentContract?.generatorRef) {
     const componentGenerated = createComponentGeneratorPatches({
       ...input,

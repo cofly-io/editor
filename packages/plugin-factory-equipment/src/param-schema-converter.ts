@@ -63,7 +63,9 @@ export function generatorParamsToZodSchema(
  * Convert a full generator manifest to a zod schema.
  * Includes both params validation and manifest metadata.
  */
-export function generatorManifestToZodSchema(manifest: GeneratorManifest): z.ZodObject<Record<string, z.ZodTypeAny>> {
+export function generatorManifestToZodSchema(
+  manifest: GeneratorManifest,
+): z.ZodObject<Record<string, z.ZodTypeAny>> {
   const paramsSchema = generatorParamsToZodSchema(manifest.params)
 
   return z.object({
@@ -117,17 +119,13 @@ function numberParamToZod(
   return strict ? base : base.optional()
 }
 
-function enumParamToZod(
-  key: string,
-  schema: GeneratorParamSchema,
-  strict: boolean,
-): z.ZodTypeAny {
+function enumParamToZod(key: string, schema: GeneratorParamSchema, strict: boolean): z.ZodTypeAny {
   if (!schema.options || schema.options.length === 0) {
     return z.string().optional()
   }
 
   const enumValues = schema.options as [string, ...string[]]
-  let base = z.enum(enumValues)
+  let base: z.ZodTypeAny = z.enum(enumValues)
 
   if (schema.default !== undefined && typeof schema.default === 'string') {
     base = base.default(schema.default)
@@ -137,11 +135,7 @@ function enumParamToZod(
   return strict ? base : base.optional()
 }
 
-function colorParamToZod(
-  key: string,
-  schema: GeneratorParamSchema,
-  strict: boolean,
-): z.ZodTypeAny {
+function colorParamToZod(key: string, schema: GeneratorParamSchema, strict: boolean): z.ZodTypeAny {
   const base = z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/, `${key} must be a valid hex color (e.g. #38bdf8)`)

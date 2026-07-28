@@ -1,3 +1,36 @@
+export {
+  buildDynamicCapabilityMetadata,
+  COMMON_DYNAMIC_TYPES,
+  getDynamicTypesForNode,
+  getDynamicTypesForSemanticType,
+  getNodeSemanticType,
+  getRecommendedDynamicTypeForNode,
+  getRecommendedDynamicTypeForSemanticType,
+  inferNodeSemanticType,
+  NODE_TYPE_SEMANTIC_DEFAULTS,
+  SEMANTIC_DYNAMIC_TYPES,
+} from './dynamics/capabilities'
+export {
+  isDynamicBinding,
+  isDynamicJointBinding,
+  isDynamicJointChannel,
+  readDynamicMetadata,
+  writeDynamicMetadataPatch,
+} from './dynamics/metadata'
+export {
+  DYNAMIC_TYPE_LABELS,
+  type DynamicAxis,
+  type DynamicBinding,
+  type DynamicCapabilityMetadata,
+  type DynamicConveyorEndpointBehavior,
+  type DynamicJointBinding,
+  type DynamicJointChannel,
+  type DynamicJointMotionKind,
+  type DynamicMetadata,
+  type DynamicType,
+  SEMANTIC_TYPE_LABELS,
+} from './dynamics/types'
+export * from './equipment'
 export type {
   BoxEvent,
   BuildingEvent,
@@ -45,62 +78,6 @@ export type {
 } from './events/bus'
 export { emitter, eventSuffixes } from './events/bus'
 export {
-  buildDynamicCapabilityMetadata,
-  COMMON_DYNAMIC_TYPES,
-  getDynamicTypesForNode,
-  getDynamicTypesForSemanticType,
-  getNodeSemanticType,
-  getRecommendedDynamicTypeForNode,
-  getRecommendedDynamicTypeForSemanticType,
-  inferNodeSemanticType,
-  NODE_TYPE_SEMANTIC_DEFAULTS,
-  SEMANTIC_DYNAMIC_TYPES,
-} from './dynamics/capabilities'
-export {
-  isDynamicBinding,
-  isDynamicJointBinding,
-  isDynamicJointChannel,
-  readDynamicMetadata,
-  writeDynamicMetadataPatch,
-} from './dynamics/metadata'
-export {
-  DYNAMIC_TYPE_LABELS,
-  type DynamicAxis,
-  type DynamicBinding,
-  type DynamicCapabilityMetadata,
-  type DynamicConveyorEndpointBehavior,
-  type DynamicJointBinding,
-  type DynamicJointChannel,
-  type DynamicJointMotionKind,
-  type DynamicMetadata,
-  type DynamicType,
-  SEMANTIC_TYPE_LABELS,
-} from './dynamics/types'
-export * from './equipment'
-export {
-  registerSemanticRecipe,
-  semanticRecipeRegistry,
-  assertSemanticRecipeComposeResult,
-  assertSemanticRecipeDefinition,
-  type SemanticRecipeComposeInput,
-  type SemanticRecipeComposeResult,
-  type SemanticRecipeDefinition,
-  type SemanticRecipeEditableParam,
-  type SemanticRecipeEditableParamEffect,
-  type SemanticRecipeEditableParamKind,
-  type SemanticRecipeEnvelope,
-  type SemanticRecipeId,
-  type SemanticRecipePart,
-  type SemanticRecipePartGroup,
-  type SemanticRecipePartGroupEditable,
-  type SemanticRecipePort,
-  type SemanticRecipePortSide,
-  type SemanticRecipeRegistry,
-  type SemanticRecipeValidationIssue,
-  validateSemanticRecipeComposeResult,
-  validateSemanticRecipeDefinition,
-} from './registry/semantic-recipes'
-export {
   sceneRegistry,
   useRegistry,
 } from './hooks/scene-registry/scene-registry'
@@ -139,7 +116,7 @@ export {
   type UserGeometryConstraints,
   validateAssemblyConstraints,
 } from './lib/assembly-constraints'
-export { loadAssetUrl, saveAsset } from './lib/asset-storage'
+export { deleteAsset, loadAssetUrl, saveAsset } from './lib/asset-storage'
 export {
   applyDeviceProfileToPartInput,
   buildDraftDeviceProfile,
@@ -202,6 +179,59 @@ export {
   normalizeFamilyId,
   normalizeLayoutFamilyId,
 } from './lib/family-registry'
+export {
+  type AssemblyConstraint,
+  type AssemblyGeometry,
+  type AssemblyIR,
+  type AssemblyPart,
+  type AssemblyTransform,
+  type AttachmentConstraint,
+  canonicalizeAssemblyIR,
+  type GeometryRecipe,
+  type GridConstraint,
+  type HingeConstraint,
+  type IRConnection,
+  type IRPort,
+  type IRPortSide,
+  KNOWN_MEDIA,
+  type MeshBlobRef,
+  type Quat,
+  type SerializableMaterial,
+} from './lib/generated-assembly-ir'
+export {
+  ASSEMBLY_BUDGET,
+  type AssemblyDiagnostic,
+  type AssemblyDiagnosticSeverity,
+  hasAssemblyErrors,
+  validateAssemblyIR,
+} from './lib/generated-assembly-validation'
+export {
+  DSL_ALLOWED_GLOBALS,
+  DSL_API_VERSION,
+  DSL_FORBIDDEN_GLOBALS,
+  DSL_FORBIDDEN_PROPERTIES,
+  DSL_MATH_CONSTANTS,
+  DSL_MATH_FUNCTIONS,
+  type DSLApiCard,
+  type DSLApiCardInput,
+  type DSLCompileErr,
+  type DSLCompileOk,
+  type DSLCompileResult,
+  type DSLDiagnostic,
+  type DSLDiagnosticSeverity,
+  type DSLDiagnosticSpan,
+  type DSLGlobalEnv,
+  type DSLMathFunction,
+  type DSLParamDecl,
+  type DSLParamsBlock,
+  type DSLParamType,
+  type RevisionRoute,
+} from './lib/generated-geometry-dsl-contract'
+export {
+  type GeneratedMeshBlobPayload,
+  loadGeneratedMeshBlob,
+  saveGeneratedMeshBlob,
+} from './lib/generated-mesh-blob-storage'
 export {
   createGeometryGoldenSnapshot,
   type GeometryGoldenShapeSnapshot,
@@ -306,6 +336,7 @@ export {
   segmentsIntersect,
 } from './lib/polygon-relations'
 export {
+  extractPrimitiveShapeContract,
   type PrimitiveAnchor,
   type PrimitiveAxis,
   type PrimitiveBevelContract,
@@ -321,12 +352,11 @@ export {
   type PrimitivePatternKind,
   type PrimitivePortKind,
   type PrimitivePortMarkerInput,
-  type PrimitiveShapeInput,
   type PrimitiveShapeContract,
+  type PrimitiveShapeInput,
   type PrimitiveShapeKind,
   type ResolvedPrimitiveTransform,
   type ResolveTransformsOptions,
-  extractPrimitiveShapeContract,
   resolvePrimitiveWorldTransforms,
   type Vec3,
 } from './lib/primitive-compose'
@@ -402,9 +432,14 @@ export {
   wallTouchesOthers,
 } from './lib/space-detection'
 export {
+  getLiveDataValue,
+  type LiveDataConnectionStatus,
+  useLiveData,
+} from './live-data/live-data-store'
+export {
   formatLiveDataValue,
-  getLiveDataPathLabel,
   formatStaticLiveDataValue,
+  getLiveDataPathLabel,
   getStaticLiveDataValue,
   isLiveDataBindingConfig,
   type LiveDataBindingConfig,
@@ -425,11 +460,6 @@ export {
   type StaticLiveDataValue,
 } from './live-data/static-live-data'
 export {
-  getLiveDataValue,
-  type LiveDataConnectionStatus,
-  useLiveData,
-} from './live-data/live-data-store'
-export {
   getCatalogMaterialById,
   getLibraryMaterialIdFromRef,
   getMaterialPresetByRef,
@@ -437,18 +467,41 @@ export {
   getMaterialsForCategory,
   getSceneMaterialIdFromRef,
   LIBRARY_MATERIAL_REF_PREFIX,
-  SCENE_MATERIAL_REF_PREFIX,
   MATERIAL_CATALOG,
   MATERIAL_CATEGORIES,
   type MaterialCatalogItem,
   type MaterialCategory,
   type MaterialRef,
+  parseMaterialRef,
+  SCENE_MATERIAL_REF_PREFIX,
   type SceneMaterial,
   type SceneMaterialId,
-  parseMaterialRef,
   toLibraryMaterialRef,
 } from './material-library'
 export * from './registry'
+export {
+  assertSemanticRecipeComposeResult,
+  assertSemanticRecipeDefinition,
+  registerSemanticRecipe,
+  type SemanticRecipeComposeInput,
+  type SemanticRecipeComposeResult,
+  type SemanticRecipeDefinition,
+  type SemanticRecipeEditableParam,
+  type SemanticRecipeEditableParamEffect,
+  type SemanticRecipeEditableParamKind,
+  type SemanticRecipeEnvelope,
+  type SemanticRecipeId,
+  type SemanticRecipePart,
+  type SemanticRecipePartGroup,
+  type SemanticRecipePartGroupEditable,
+  type SemanticRecipePort,
+  type SemanticRecipePortSide,
+  type SemanticRecipeRegistry,
+  type SemanticRecipeValidationIssue,
+  semanticRecipeRegistry,
+  validateSemanticRecipeComposeResult,
+  validateSemanticRecipeDefinition,
+} from './registry/semantic-recipes'
 export * from './schema'
 export * from './services'
 export {
@@ -563,20 +616,11 @@ export {
   type WallMoveJunctionPlan,
   type WallPlanPoint,
 } from './systems/wall/wall-move'
-export type { SceneGraph } from './utils/clone-scene-graph'
-export { cloneLevelSubtree, cloneSceneGraph, forkSceneGraph } from './utils/clone-scene-graph'
-export {
-  createTransferEndpointConnection,
-  getTransferPortPoint,
-  isTransferEndpointNode,
-  resolveTransferEndpointSnap,
-  TRANSFER_ENDPOINT_SNAP_DISTANCE,
-  type TransferEndpointNode,
-  type TransferEndpointSnap,
-} from './transfer-network/endpoints'
 export {
   addTransferConnectionToMetadata,
   areConveyorPortsTouching,
+  type ConveyorBeltRouteNode,
+  type ConveyorEndpointSnap,
   createConveyorEndpointConnection,
   distance3D,
   getConveyorPortPoint,
@@ -586,11 +630,21 @@ export {
   removeTransferConnectionsReferencingNodesFromMetadata,
   resolveConveyorEndpointSnap,
   TRANSFER_ENDPOINT_SNAP_THRESHOLD,
-  type ConveyorBeltRouteNode,
-  type ConveyorEndpointSnap,
   type TransferConnection,
   type TransferPort,
 } from './transfer-network/conveyor'
+export {
+  createTransferEndpointConnection,
+  getTransferPortPoint,
+  isTransferEndpointNode,
+  resolveTransferEndpointSnap,
+  TRANSFER_ENDPOINT_SNAP_DISTANCE,
+  type TransferEndpointNode,
+  type TransferEndpointSnap,
+} from './transfer-network/endpoints'
+export type { SceneObjectRef, ScenePointerEvent } from './types/scene-object'
+export type { SceneGraph } from './utils/clone-scene-graph'
+export { cloneLevelSubtree, cloneSceneGraph, forkSceneGraph } from './utils/clone-scene-graph'
 export { isObject } from './utils/types'
 export {
   type BuildStats,
@@ -601,4 +655,3 @@ export {
   type ValidationSeverity,
   validateBuildJson,
 } from './validation/validate-build-json'
-export type { SceneObjectRef, ScenePointerEvent } from './types/scene-object'

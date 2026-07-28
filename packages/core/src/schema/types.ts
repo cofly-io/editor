@@ -18,6 +18,7 @@ import { ElevatorNode } from './nodes/elevator'
 import { ExtrudeNode } from './nodes/extrude'
 import { FenceNode } from './nodes/fence'
 import { FrustumNode } from './nodes/frustum'
+import { GeneratedAssemblyNode, GeneratedMeshNode } from './nodes/generated-mesh'
 import { GuideNode } from './nodes/guide'
 import { HalfCylinderNode } from './nodes/half-cylinder'
 import { HemisphereNode } from './nodes/hemisphere'
@@ -64,6 +65,8 @@ export const AnyNode = z.discriminatedUnion('type', [
   ConformalStripNode,
   ConveyorBeltNode,
   FrustumNode,
+  GeneratedAssemblyNode,
+  GeneratedMeshNode,
   HemisphereNode,
   TorusNode,
   WedgeNode,

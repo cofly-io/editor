@@ -4,6 +4,49 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+function getNodeChildIds(node: unknown): string[] {
+  if (!isRecord(node) || !Array.isArray(node.children)) return []
+  return (node.children as unknown[])
+    .map((child) => {
+      if (typeof child === 'string') return child
+      if (child && typeof child === 'object' && 'id' in child && typeof child.id === 'string') {
+        return child.id
+      }
+      return null
+    })
+    .filter((id): id is string => typeof id === 'string')
+}
+
+function collectReachableNodeIds(
+  nodes: Record<string, unknown>,
+  rootNodeIds: string[],
+): Set<string> {
+  const reachable = new Set<string>()
+  const stack = [...rootNodeIds]
+  const childIdsByParentId = new Map<string, string[]>()
+
+  for (const [id, node] of Object.entries(nodes)) {
+    if (!isRecord(node)) continue
+    const parentId = typeof node.parentId === 'string' ? node.parentId : null
+    if (!parentId) continue
+    const children = childIdsByParentId.get(parentId) ?? []
+    children.push(id)
+    childIdsByParentId.set(parentId, children)
+  }
+
+  while (stack.length > 0) {
+    const id = stack.pop()
+    if (!id || reachable.has(id)) continue
+    const node = nodes[id]
+    if (!node) continue
+    reachable.add(id)
+    stack.push(...getNodeChildIds(node))
+    stack.push(...(childIdsByParentId.get(id) ?? []))
+  }
+
+  return reachable
+}
+
 function stripTransientNodeMetadata(node: unknown): unknown {
   if (!isRecord(node) || !isRecord(node.metadata) || node.metadata.isNew !== true) return node
 
@@ -64,17 +107,42 @@ export function prepareSceneGraphForSave(scene: SceneGraph): SceneGraph {
       .filter(([, node]) => isTransientNode(node))
       .map(([id]) => id),
   )
-  const nodes = Object.fromEntries(
+
+  // First pass: strip transient nodes and repair references.
+  const nodesAfterTransient = Object.fromEntries(
     Object.entries(scene.nodes)
       .filter(([id]) => !transientIds.has(id))
       .map(([id, node]) => [id, preparePersistedNode(node, transientIds)]),
   )
+  const rootNodeIdsAfterTransient = scene.rootNodeIds.filter(
+    (id) => !transientIds.has(id) && id in nodesAfterTransient,
+  )
+
+  // Second pass: drop unreachable nodes so they are not persisted. The
+  // scene store cleans them on load, but without this step the same
+  // orphans are written back to storage and re-appear on every startup.
+  const reachableIds = collectReachableNodeIds(nodesAfterTransient, rootNodeIdsAfterTransient)
+  const unreachableIds = Object.keys(nodesAfterTransient).filter((id) => !reachableIds.has(id))
+  if (unreachableIds.length > 0) {
+    console.warn(
+      `[scene-save] Dropping ${unreachableIds.length} unreachable node(s) before save:`,
+      unreachableIds,
+    )
+  }
+  const nodes: typeof nodesAfterTransient = {}
+  for (const [id, node] of Object.entries(nodesAfterTransient)) {
+    if (reachableIds.has(id)) {
+      nodes[id] = node
+    }
+  }
+  const rootNodeIds = rootNodeIdsAfterTransient.filter((id) => id in nodes)
+
   const collections = prepareCollections(scene.collections, transientIds)
 
   return {
     ...scene,
     nodes,
-    rootNodeIds: scene.rootNodeIds.filter((id) => !transientIds.has(id) && id in nodes),
+    rootNodeIds,
     ...(collections ? { collections } : {}),
   }
 }

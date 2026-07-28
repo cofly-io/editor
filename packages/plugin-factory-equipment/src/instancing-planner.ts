@@ -15,8 +15,8 @@
  */
 
 import type { SemanticRecipePart } from '@pascal-app/core'
-import type { GeneratedScene, PlacedPart } from './scene-generator'
 import type { RoutedConnection, RoutingResult } from './connection-router'
+import type { GeneratedScene, PlacedPart } from './scene-generator'
 
 // ─── Public Types ────────────────────────────────────────────────────────────
 
@@ -102,7 +102,7 @@ const DEFAULT_HINT_RULES: Array<{ pattern: RegExp; hint: string }> = [
 ]
 
 function readHint(part: PlacedPart): string | undefined {
-  const record = part as Record<string, unknown>
+  const record = part as unknown as Record<string, unknown>
   const contract = record.renderContract as { instancingHint?: unknown } | undefined
   if (typeof contract?.instancingHint === 'string') return contract.instancingHint
   const role = (part.semanticRole ?? '').toLowerCase()
@@ -120,7 +120,7 @@ function round3(value: number | undefined): string {
 }
 
 function geometrySignature(part: PlacedPart): string {
-  const record = part as Record<string, unknown>
+  const record = part as unknown as Record<string, unknown>
   return [
     typeof part.kind === 'string' ? part.kind : 'generic_body',
     round3(record.length as number),
@@ -134,14 +134,14 @@ function geometrySignature(part: PlacedPart): string {
 }
 
 function colorOf(part: PlacedPart): string {
-  const record = part as Record<string, unknown>
+  const record = part as unknown as Record<string, unknown>
   const material = record.material as { properties?: { color?: unknown } } | undefined
   const color = material?.properties?.color ?? record.primaryColor
   return typeof color === 'string' ? color.toLowerCase() : '#cccccc'
 }
 
 function materialFamilyOf(part: PlacedPart): string | undefined {
-  const record = part as Record<string, unknown>
+  const record = part as unknown as Record<string, unknown>
   const contract = record.renderContract as { material?: unknown } | undefined
   return typeof contract?.material === 'string' ? contract.material : undefined
 }
@@ -194,9 +194,10 @@ export class InstancingPlanner {
         continue
       }
       const exemplar = group.parts[0]
-      const record = exemplar as Record<string, unknown>
+      if (!exemplar) continue
+      const record = exemplar as unknown as Record<string, unknown>
       const instances: InstanceTransform[] = group.parts.map((part) => {
-        const r = part as Record<string, unknown>
+        const r = part as unknown as Record<string, unknown>
         return {
           position: part.worldPosition ?? (r.position as [number, number, number]) ?? [0, 0, 0],
           axis: r.axis as 'x' | 'y' | 'z' | undefined,
@@ -251,17 +252,12 @@ export class InstancingPlanner {
    * Extend the plan with routed pipe segments (also highly repeated).
    * Pipe segments of the same diameter + color + medium group into batches.
    */
-  planWithConnections(
-    scene: GeneratedScene,
-    routing: RoutingResult,
-  ): InstancingPlan {
+  planWithConnections(scene: GeneratedScene, routing: RoutingResult): InstancingPlan {
     const scenePlan = this.planScene(scene)
     const pipeParts = this.pipeSegmentsToPlacedParts(routing.routed)
     const pipePlan = this.planParts(pipeParts)
 
-    const batches = [...scenePlan.batches, ...pipePlan.batches].sort(
-      (a, b) => b.count - a.count,
-    )
+    const batches = [...scenePlan.batches, ...pipePlan.batches].sort((a, b) => b.count - a.count)
     const singletons = [...scenePlan.singletons, ...pipePlan.singletons]
     const instancedParts = scenePlan.summary.instancedParts + pipePlan.summary.instancedParts
     const totalParts = scenePlan.summary.totalParts + pipePlan.summary.totalParts
@@ -284,7 +280,7 @@ export class InstancingPlanner {
     const parts: PlacedPart[] = []
     for (const connection of routed) {
       for (const segment of connection.segments) {
-        const record = segment as Record<string, unknown>
+        const record = segment as unknown as Record<string, unknown>
         parts.push({
           ...(segment as SemanticRecipePart),
           stationId: `conn_${connection.index}`,

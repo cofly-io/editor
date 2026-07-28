@@ -167,6 +167,114 @@ describe('geometry intent planner', () => {
     ])
   })
 
+  test('plans a complete bicycle blueprint as a whole-object assembly without Stage2 repair', () => {
+    const intent = inferCreateIntentFromBlueprint(
+      'compose_parts',
+      {},
+      {
+        route: 'compose_parts',
+        category: 'vehicle-bicycle',
+        generationMode: 'generator_dsl',
+        constraints: { primaryColor: '#cc0000' },
+        requiredRoles: [
+          'bicycle_tire',
+          'bicycle_frame',
+          'bicycle_fork',
+          'bicycle_handlebar',
+          'bicycle_saddle',
+          'bicycle_chain',
+        ],
+        parts: [
+          { id: 'rear_wheel', kind: 'wheel_set', semanticRole: 'bicycle_tire' },
+          { id: 'front_wheel', kind: 'wheel_set', semanticRole: 'bicycle_tire' },
+          { id: 'frame', kind: 'tube_frame', semanticRole: 'bicycle_frame' },
+          { id: 'fork', kind: 'fork', semanticRole: 'bicycle_fork' },
+          { id: 'chain', kind: 'chain_loop', semanticRole: 'bicycle_chain' },
+        ],
+      },
+      '\u751f\u6210\u4e00\u4e2a\u7ea2\u8272\u7684\u81ea\u884c\u8f66',
+    )
+
+    expect(intent).toEqual(
+      expect.objectContaining({
+        action: 'create',
+        scope: 'whole_object',
+        family: 'bicycle',
+        constraints: expect.objectContaining({ primaryColor: '#cc0000' }),
+      }),
+    )
+
+    const plan = planGeometryIntent(intent!)
+    expect(plan.action).toBe('create')
+    expect(plan.tool).toBe('compose_assembly')
+    expect(plan.issues).toEqual([])
+    expect(plan.args).toMatchObject({
+      family: 'bicycle',
+      primaryColor: '#cc0000',
+    })
+
+    const result = executeGeometryToolCall(
+      plan.tool,
+      { ...plan.args, geometryIntent: intent },
+      { prompt: '\u751f\u6210\u4e00\u4e2a\u7ea2\u8272\u7684\u81ea\u884c\u8f66' },
+    )
+    expect(result.artifact).toBeDefined()
+    expect(result.artifact?.sourceTool).toBe('compose_assembly')
+    expect(result.artifact?.sourceArgs.family).toBe('bicycle')
+    expect(result.content).toContain('Validation: family=bicycle')
+    expect(result.content).not.toContain('vehicle visual quality')
+  })
+
+  test('plans a complete small car blueprint as a whole-object vehicle assembly without Stage2 repair', () => {
+    const intent = inferCreateIntentFromBlueprint(
+      'compose_parts',
+      {},
+      {
+        route: 'compose_assembly',
+        category: 'vehicle-small-car',
+        generationMode: 'generator_dsl',
+        constraints: { primaryColor: '#cc0000', style: 'small car' },
+        requiredRoles: ['vehicle_body', 'vehicle_tire', 'vehicle_window', 'headlight'],
+        parts: [
+          { id: 'body', kind: 'body_shell', semanticRole: 'vehicle_body' },
+          { id: 'wheels', kind: 'wheel_set', semanticRole: 'vehicle_tire', count: 4 },
+          { id: 'windows', kind: 'window_strip', semanticRole: 'vehicle_window' },
+        ],
+      },
+      '\u751f\u6210\u4e00\u4e2a\u7ea2\u8272\u5c0f\u6c7d\u8f66',
+    )
+
+    expect(intent).toEqual(
+      expect.objectContaining({
+        action: 'create',
+        scope: 'whole_object',
+        family: 'vehicle',
+        constraints: expect.objectContaining({ primaryColor: '#cc0000', style: 'small car' }),
+      }),
+    )
+
+    const plan = planGeometryIntent(intent!)
+    expect(plan.action).toBe('create')
+    expect(plan.tool).toBe('compose_assembly')
+    expect(plan.issues).toEqual([])
+    expect(plan.args).toMatchObject({
+      family: 'vehicle',
+      primaryColor: '#cc0000',
+      style: 'small car',
+    })
+
+    const result = executeGeometryToolCall(
+      plan.tool,
+      { ...plan.args, geometryIntent: intent },
+      { prompt: '\u751f\u6210\u4e00\u4e2a\u7ea2\u8272\u5c0f\u6c7d\u8f66' },
+    )
+    expect(result.artifact).toBeDefined()
+    expect(result.artifact?.sourceTool).toBe('compose_assembly')
+    expect(result.artifact?.sourceArgs.family).toBe('vehicle')
+    expect(result.content).toContain('Validation: family=vehicle')
+    expect(result.content).toContain('Visual quality: family=vehicle')
+  })
+
   test.each([
     [
       'vehicle',

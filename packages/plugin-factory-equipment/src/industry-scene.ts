@@ -18,27 +18,21 @@ import {
   type IndustryPackLoaderOptions,
   type LoadedIndustryPack,
 } from './industry-pack-loader'
-import { LayoutRealism, type SpacingViolation } from './layout-realism'
+import { type BatchInstanceData, buildPlanInstanceMatrices } from './instance-matrix-builder'
 import {
-  InstancingPlanner,
   type InstancingPlan,
+  InstancingPlanner,
   type InstancingPlannerOptions,
 } from './instancing-planner'
+import { LayoutRealism, type SpacingViolation } from './layout-realism'
 import {
-  resolvePbrMaterial,
   type PbrMaterialPlan,
   type RenderContractLike,
+  resolvePbrMaterial,
+  type TextureSpec,
 } from './pbr-material-library'
-import { generateTextureSet, type GeneratedTexture } from './procedural-textures'
-import {
-  buildPlanInstanceMatrices,
-  type BatchInstanceData,
-} from './instance-matrix-builder'
-import {
-  SceneGenerator,
-  type GeneratedScene,
-  type SceneGeneratorOptions,
-} from './scene-generator'
+import { type GeneratedTexture, generateTextureSet } from './procedural-textures'
+import { type GeneratedScene, SceneGenerator, type SceneGeneratorOptions } from './scene-generator'
 
 export type IndustrySceneOptions = {
   loader: IndustryPackLoaderOptions
@@ -122,7 +116,7 @@ function resolveSceneMaterials(instancing: InstancingPlan): SceneMaterialPlan {
     })
   }
   for (const part of instancing.singletons) {
-    const record = part as Record<string, unknown>
+    const record = part as unknown as Record<string, unknown>
     const key = `singleton:${String(record.id ?? record.semanticRole ?? Math.random())}`
     const contract = record.renderContract as RenderContractLike | undefined
     register(key, contract)
@@ -164,7 +158,12 @@ export async function generateIndustryScene(
   // 2. Convert profiles to recipes and register them
   const recipes = loader.profilesToRecipes(pack)
   if (options.registry?.register) {
-    for (const recipe of recipes) options.registry.register(recipe)
+    for (const recipe of recipes) {
+      const alreadyRegistered = recipe.acceptsProfiles?.some(
+        (profileId) => options.registry?.findByProfile(profileId)?.id === recipe.id,
+      )
+      if (!alreadyRegistered) options.registry.register(recipe)
+    }
   }
 
   // 3. Load layout rules (zone materials + spacing)
@@ -186,16 +185,10 @@ export async function generateIndustryScene(
   // 6. Validate spacing
   const spacingViolations = options.skipSpacingValidation
     ? []
-    : realism.validateSpacing(
-        pack.layouts[0]?.stations ?? [],
-        pack.profiles,
-      )
+    : realism.validateSpacing(pack.layouts[0]?.stations ?? [], pack.profiles)
 
   // 7. Performance + realism plan: instanced batches + PBR materials
-  const instancing = new InstancingPlanner(options.instancing).planWithConnections(
-    scene,
-    routing,
-  )
+  const instancing = new InstancingPlanner(options.instancing).planWithConnections(scene, routing)
   const materialPlan = resolveSceneMaterials(instancing)
 
   // 8. Optional: pre-generate render-ready payload (matrices + textures)

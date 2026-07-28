@@ -12,11 +12,7 @@
  */
 
 import type { SemanticRecipePart, SemanticRecipePortSide } from '@pascal-app/core'
-import type {
-  Connection,
-  LoadedIndustryPack,
-  Profile,
-} from './industry-pack-loader'
+import type { Connection, LoadedIndustryPack, Profile } from './industry-pack-loader'
 import type { GeneratedScene, PlacedStation } from './scene-generator'
 
 // ─── Public Types ────────────────────────────────────────────────────────────
@@ -94,14 +90,49 @@ const SIDE_VECTORS: Record<SemanticRecipePortSide, [number, number, number]> = {
   bottom: [0, -1, 0],
 }
 
+function normalizedPortName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '')
+}
+
+function wantsInletPort(alias: string): boolean {
+  return /feed|inlet|input|raw|hotin|coldin/.test(alias)
+}
+
+function wantsOutletPort(alias: string): boolean {
+  return /outlet|output|product|overhead|bottom|liquid|vapor|steam|gas|relief|flue/.test(alias)
+}
+
 function resolvePortWorldPosition(
   station: PlacedStation,
   portAlias: string,
 ): [number, number, number] | null {
   // Match by port id, or by semanticRole-like alias
-  const port = station.ports.find(
-    (candidate) => candidate.id === portAlias || candidate.role === portAlias,
-  )
+  const normalizedAlias = normalizedPortName(portAlias)
+  const port =
+    station.ports.find((candidate) => {
+      const id = normalizedPortName(candidate.id ?? '')
+      const role = normalizedPortName(candidate.role ?? '')
+      return (
+        id === normalizedAlias ||
+        role === normalizedAlias ||
+        id.includes(normalizedAlias) ||
+        normalizedAlias.includes(id)
+      )
+    }) ??
+    (wantsInletPort(normalizedAlias)
+      ? station.ports.find(
+          (candidate) =>
+            normalizedPortName(candidate.role ?? '').includes('inlet') ||
+            normalizedPortName(candidate.id ?? '').includes('in'),
+        )
+      : undefined) ??
+    (wantsOutletPort(normalizedAlias)
+      ? station.ports.find(
+          (candidate) =>
+            normalizedPortName(candidate.role ?? '').includes('outlet') ||
+            normalizedPortName(candidate.id ?? '').includes('out'),
+        )
+      : undefined)
   const env = station.envelope ?? { length: 4, width: 4, height: 4 }
 
   if (!port) {
@@ -151,9 +182,7 @@ export class ConnectionRouter {
    * Route all connections of a pack against a generated scene.
    */
   routeConnections(pack: LoadedIndustryPack, scene: GeneratedScene): RoutingResult {
-    const stationById = new Map<string, PlacedStation>(
-      scene.stations.map((s) => [s.stationId, s]),
-    )
+    const stationById = new Map<string, PlacedStation>(scene.stations.map((s) => [s.stationId, s]))
     // Profile port aliases: profile.ports maps logical name → semantic alias.
     // A connection endpoint's "port" may be either the logical name or the alias.
     const profileById = new Map<string, Profile>(pack.profiles.map((p) => [p.id, p]))
@@ -228,8 +257,7 @@ export class ConnectionRouter {
         totalConnections: connections.length,
         routedConnections: routed.length,
         totalSegments: routed.reduce((sum, r) => sum + r.segments.length, 0),
-        totalPipeLength:
-          Math.round(routed.reduce((sum, r) => sum + r.length, 0) * 100) / 100,
+        totalPipeLength: Math.round(routed.reduce((sum, r) => sum + r.length, 0) * 100) / 100,
       },
     }
   }
@@ -242,7 +270,7 @@ export class ConnectionRouter {
   private resolvePortAlias(profile: Profile | undefined, portRef: string): string {
     if (!profile) return portRef
     const ports = profile.ports ?? {}
-    if (portRef in ports) return ports[portRef]
+    if (portRef in ports) return ports[portRef] ?? portRef
     return portRef
   }
 

@@ -392,6 +392,8 @@ function IndustryPackCard({
     </article>
   )
 }
+
+export default function ProfilePacksPage() {
   const [data, setData] = useState<AssetCatalogResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)

@@ -16,14 +16,15 @@
  */
 
 import type {
-  SemanticRecipeDefinition,
-  SemanticRecipePart,
-  SemanticRecipePort,
-  SemanticRecipePartGroup,
-  SemanticRecipeEditableParam,
+  EquipmentParamValue,
   SemanticRecipeComposeInput,
   SemanticRecipeComposeResult,
+  SemanticRecipeDefinition,
+  SemanticRecipeEditableParam,
   SemanticRecipeEnvelope,
+  SemanticRecipePart,
+  SemanticRecipePartGroup,
+  SemanticRecipePort,
 } from '@pascal-app/core'
 import { mergeParamsWithDefaults, validateGeneratorParams } from './param-schema-converter'
 import { synthesizeGeometryParts } from './runtime-geometry-synthesizer'
@@ -214,6 +215,28 @@ export type IndustryPackLoaderOptions = {
 
 // ─── Recipe Generation Context ───────────────────────────────────────────────
 
+function toEquipmentParamValue(value: unknown): EquipmentParamValue | undefined {
+  if (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  ) {
+    return value
+  }
+  if (Array.isArray(value)) {
+    const items = value.map(toEquipmentParamValue)
+    return items.every((item) => item !== undefined) ? (items as EquipmentParamValue[]) : undefined
+  }
+  if (typeof value === 'object' && value !== null) {
+    const entries = Object.entries(value)
+      .map(([key, entry]) => [key, toEquipmentParamValue(entry)] as const)
+      .filter((entry): entry is readonly [string, EquipmentParamValue] => entry[1] !== undefined)
+    return Object.fromEntries(entries)
+  }
+  return undefined
+}
+
 type RecipeContext = {
   profile: Profile
   generatorManifest: GeneratorManifest | undefined
@@ -287,7 +310,10 @@ export class IndustryPackLoader {
     const connections = await this.loadJsonFiles<Connections>(packRoot, manifest.connections ?? [])
 
     // Load quality rules
-    const qualityRules = await this.loadJsonFiles<QualityRules>(packRoot, manifest.qualityRules ?? [])
+    const qualityRules = await this.loadJsonFiles<QualityRules>(
+      packRoot,
+      manifest.qualityRules ?? [],
+    )
 
     // Load generator manifests for all profiles
     const generatorManifests = new Map<string, GeneratorManifest>()
@@ -362,8 +388,7 @@ export class IndustryPackLoader {
       editableParams,
       editablePartRoles: profile.qualityRequiredRoles ?? [],
       corePartRoles: this.buildCorePartRoles(profile),
-      compose: (input: SemanticRecipeComposeInput) =>
-        this.composeFromProfile(ctx, input),
+      compose: (input: SemanticRecipeComposeInput) => this.composeFromProfile(ctx, input),
     }
   }
 
@@ -492,7 +517,8 @@ export class IndustryPackLoader {
         key,
         label: schema.label ?? key,
         kind: this.mapParamKind(schema.type),
-        defaultValue: profile.params?.[key] ?? schema.default,
+        defaultValue:
+          toEquipmentParamValue(profile.params?.[key]) ?? toEquipmentParamValue(schema.default),
       }
 
       if (schema.type === 'number') {
@@ -612,8 +638,10 @@ export class IndustryPackLoader {
    */
   private inferPortSide(alias: string): SemanticRecipePort['side'] {
     const lower = alias.toLowerCase()
-    if (lower.includes('inlet') || lower.includes('feed') || lower.includes('suction')) return 'left'
-    if (lower.includes('outlet') || lower.includes('product') || lower.includes('discharge')) return 'right'
+    if (lower.includes('inlet') || lower.includes('feed') || lower.includes('suction'))
+      return 'left'
+    if (lower.includes('outlet') || lower.includes('product') || lower.includes('discharge'))
+      return 'right'
     if (lower.includes('vent') || lower.includes('overhead') || lower.includes('top')) return 'top'
     if (lower.includes('bottom') || lower.includes('drain')) return 'bottom'
     if (lower.includes('power') || lower.includes('data')) return 'back'

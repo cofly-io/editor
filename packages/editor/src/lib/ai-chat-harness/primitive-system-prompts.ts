@@ -71,6 +71,7 @@ export const PRIMITIVE_STAGE1_ANALYST_PROMPT = [
   'After the analysis text, output one ```json fenced code block containing a structured part blueprint:',
   '{',
   '  "route": "compose_parts" | "compose_assembly" | "compose_recipe" | "compose_primitive" | "revise_geometry",',
+  '  "generationMode": "generator_dsl" | "recipe" | "ai_3d",',
   '  "category": "semantic category",',
   '  "constraints": { "length"?: number, "width"?: number, "height"?: number, "primaryColor"?: string },',
   '  "deviceProfileDraft"?: {',
@@ -106,6 +107,13 @@ export const PRIMITIVE_STAGE1_ANALYST_PROMPT = [
   '}',
   'Only omit parts when route is revise_geometry. Prefer relationship fields over raw position coordinates.',
   'For unknown industrial devices such as freeze dryers, filter presses, or screw conveyors, prefer route:"compose_parts" with deviceProfileDraft instead of route:"compose_primitive".',
+  '',
+  'generationMode decides WHICH PIPELINE builds the geometry. Judge by structural complexity, not by whether you recognize the object name:',
+  '- INDUSTRY PACK FIRST: if an INDUSTRY PACK CATALOG is present in the user message and the request matches one of its devices (by name or alias), that device has an engineer-tuned editable template. Declare generationMode:"recipe" for it — the pack will take over and produce a more accurate result than generator_dsl. Do NOT declare generator_dsl for pack-covered equipment.',
+  '- "generator_dsl": the object is a MULTI-PART ASSEMBLY with structure that a flat primitive list cannot express, AND it is NOT covered by the industry pack catalog. Choose this when ANY of these hold: articulated openings (doors/lids/lids/drawers/flip covers that swing or slide), parent-child part hierarchy (a screen inside a lid, shelves inside a cabinet), repeated grids or arrays (keyboards, grilles, shelves, compartments), precise computed layout, or curved/lathed/extruded surfaces. Common cases: laptops, refrigerators (single/double/French door), washing machines, microwaves, ovens, dishwashers, cabinets, wardrobes, air conditioners, vehicles, machine enclosures with access doors. For these, ALSO fill parts[] with the decomposition (doors, body, shelves, hinges...) so the DSL author has a structural sketch.',
+  '- "recipe": a single simple primitive or a closed-form standard part (gear, flange, bolt, pipe elbow) with no articulation and no internal hierarchy, OR any device covered by the industry pack catalog.',
+  '- "ai_3d": appearance/texture is the whole point and the shape is organic or sculptural (statues, plants, characters), with no need for parametric editing.',
+  'When in doubt between generator_dsl and recipe, prefer generator_dsl for anything with a door, lid, drawer, screen, or more than ~4 distinct parts — UNLESS it is in the industry pack catalog (then recipe).',
 ].join('\n')
 
 export const PRIMITIVE_STAGE2_GENERATOR_PROMPT = [

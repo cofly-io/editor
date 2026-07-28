@@ -24,6 +24,18 @@ import type { GeneratedGeometryArtifact } from '../../../../packages/editor/src/
 import { persistDeviceProfileCandidateFromArtifact } from '../device-profile-candidates'
 import { loadDeviceProfiles } from '../device-profiles'
 import { generateAssetComponentArtifact } from './asset-component-generator-runner'
+import { GENERATION_VERSIONS } from './generation-versions'
+import { DSL_AUTHOR_PROMPT_VERSION, runDslSourceLoop } from './generator-dsl-llm-loop'
+import {
+  applyRouteDecisionToMetrics,
+  resolveRunGenerationMode,
+  routeDecisionEventData,
+} from './generator-dsl-route-binding'
+import {
+  type DslRunResult,
+  executeGeneratorDslRun,
+  summarizeDslRunForEvents,
+} from './generator-dsl-run'
 import { type IndustryPackRef, resolveIndustryPackDir } from './industry-factory-knowledge'
 import { basicPrimitiveDeterministicRoute } from './primitive-basic-routes'
 import { precisionPartDeterministicRoute } from './primitive-precision-routes'
@@ -73,7 +85,9 @@ import {
   resourceCandidateOptions,
 } from './resource-candidate-presentation'
 import { resolveProfileResourceCandidates } from './resource-profile-resolver'
-import { appendRunEvent, isTerminalStatus, loadRun, updateRun } from './run-store'
+import { appendRunEvent, isTerminalStatus, loadRun, runDir, updateRun } from './run-store'
+import { promises as fs } from 'node:fs'
+import path from 'node:path'
 
 export { basicPrimitiveDeterministicRoute } from './primitive-basic-routes'
 export { precisionPartDeterministicRoute } from './primitive-precision-routes'
@@ -269,7 +283,7 @@ async function callAi(
   const data = JSON.parse(text)
   const message = data.choices?.[0]?.message
   if (!message) throw new Error('Empty response from AI.')
-  return message as ApiResponseMessage
+  return message as TextApiMessage
 }
 
 function contextRecord(value: unknown) {
@@ -651,6 +665,272 @@ async function completeResourceSelectionRun(input: {
   await completeRunWithResult(input.runId, result)
 }
 
+/**
+ * Format the loaded industry-pack device profiles into a compact catalog
+ * for the stage-1 analyst. The router prefers a verified industry-pack
+ * profile over an LLM-declared DSL pipeline — but the analyst can only
+ * defer to a pack it knows about. Feeding it name + aliases + description
+ * lets it (a) recognize when the request matches a pack device and declare
+ * accordingly, and (b) avoid re-inventing standard equipment via DSL.
+ *
+ * Bounded to MAX entries / per-entry description length so a large pack
+ * can't blow the prompt budget. Returns null when no profiles are loaded
+ * (caller then sends the bare analysis context).
+ */
+const INDUSTRY_PACK_CATALOG_MAX_ENTRIES = 60
+const INDUSTRY_PACK_CATALOG_MAX_DESC = 80
+
+function buildIndustryPackCatalogForPrompt(
+  loaded: Awaited<ReturnType<typeof loadDeviceProfiles>> | undefined,
+): string | null {
+  const profiles = loaded?.profiles
+  if (!profiles || profiles.length === 0) return null
+  const lines: string[] = [
+    '===== INDUSTRY PACK CATALOG (standard equipment with engineer-tuned editable templates) =====',
+    'The following devices are covered by loaded industry packs. If the user request matches one of them, prefer the pack — do NOT declare generator_dsl for it; the pack produces a more accurate, parametrically editable result than free generation. Match by name OR any alias.',
+  ]
+  const slice = profiles.slice(0, INDUSTRY_PACK_CATALOG_MAX_ENTRIES)
+  for (const p of slice) {
+    const aliasText = p.aliases.length > 0 ? ` (aliases: ${p.aliases.join(', ')})` : ''
+    const desc =
+      p.description.length > INDUSTRY_PACK_CATALOG_MAX_DESC
+        ? `${p.description.slice(0, INDUSTRY_PACK_CATALOG_MAX_DESC)}…`
+        : p.description
+    lines.push(`- ${p.name}${aliasText}: ${desc}`)
+  }
+  if (profiles.length > INDUSTRY_PACK_CATALOG_MAX_ENTRIES) {
+    lines.push(`- …and ${profiles.length - INDUSTRY_PACK_CATALOG_MAX_ENTRIES} more (omitted).`)
+  }
+  return lines.join('\n')
+}
+
+/**
+ * Persist the per-attempt LLM DSL source log to inputs/dsl-attempts.json.
+ * Best-effort: a write failure must never fail the run itself.
+ */
+async function persistDslAttemptLog(
+  runId: string,
+  log: Array<Record<string, unknown>>,
+): Promise<void> {
+  if (log.length === 0) return
+  try {
+    const dir = path.join(await runDir(runId), 'inputs')
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(
+      path.join(dir, 'dsl-attempts.json'),
+      `${JSON.stringify(log, null, 2)}\n`,
+      'utf8',
+    )
+  } catch {
+    // swallow — diagnostics persistence is not on the critical path
+  }
+}
+
+/**
+ * generator_dsl route — stage 6. DSL source comes from input.source
+ * (injected by tests/harness) or from the LLM author+repair loop, then
+ * compiles through the sandbox, runs the spatial quality gate, and
+ * completes the run with the patch plan (scene insertion stays
+ * client-side). On failure the run is completed with an explicit
+ * downgrade record — the user sees the reason, attempt count, and
+ * diagnostic codes; nothing falls back silently to the legacy route.
+ */
+async function runGeneratorDslRoute(input: {
+  runId: string
+  userPrompt: string
+  source?: string
+  params?: Record<string, unknown>
+  decision: ReturnType<typeof resolveRunGenerationMode>
+  stage1HasBlueprint: boolean
+  signal: AbortSignal
+}): Promise<boolean> {
+  const routeMetrics: PrimitiveRouteMetrics = {
+    route: 'generator_dsl',
+    stage1HasBlueprint: input.stage1HasBlueprint,
+    deterministicIntent: false,
+    deterministicAttempted: false,
+    deterministicSucceeded: false,
+    stage2Called: false,
+    stage2ToolCallCount: 0,
+    repairCallCount: 0,
+  }
+  applyRouteDecisionToMetrics(routeMetrics, input.decision)
+
+  const runAttempt = (source: string) =>
+    executeGeneratorDslRun({
+      source,
+      apiVersion: GENERATION_VERSIONS.dslApiVersion,
+      ...(input.params !== undefined ? { params: input.params } : {}),
+      route: input.decision,
+    })
+
+  let llmAttempts = 1
+  let result: DslRunResult
+  let usedSource: string | null = input.source ?? null
+  // Collect every LLM-authored source + its compile outcome so failures can
+  // be inspected after the run (today a failed DSL run leaves no source on
+  // disk, making parse errors impossible to diagnose). Persisted to
+  // inputs/dsl-attempts.json at the end of the route.
+  const dslAttemptLog: Array<{
+    attempt: number
+    source: string
+    outcome: 'ok' | 'failed'
+    diagnosticCodes?: string[]
+    diagnostics?: Array<{ code: string; message: string; line?: number }>
+  }> = []
+  const loggedRunAttempt = async (source: string) => {
+    const run = await runAttempt(source)
+    dslAttemptLog.push({
+      attempt: dslAttemptLog.length + 1,
+      source,
+      outcome: run.kind,
+      ...(run.kind === 'failed' ? { diagnosticCodes: run.downgrade.diagnosticCodes } : {}),
+      diagnostics: run.attempts.flatMap((a) =>
+        a.diagnostics.map((d) => ({
+          code: d.code,
+          message: d.message,
+          ...(d.span?.line !== undefined ? { line: d.span.line } : {}),
+        })),
+      ),
+    })
+    return run
+  }
+
+  if (usedSource !== null) {
+    result = await loggedRunAttempt(usedSource)
+  } else {
+    // LLM author + repair loop: the model writes DSL source against the
+    // API card + laptop few-shot; compile/gate diagnostics are fed back
+    // until it succeeds, stagnates, or exhausts the attempt budget.
+    await appendRunEvent(input.runId, {
+      type: 'message',
+      message: 'Requesting DSL source from the model',
+      data: { stage: 'generator-dsl-author', promptVersion: DSL_AUTHOR_PROMPT_VERSION },
+    })
+    const loop = await runDslSourceLoop({
+      userPrompt: input.userPrompt,
+      callLlm: async (messages) => {
+        const message = await callAi(
+          messages.map((m) => ({ role: m.role, content: m.content })),
+          undefined,
+          input.signal,
+        )
+        const content = message.content as ApiMessage['content']
+        if (typeof content === 'string') return content
+        if (Array.isArray(content)) {
+          return content.map((c) => (typeof c.text === 'string' ? c.text : '')).join('\n')
+        }
+        return ''
+      },
+      runAttempt: loggedRunAttempt,
+      maxAttempts: 3,
+    })
+    llmAttempts = loop.attempts
+    usedSource = loop.source
+    if (loop.kind === 'ok') {
+      result = loop.finalRun
+    } else if (loop.finalRun !== null) {
+      result = loop.finalRun
+    } else {
+      // Model never produced DSL source at all.
+      result = {
+        kind: 'failed',
+        downgrade: {
+          reason: 'compile_diagnostics',
+          message: 'The model did not produce DSL source.',
+          attempts: loop.attempts,
+          diagnosticCodes: ['dsl_no_source_from_model'],
+          route: input.decision,
+        },
+        attempts: [],
+        budgetUsage: {
+          sandboxAttempts: 0,
+          totalSandboxMs: 0,
+          partCount: 0,
+          wallTimeBudgetMs: 5000,
+        },
+      }
+    }
+  }
+  routeMetrics.repairCallCount = Math.max(0, llmAttempts - 1)
+
+  // Persist every LLM-authored DSL source + compile outcome so a failed run
+  // can be debugged from disk (parse errors are otherwise invisible).
+  await persistDslAttemptLog(input.runId, dslAttemptLog)
+
+  await appendRunEvent(input.runId, {
+    type: 'message',
+    message:
+      result.kind === 'ok'
+        ? `generator_dsl compiled ${result.ir.parts.length} parts (spatial score ${result.spatial.score.toFixed(2)})`
+        : `generator_dsl failed: ${result.downgrade.message}`,
+    data: { stage: 'generator-dsl', ...summarizeDslRunForEvents(result) },
+  })
+
+  if (result.kind === 'ok') {
+    routeMetrics.dslFirstAttemptSucceeded = result.attempts.length === 1
+    routeMetrics.dslAttemptCount = result.attempts.length
+    routeMetrics.dslIrHash = result.irHash
+    routeMetrics.dslSourceHash = result.ir.generator.sourceHash
+    routeMetrics.dslPartCount = result.ir.parts.length
+    routeMetrics.dslSpatialScore = result.spatial.score
+    routeMetrics.dslSpatialIssues = result.spatial.issues
+    routeMetrics.dslSandboxMs = result.budgetUsage.totalSandboxMs
+    const payload = {
+      analysis: `generator_dsl route: ${input.decision.reasons.join(', ')}`,
+      results: [`Generated ${result.ir.parts.length} parts via generator_dsl.`],
+      lastContent: `Generated ${result.ir.parts.length} parts via generator_dsl.`,
+      // Scene insertion is client-side: the patch plan travels in the
+      // run result; the app applies it atomically (all-or-nothing).
+      generatedAssembly: {
+        irHash: result.irHash,
+        rootNode: result.rootNode,
+        patches: result.patches,
+        // Author truth: the DSL source that produced this assembly.
+        ...(usedSource !== null ? { source: usedSource } : {}),
+      },
+      shapeCount: result.ir.parts.length,
+      metrics: { primitiveRoute: routeMetrics },
+    }
+    await appendRunEvent(input.runId, {
+      type: 'message',
+      message: 'Primitive route metrics',
+      data: { stage: 'route-metrics', primitiveRoute: routeMetrics },
+    })
+    await completeRunWithResult(input.runId, payload)
+    return true
+  }
+
+  // Explicit downgrade — recorded, visible, and terminal for this run.
+  routeMetrics.dslFirstAttemptSucceeded = false
+  routeMetrics.dslAttemptCount = result.downgrade.attempts
+  routeMetrics.dslDowngrade = {
+    reason: result.downgrade.reason,
+    message: result.downgrade.message,
+    attempts: result.downgrade.attempts,
+    diagnosticCodes: result.downgrade.diagnosticCodes,
+  }
+  const payload = {
+    analysis: `generator_dsl route failed: ${result.downgrade.reason}`,
+    results: [
+      `Generation via generator_dsl did not succeed: ${result.downgrade.message} ` +
+        `(attempts: ${result.downgrade.attempts}; codes: ${result.downgrade.diagnosticCodes.join(', ')}). ` +
+        'No scene changes were made.',
+    ],
+    lastContent: result.downgrade.message,
+    shapeCount: 0,
+    dslDowngrade: result.downgrade,
+    metrics: { primitiveRoute: routeMetrics },
+  }
+  await appendRunEvent(input.runId, {
+    type: 'message',
+    message: 'Primitive route metrics',
+    data: { stage: 'route-metrics', primitiveRoute: routeMetrics },
+  })
+  await completeRunWithResult(input.runId, payload)
+  return true
+}
+
 function shouldPersistDeviceProfileCandidate(params: Record<string, unknown> | undefined) {
   return params?.allowDeviceProfileCandidatePersist === true
 }
@@ -706,6 +986,39 @@ async function runPrimitiveRun(runId: string) {
     const latestArtifactCandidate =
       latestArtifactFromContext(context, 'latestArtifactCandidate') ??
       latestArtifactFromContext(context)
+    const basicPrimitiveRoute = basicPrimitiveDeterministicRoute(userPrompt, latestArtifactCandidate)
+    // Basic primitives are the narrowest and safest route in the harness. They should not
+    // wait for the context resolver, device profile loading, Stage-1 analysis, or DSL routing.
+    // Explicit creation prompts ("生成一个球", "create a sphere") always mean a new primitive;
+    // ambiguous bare nouns are still blocked by basicPrimitiveDeterministicRoute when an
+    // existing artifact is present.
+    if (basicPrimitiveRoute) {
+      const contextDecision: GeometryContextDecision = {
+        relationshipToLatestArtifact: 'new_unrelated_object',
+        contextPolicy: 'none',
+        recommendedRoute: 'new_geometry',
+        confidence: 1,
+        reason: 'Matched explicit deterministic basic primitive request before context resolution.',
+      }
+      const routeAnalysis = `Matched deterministic basic primitive route "${basicPrimitiveRoute.label}" before context, profile loading, and LLM Stage1.`
+      const handled = await runDeterministicPreflightRoute({
+        runId,
+        userPrompt,
+        revisionTarget: null,
+        contextDecision,
+        signal,
+        label: basicPrimitiveRoute.label,
+        family: 'basic_primitive',
+        component: basicPrimitiveRoute.kind,
+        toolName: 'compose_primitive',
+        args: basicPrimitiveRoute.args,
+        progressRoute: 'deterministic-basic-primitive',
+        analysis: routeAnalysis,
+        fallbackMessage:
+          'Deterministic basic primitive route produced no artifact; falling back to LLM.',
+      })
+      if (handled) return
+    }
     const contextDecision = await resolveGeometryContextDecision({
       messages: recentMessages,
       latestArtifact: latestArtifactCandidate,
@@ -738,27 +1051,11 @@ async function runPrimitiveRun(runId: string) {
             userPrompt,
             stringFromContext(context, 'analysisContext') ?? harnessContext,
           )
-    const basicPrimitiveRoute = basicPrimitiveDeterministicRoute(userPrompt, revisionTarget)
-    if (basicPrimitiveRoute) {
-      const routeAnalysis = `Matched deterministic basic primitive route "${basicPrimitiveRoute.label}" before profile loading and LLM Stage1.`
-      const handled = await runDeterministicPreflightRoute({
-        runId,
-        userPrompt,
-        revisionTarget,
-        contextDecision,
-        signal,
-        label: basicPrimitiveRoute.label,
-        family: 'basic_primitive',
-        component: basicPrimitiveRoute.kind,
-        toolName: 'compose_primitive',
-        args: basicPrimitiveRoute.args,
-        progressRoute: 'deterministic-basic-primitive',
-        analysis: routeAnalysis,
-        fallbackMessage:
-          'Deterministic basic primitive route produced no artifact; falling back to LLM.',
-      })
-      if (handled) return
-    }
+    // --- Stage 6 (LLM-routed): generation-mode routing now happens AFTER
+    // stage-1, where the analyst LLM has decomposed the request and can
+    // declare generationMode itself. Only narrow deterministic fast paths
+    // (basic / precision) still run first; profile matches are deferred
+    // until the post-Stage1 DSL / recipe pipeline fork.
     const contextPackRef = industryPackRefFromContext(context)
     const extraPackDirs = uniqueDeviceProfilePackDirs([
       ...(contextPackRef ? [contextPackRef] : []),
@@ -961,124 +1258,25 @@ async function runPrimitiveRun(runId: string) {
         },
       })
     }
-    if (
+    const deferredProfileRoute =
       shouldUseDeterministicProfileRoute({
         profile: safeSelectedProfile,
         userPrompt,
         revisionTarget,
         resourceResolved: resourceResolution.selectedProfile?.id === safeSelectedProfile?.id,
-      })
-    ) {
-      const profile = selectedProfile!
-      const routeMetrics: PrimitiveRouteMetrics = {
-        route: 'profile',
-        stage1HasBlueprint: false,
-        selectedProfile: profile.id,
-        profileSource: profile.source,
-        ...(profile.sourcePack ? { profilePackId: profile.sourcePack.id } : {}),
-        ...(profile.layoutTemplate ? { layoutTemplate: profile.layoutTemplate } : {}),
-        overrodeBuiltin: profile.overrides?.some((entry) => entry.source === 'builtin') === true,
-        ...(profile.overrides?.length ? { profileOverrides: [...profile.overrides] } : {}),
-        deterministicIntent: true,
-        deterministicAttempted: true,
-        deterministicSucceeded: false,
-        stage2Called: false,
-        family: profile.family,
-        deterministicTool: 'compose_parts',
-        stage2ToolCallCount: 0,
-        repairCallCount: 0,
-      }
-      const profileArgs = buildProfileRouteArgs(profile, userPrompt)
-      const profileAnalysis = [
-        `Matched device profile "${profile.id}" from ${profile.source}.`,
-        profile.sourcePack
-          ? `Using resource pack ${profile.sourcePack.id}@${profile.sourcePack.version}.`
-          : undefined,
-        profile.overrides?.some((entry) => entry.source === 'builtin')
-          ? 'This profile overrides a builtin fallback profile.'
-          : undefined,
-        assetComponentGeneratorForProfile(profile)
-          ? 'Using the industry-pack component generator before LLM Stage2.'
-          : 'Using deterministic compose_parts fallback before LLM Stage2.',
-      ]
-        .filter(Boolean)
-        .join('\n')
-
+      }) && safeSelectedProfile
+        ? safeSelectedProfile
+        : undefined
+    if (deferredProfileRoute) {
       await appendRunEvent(runId, {
         type: 'message',
-        message: profileAnalysis,
+        message: `Deferred device profile "${deferredProfileRoute.id}" until after Stage1 generation-mode routing.`,
         data: {
           stage: 'profile-router',
-          selectedProfile: profile.id,
-          profileSource: profile.source,
-          profilePackId: profile.sourcePack?.id,
-          overrodeBuiltin: profile.overrides?.some((entry) => entry.source === 'builtin') === true,
+          selectedProfile: deferredProfileRoute.id,
+          profileSource: deferredProfileRoute.source,
+          deferredUntil: 'post-stage1-generation-route',
         },
-      })
-      const componentResult = await executeAssetComponentGeneratorRoute({
-        runId,
-        userPrompt,
-        profile,
-        signal,
-        progressRoute: 'profile',
-      })
-      const directResult =
-        componentResult ??
-        (await executeDirectGeometryRoute({
-          runId,
-          toolName: 'compose_parts',
-          args: profileArgs,
-          userPrompt,
-          revisionTarget,
-          blueprint: null,
-          loadedDeviceProfiles,
-          signal,
-          progressRoute: 'profile',
-          progressResults: [],
-          toolCallData: { deterministic: true, fallback: 'asset_component_generator_unavailable' },
-          toolResultData: {
-            deterministic: true,
-            fallback: 'asset_component_generator_unavailable',
-          },
-        }))
-      const directResults = [directResult.content]
-
-      if (directResult.artifact) {
-        routeMetrics.deterministicSucceeded = true
-        const profileQuality = evaluateDeviceProfileQuality(
-          profile,
-          artifactShapesForProfileQuality(directResult.artifact),
-          { visualScore: 0.82 },
-        )
-        routeMetrics.profileQualityScore = profileQuality.overallScore
-        if (await shouldStopRun(runId, signal)) return
-        const result = {
-          ...profileRouteBaseResult({
-            contextDecision,
-            analysis: profileAnalysis,
-            results: directResults,
-            lastContent: 'Deterministic device profile route completed.',
-            artifact: directResult.artifact,
-            routeMetrics,
-            loadedDeviceProfiles,
-          }),
-          selectedProfile: deterministicProfileSummary(profile),
-          profileQuality,
-        }
-        await appendRunEvent(runId, {
-          type: 'message',
-          message: 'Primitive route metrics',
-          data: { stage: 'route-metrics', primitiveRoute: routeMetrics },
-        })
-        await completeRunWithResult(runId, result)
-        return
-      }
-
-      routeMetrics.fallbackReason = 'profile_no_artifact'
-      await appendRunEvent(runId, {
-        type: 'message',
-        message: 'Profile route produced no artifact; falling back to Stage1/Stage2.',
-        data: { stage: 'profile-router', primitiveRoute: routeMetrics },
       })
     }
 
@@ -1104,11 +1302,24 @@ async function runPrimitiveRun(runId: string) {
       if (handled) return
     }
 
+    // --- Industry-pack awareness for the stage-1 analyst ----------------
+    // The router prefers an industry-pack profile over an LLM-declared DSL
+    // pipeline (verified_recipe_in_range wins). But the analyst can only
+    // defer to a pack it KNOWS about — so we hand it the catalog of loaded
+    // device profiles (name + aliases + description) before it declares a
+    // generationMode. Without this the model would declare generator_dsl
+    // for devices the pack already covers, and the priority override would
+    // look like a surprise reroute. Capped to keep the prompt bounded.
+    const industryPackCatalog = buildIndustryPackCatalogForPrompt(loadedDeviceProfiles)
+    const stage1UserContent = industryPackCatalog
+      ? `${analysisContext}\n\n${industryPackCatalog}`
+      : analysisContext
+
     await appendRunEvent(runId, { type: 'progress', message: 'Analyzing geometry request...' })
     const analysisResponse = await callAi(
       [
         { role: 'system', content: PRIMITIVE_STAGE1_ANALYST_PROMPT },
-        { role: 'user', content: analysisContext },
+        { role: 'user', content: stage1UserContent },
       ],
       undefined,
       signal,
@@ -1117,6 +1328,176 @@ async function runPrimitiveRun(runId: string) {
     const blueprint = extractBlueprintFromAnalysis(analysis)
     throwIfAborted(signal)
     await appendRunEvent(runId, { type: 'message', message: analysis, data: { stage: 'analysis' } })
+
+    // --- Stage 6 (LLM-routed): pipeline fork AFTER stage-1 -------------
+    // Now that the analyst has decomposed the request (and may have
+    // declared generationMode in the blueprint), decide recipe vs
+    // generator_dsl against the REAL blueprint. The DSL branch fires when
+    // the LLM declared it (or heuristics detect structure) and the flag is
+    // on; DSL source comes from params.dslSource when injected (tests),
+    // otherwise the LLM author+repair loop generates it.
+    const generationDecision = resolveRunGenerationMode({
+      runParams: run.params,
+      stableKey: run.conversationId,
+      blueprint,
+      userPrompt,
+      recipeAvailable: deferredProfileRoute !== undefined,
+      recipeParamsInRange: deferredProfileRoute !== undefined,
+    })
+    await appendRunEvent(runId, {
+      type: 'message',
+      message: `Generation route: ${generationDecision.mode} (${generationDecision.reasons.join(', ')})`,
+      data: routeDecisionEventData(generationDecision),
+    })
+    if (generationDecision.mode === 'generator_dsl') {
+      const injectedSource =
+        typeof run.params?.dslSource === 'string' && run.params.dslSource.length > 0
+          ? run.params.dslSource
+          : undefined
+      const handled = await runGeneratorDslRoute({
+        runId,
+        userPrompt,
+        ...(injectedSource !== undefined ? { source: injectedSource } : {}),
+        params: isRecord(run.params?.dslParams) ? run.params.dslParams : undefined,
+        decision: generationDecision,
+        stage1HasBlueprint: Boolean(blueprint),
+        signal,
+      })
+      // handled === false means the DSL route failed and the run was
+      // completed with an explicit downgrade record — never silent. Either
+      // way the DSL path is terminal: do not fall through to stage-2.
+      if (!handled) {
+        await appendRunEvent(runId, {
+          type: 'message',
+          message: 'Generator DSL route completed with an explicit downgrade (see dslDowngrade).',
+          data: { stage: 'generator-dsl-downgrade' },
+        })
+      }
+      return
+    }
+
+    if (generationDecision.mode === 'recipe' && deferredProfileRoute) {
+      const profile = deferredProfileRoute
+      const routeMetrics: PrimitiveRouteMetrics = {
+        route: 'profile',
+        stage1HasBlueprint: Boolean(blueprint),
+        selectedProfile: profile.id,
+        profileSource: profile.source,
+        ...(profile.sourcePack ? { profilePackId: profile.sourcePack.id } : {}),
+        ...(profile.layoutTemplate ? { layoutTemplate: profile.layoutTemplate } : {}),
+        overrodeBuiltin: profile.overrides?.some((entry) => entry.source === 'builtin') === true,
+        ...(profile.overrides?.length ? { profileOverrides: [...profile.overrides] } : {}),
+        deterministicIntent: true,
+        deterministicAttempted: true,
+        deterministicSucceeded: false,
+        stage2Called: false,
+        family: profile.family,
+        deterministicTool: 'compose_parts',
+        stage2ToolCallCount: 0,
+        repairCallCount: 0,
+      }
+      applyRouteDecisionToMetrics(routeMetrics, generationDecision)
+      const profileArgs = buildProfileRouteArgs(profile, userPrompt)
+      const profileAnalysis = [
+        `Matched device profile "${profile.id}" from ${profile.source}.`,
+        'Executing profile route after Stage1 generation-mode routing selected recipe.',
+        profile.sourcePack
+          ? `Using resource pack ${profile.sourcePack.id}@${profile.sourcePack.version}.`
+          : undefined,
+        profile.overrides?.some((entry) => entry.source === 'builtin')
+          ? 'This profile overrides a builtin fallback profile.'
+          : undefined,
+        assetComponentGeneratorForProfile(profile)
+          ? 'Using the industry-pack component generator.'
+          : 'Using deterministic compose_parts fallback.',
+      ]
+        .filter(Boolean)
+        .join('\n')
+
+      await appendRunEvent(runId, {
+        type: 'message',
+        message: profileAnalysis,
+        data: {
+          stage: 'profile-router',
+          selectedProfile: profile.id,
+          profileSource: profile.source,
+          profilePackId: profile.sourcePack?.id,
+          overrodeBuiltin: profile.overrides?.some((entry) => entry.source === 'builtin') === true,
+          generationRoute: generationDecision.mode,
+          generationRouteReasons: generationDecision.reasons,
+        },
+      })
+      const componentResult = await executeAssetComponentGeneratorRoute({
+        runId,
+        userPrompt,
+        profile,
+        signal,
+        progressRoute: 'profile',
+      })
+      const directResult =
+        componentResult ??
+        (await executeDirectGeometryRoute({
+          runId,
+          toolName: 'compose_parts',
+          args: profileArgs,
+          userPrompt,
+          revisionTarget,
+          blueprint,
+          loadedDeviceProfiles,
+          signal,
+          progressRoute: 'profile',
+          progressResults: [],
+          toolCallData: {
+            deterministic: true,
+            fallback: 'asset_component_generator_unavailable',
+            generationRoute: generationDecision.mode,
+          },
+          toolResultData: {
+            deterministic: true,
+            fallback: 'asset_component_generator_unavailable',
+            generationRoute: generationDecision.mode,
+          },
+        }))
+      const directResults = [directResult.content]
+
+      if (directResult.artifact) {
+        routeMetrics.deterministicSucceeded = true
+        const profileQuality = evaluateDeviceProfileQuality(
+          profile,
+          artifactShapesForProfileQuality(directResult.artifact),
+          { visualScore: 0.82 },
+        )
+        routeMetrics.profileQualityScore = profileQuality.overallScore
+        if (await shouldStopRun(runId, signal)) return
+        const result = {
+          ...profileRouteBaseResult({
+            contextDecision,
+            analysis: profileAnalysis,
+            results: directResults,
+            lastContent: 'Deterministic device profile route completed after Stage1 routing.',
+            artifact: directResult.artifact,
+            routeMetrics,
+            loadedDeviceProfiles,
+          }),
+          selectedProfile: deterministicProfileSummary(profile),
+          profileQuality,
+        }
+        await appendRunEvent(runId, {
+          type: 'message',
+          message: 'Primitive route metrics',
+          data: { stage: 'route-metrics', primitiveRoute: routeMetrics },
+        })
+        await completeRunWithResult(runId, result)
+        return
+      }
+
+      routeMetrics.fallbackReason = 'profile_no_artifact'
+      await appendRunEvent(runId, {
+        type: 'message',
+        message: 'Profile route produced no artifact; falling back to Stage2.',
+        data: { stage: 'profile-router', primitiveRoute: routeMetrics },
+      })
+    }
 
     const routeMetrics: PrimitiveRouteMetrics = {
       route: 'stage2_fallback',
@@ -1392,7 +1773,9 @@ async function runPrimitiveRun(runId: string) {
 
     for (let attempt = 1; attempt <= maxToolExecutionAttempts; attempt += 1) {
       throwIfAborted(signal)
-      const toolCalls = response.tool_calls ?? []
+      const toolCalls = Array.isArray(response.tool_calls)
+        ? (response.tool_calls as ToolCall[])
+        : []
       if (toolCalls.length === 0) break
       routeMetrics.stage2ToolCallCount += toolCalls.length
 

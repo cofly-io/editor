@@ -10,6 +10,7 @@ export type ComponentIntentBlueprintPart = {
 
 export type ComponentIntentBlueprint = {
   route?: string
+  generationMode?: string
   category?: string
   constraints?: Record<string, unknown>
   parts?: ComponentIntentBlueprintPart[]
@@ -100,6 +101,45 @@ function blueprintText(blueprint: ComponentIntentBlueprint, userPrompt: string) 
   return [blueprintIdentityText(blueprint), userPrompt.toLowerCase()].filter(Boolean).join(' ')
 }
 
+function inferWholeObjectFromBlueprint(
+  blueprint: ComponentIntentBlueprint | null | undefined,
+  userPrompt: string,
+) {
+  if (!blueprint || !['compose_parts', 'compose_assembly'].includes(blueprint.route ?? '')) {
+    return undefined
+  }
+  const text = blueprintText(blueprint, userPrompt)
+  const family = inferComponentFamily(text, userPrompt)
+  if (family !== 'bicycle' && family !== 'vehicle') return undefined
+  const requiredRoleText = (blueprint.requiredRoles ?? []).map(normalizedText).join(' ')
+  const partText = (blueprint.parts ?? [])
+    .map((part) =>
+      [normalizedText(part.id), normalizedText(part.kind), normalizedText(part.semanticRole)].join(
+        ' ',
+      ),
+    )
+    .join(' ')
+  const hasBicycleStructure =
+    /bicycle_(tire|wheel|frame|fork|handlebar|saddle|chain)/.test(
+      `${requiredRoleText} ${partText}`,
+    ) || /wheel_set|tube_frame|chain_loop/.test(partText)
+  const hasVehicleStructure =
+    /vehicle_(body|tire|wheel|window|cabin|bumper)|headlight|tail_light|side_mirror/.test(
+      `${requiredRoleText} ${partText}`,
+    ) || /body_shell|vehicle_body|window_strip|light_pair|bar_pair/.test(partText)
+  if (family === 'bicycle' && !hasBicycleStructure) return undefined
+  if (family === 'vehicle' && !hasVehicleStructure) return undefined
+
+  return {
+    action: 'create' as const,
+    scope: 'whole_object' as const,
+    family,
+    quantity: 1,
+    arrangement: 'single' as const,
+    constraints: { ...(blueprint.constraints ?? {}) },
+  }
+}
+
 function inferComponentFromBlueprint(
   blueprint: ComponentIntentBlueprint | null | undefined,
   userPrompt: string,
@@ -141,6 +181,8 @@ export function inferCreateIntentFromBlueprint(
 ): CreateIntent | undefined {
   if (toolName !== 'compose_parts') return undefined
   if (args.geometryIntent != null) return undefined
+  const wholeObject = inferWholeObjectFromBlueprint(blueprint, userPrompt)
+  if (wholeObject) return wholeObject
   const component = inferComponentFromBlueprint(blueprint, userPrompt)
   if (!component) return undefined
 

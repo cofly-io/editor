@@ -87,11 +87,17 @@ function normalizeBasicPrimitivePrompt(userPrompt: string) {
     )
 }
 
+function isExplicitCreatePrompt(userPrompt: string) {
+  const text = userPrompt.trim().toLowerCase()
+  return /^(please\s*)?(create|generate|make|build|model|draw)\b/i.test(text) ||
+    /^(\u8bf7)?(\u751f\u6210|\u521b\u5efa|\u5236\u4f5c|\u505a|\u642d\u5efa|\u5efa\u6a21|\u753b)/.test(text)
+}
+
 export function basicPrimitiveDeterministicRoute(
   userPrompt: string,
   revisionTarget: GeneratedGeometryArtifact | null,
 ): BasicPrimitiveDeterministicRoute | undefined {
-  if (revisionTarget) return undefined
+  if (revisionTarget && !isExplicitCreatePrompt(userPrompt)) return undefined
   const normalized = normalizeBasicPrimitivePrompt(userPrompt)
 
   const route = BASIC_PRIMITIVE_ROUTES.find((candidate) => candidate.match.test(normalized))

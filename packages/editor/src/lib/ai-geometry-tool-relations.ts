@@ -377,13 +377,24 @@ export function normalizePrimitiveLayoutPosition(
   },
   normalizedShapes: readonly ShapeSpec[],
   childHalfExtent = 0,
+  childExplicitOffset?: Vec3,
 ): Vec3 {
   if (!relation.fromLayoutField || typeof relation.attachTo !== 'number') return position
   if (!relation.anchor || !relation.childAnchor) return position
   const parent = normalizedShapes[relation.attachTo]
   if (!parent) return position
   if (relation.anchor === 'center' && relation.childAnchor === 'center') {
-    return [parent.position[0], parent.position[1], parent.position[2]]
+    // Keep the child's own EXPLICIT offset relative to the parent center instead
+    // of collapsing every centered child onto the exact parent center (which made
+    // repeated parts overlap). When the child gave no explicit position we fall
+    // back to the parent center exactly as before — we must NOT add the child's
+    // default grounded position, or centered parts would be wrongly lifted.
+    const offset = childExplicitOffset ?? [0, 0, 0]
+    return [
+      parent.position[0] + offset[0],
+      parent.position[1] + offset[1],
+      parent.position[2] + offset[2],
+    ]
   }
   const expectedSide = getExpectedAttachmentSide(relation.anchor, relation.childAnchor)
   if (!expectedSide) return position

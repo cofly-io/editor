@@ -14,6 +14,13 @@ import { alignFactoryPrimitiveArtifactToContract } from './factory-primitive-con
 import { evaluateFactoryPrimitiveArtifactContract } from './factory-primitive-quality'
 import { evaluateFactoryQuality, type FactoryQualityReport } from './factory-quality-report'
 import { composeSelectionEdit, type FactorySceneEditPatch } from './factory-selection-edit'
+import {
+  type FactoryStationGenerationResult,
+  factoryDslStationResult,
+  stationGenerationPatches,
+} from './factory-station-generation'
+import { NO_SIGNALS, resolveGenerationMode } from './generation-route'
+import { type DslRunResult, executeGeneratorDslRun } from './generator-dsl-run'
 import type {
   PrimitiveGeometryGenerationRequest,
   PrimitiveGeometryGenerationResult,
@@ -845,6 +852,7 @@ export async function buildFactoryRunResultFromProcessLine(input: {
   placement: GeneratedGeometryPlacementSpec
   params?: Record<string, unknown>
   generatePrimitiveGeometryDraft: PrimitiveGeometryDraftGenerator
+  generateDslRun?: (input: Parameters<typeof executeGeneratorDslRun>[0]) => Promise<DslRunResult>
 }): Promise<FactoryRunResult> {
   const processPlan = composeProcessLine({
     prompt: input.prompt,
@@ -862,10 +870,51 @@ export async function buildFactoryRunResultFromProcessLine(input: {
   const unresolved = new Map(
     processPlan.primitiveRequests.map((request) => [request.station.id, request.station.label]),
   )
+  const unresolvedReasons = new Map<string, string>()
   let lastGeometryRunId: string | undefined
   let lastGeometryStatus: PrimitiveGeometryGenerationResult['status'] | undefined
 
   for (const request of processPlan.primitiveRequests) {
+    if (request.station.generationMode === 'generator_dsl') {
+      if (!request.station.generatorDslSource) {
+        unresolvedReasons.set(
+          request.station.id,
+          'Generator DSL station did not provide generatorDslSource.',
+        )
+        continue
+      }
+      const route = resolveGenerationMode(
+        { ...NO_SIGNALS, llmExplicitMode: 'generator_dsl' },
+        { params: { generatorDsl: true }, stableKey: request.station.id },
+      )
+      const result = await (input.generateDslRun ?? executeGeneratorDslRun)({
+        source: request.station.generatorDslSource,
+        apiVersion: '1.0.0',
+        params: request.station.generatorDslParams,
+        route,
+        placement: {
+          origin: request.placement.position,
+          name: stationDisplayLabel(request.station),
+        },
+      })
+      if (result.kind === 'ok') {
+        const stationResult = factoryDslStationResult({
+          result,
+          stationId: request.station.id,
+          stationRole: request.station.role,
+          profileId: request.equipmentContract?.profileId ?? request.station.id,
+        })
+        primitivePatches.push(...stationGenerationPatches(stationResult))
+        primitiveCreated.push(stationResult.rootNode.name ?? stationDisplayLabel(request.station))
+        primitiveNodeIds.push(stationResult.rootNode.id)
+        addPortOverrides(portOverrides, request.station.id, stationResult.portOverrides)
+        routeObstacles.push(stationResult.routeObstacle)
+        unresolved.delete(request.station.id)
+        continue
+      }
+      unresolvedReasons.set(request.station.id, `Generator DSL failed: ${result.downgrade.message}`)
+      continue
+    }
     let accepted:
       | {
           aligned: ReturnType<typeof alignFactoryPrimitiveArtifactToContract>
@@ -954,15 +1003,17 @@ export async function buildFactoryRunResultFromProcessLine(input: {
           : {}),
       },
     })
-    primitivePatches.push(...patchPlan.patches)
+    const stationResult: FactoryStationGenerationResult = {
+      kind: 'primitive',
+      patches: patchPlan.patches,
+      portOverrides: extractArtifactPortOverrides({ request, artifact: displayArtifact }),
+      ...(routeObstacle ? { routeObstacle } : {}),
+    }
+    primitivePatches.push(...stationGenerationPatches(stationResult))
     primitiveCreated.push(...patchPlan.created)
     primitiveNodeIds.push(...patchPlan.nodeIds)
-    addPortOverrides(
-      portOverrides,
-      request.station.id,
-      extractArtifactPortOverrides({ request, artifact: displayArtifact }),
-    )
-    if (routeObstacle) routeObstacles.push(routeObstacle)
+    addPortOverrides(portOverrides, request.station.id, stationResult.portOverrides)
+    if (stationResult.routeObstacle) routeObstacles.push(stationResult.routeObstacle)
     unresolved.delete(request.station.id)
   }
 
@@ -976,9 +1027,10 @@ export async function buildFactoryRunResultFromProcessLine(input: {
     routeObstacles: [...processPlan.routeObstacles, ...routeObstacles],
   })
 
-  const missingAssets = [...unresolved.values()].map((name) => ({
+  const missingAssets = [...unresolved.entries()].map(([stationId, name]) => ({
     name,
     reason:
+      unresolvedReasons.get(stationId) ??
       'Primitive generation did not produce an artifact for this station; a station zone placeholder remains.',
     required: false,
   }))

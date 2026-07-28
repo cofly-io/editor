@@ -92,6 +92,22 @@ describe('basicPrimitiveDeterministicRoute', () => {
   test('does not route when editing an existing artifact', () => {
     const revisionTarget = { id: 'existing' } as GeneratedGeometryArtifact
 
-    expect(basicPrimitiveDeterministicRoute('generate a sphere', revisionTarget)).toBeUndefined()
+    expect(basicPrimitiveDeterministicRoute('sphere', revisionTarget)).toBeUndefined()
+  })
+
+  test('still routes explicit new Chinese primitive requests when an older artifact exists', () => {
+    const revisionTarget = { id: 'existing' } as GeneratedGeometryArtifact
+    const route = basicPrimitiveDeterministicRoute('\u751f\u6210\u4e00\u4e2a\u7403', revisionTarget)
+
+    expect(route).toMatchObject({
+      label: 'sphere',
+      kind: 'sphere',
+    })
+  })
+
+  test('keeps bare primitive words conservative when an older artifact exists', () => {
+    const revisionTarget = { id: 'existing' } as GeneratedGeometryArtifact
+
+    expect(basicPrimitiveDeterministicRoute('\u7403', revisionTarget)).toBeUndefined()
   })
 })

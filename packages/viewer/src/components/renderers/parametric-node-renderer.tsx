@@ -52,7 +52,7 @@ export const ParametricNodeRenderer = ({ node }: { node: AnyNode }) => {
   const ref = useRef<Group>(null!)
   const n = node as RenderableNode
   const handlers = useNodeEvents(node as any, node.type as any)
-  const isAssemblyContainer = node.type === 'assembly'
+  const isAssemblyContainer = node.type === 'assembly' || node.type === 'generated-assembly'
   const liveTransform = useLiveTransforms((s) => s.get(node.id as AnyNodeId))
 
   useRegistry(node.id, node.type, ref)

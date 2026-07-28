@@ -18,12 +18,15 @@ import {
 import { primitiveChildAnchorHalfExtent } from './ai-geometry-tool-geometry'
 import {
   defaultGroundedPosition,
+  isUnparseableRotation,
   normalizePoint2Array,
   normalizePoint2Holes,
   normalizePrimitiveArc,
+  normalizeTaggedRotation,
   normalizeVec3Array,
   normalizeVec3Object,
 } from './ai-geometry-tool-normalizers'
+import type { GeometryDiagnosticCollector } from './ai-geometry-tool-diagnostics'
 import {
   normalizePrimitiveExplicitPositionRelation,
   normalizePrimitiveLayoutPosition,
@@ -38,10 +41,17 @@ export { pathCenter, primitiveHalfExtent } from './ai-geometry-tool-geometry'
 
 export function normalizeGeometryToolShapes(
   rawShapes: RawShape[],
-  options: { prompt?: string } = {},
+  options: { prompt?: string; diagnostics?: GeometryDiagnosticCollector } = {},
 ): ShapeSpec[] {
+  const diagnostics = options.diagnostics
   const expandedShapes = expandPrimitiveShapeArrays(
     rawShapes as PrimitiveArrayExpandableShape[],
+    diagnostics
+      ? {
+          onDiagnostic: (d) =>
+            diagnostics.error('array_semantics_unrecognized', d.message, d.path),
+        }
+      : undefined,
   ) as RawShape[]
   const normalizedShapes: ShapeSpec[] = []
   return expandedShapes.map((shape, index) => {
@@ -199,11 +209,21 @@ export function normalizeGeometryToolShapes(
       layoutRelation,
       normalizedShapes,
       childHalfExtent,
+      explicitPosition ?? undefined,
     )
+    const rawRotation = read('rotation')
+    const parsedRotation = normalizeVec3Object(rawRotation) ?? normalizeTaggedRotation(rawRotation)
+    if (parsedRotation === undefined && isUnparseableRotation(rawRotation)) {
+      diagnostics?.error(
+        'rotation_unparseable',
+        `rotation could not be parsed and was NOT applied. Use [x,y,z] radians, {x,y,z}, or a tagged single-axis rotation like { axis: 'x', degrees: 110 } or { axis: 'y', radians: 1.57 }. Got ${JSON.stringify(rawRotation)}.`,
+        (read('name') as string | undefined) ?? `${kind} #${index + 1}`,
+      )
+    }
     const normalizedShape: ShapeSpec = {
       kind,
       position,
-      rotation: normalizeVec3Object(read('rotation')) ?? [0, 0, 0],
+      rotation: parsedRotation ?? [0, 0, 0],
       scale: normalizeVec3Object(read('scale')) ?? [1, 1, 1],
       name: read('name') as string | undefined,
       semanticRole: read('semanticRole') as string | undefined,

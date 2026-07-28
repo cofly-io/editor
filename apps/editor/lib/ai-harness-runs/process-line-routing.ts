@@ -45,7 +45,14 @@ export type ProcessRoutePortOverrides = Record<string, ProcessRoutePortEndpoint[
 export type ProcessRouteObstacle = {
   stationId: string
   box: ProcessStationClearanceBox
-  source?: 'layout' | 'artifact' | 'factory-node' | 'native' | 'catalog' | 'profile-parts'
+  source?:
+    | 'layout'
+    | 'artifact'
+    | 'factory-node'
+    | 'native'
+    | 'catalog'
+    | 'profile-parts'
+    | 'synthesized'
   minHeight?: number
   maxHeight?: number
 }
@@ -887,10 +894,7 @@ export function routeProcessConnection(input: {
   })
   const replacementObstacleStationIds = new Set(
     (input.routeObstacles ?? [])
-      .filter(
-        (item) =>
-          item.source === 'artifact' || item.source === 'factory-node',
-      )
+      .filter((item) => item.source === 'artifact' || item.source === 'factory-node')
       .map((item) => item.stationId),
   )
   const placementObstacles: RouteObstacle[] = input.stationPlacements

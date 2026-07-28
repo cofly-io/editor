@@ -73,7 +73,9 @@ export class LayoutRealism {
   /**
    * Ground material for a zone name. Falls back to default concrete.
    */
-  zoneGroundMaterial(zone: string | undefined): Omit<ZoneGroundMaterial, 'zone'> & { zone?: string } {
+  zoneGroundMaterial(
+    zone: string | undefined,
+  ): Omit<ZoneGroundMaterial, 'zone'> & { zone?: string } {
     if (zone) {
       const found = this.zoneMaterials.get(zone)
       if (found) return found
@@ -108,6 +110,7 @@ export class LayoutRealism {
       for (let j = i + 1; j < stations.length; j++) {
         const a = stations[i]
         const b = stations[j]
+        if (!a || !b) continue
         const famA = familyOf.get(a.profileId)
         const famB = familyOf.get(b.profileId)
         if (!famA || !famB) continue
@@ -145,7 +148,7 @@ export class LayoutRealism {
     if (profiles instanceof Map) {
       for (const [id, profile] of profiles) map.set(id, profile.family)
     } else {
-      for (const profile of profiles) map.set(profile.id, profile.family)
+      for (const profile of profiles as readonly Profile[]) map.set(profile.id, profile.family)
     }
     return map
   }

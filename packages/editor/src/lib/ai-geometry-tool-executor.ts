@@ -77,6 +77,10 @@ import {
   validateGeometryToolShapes,
 } from './ai-geometry-tool-shapes'
 import {
+  createGeometryDiagnosticCollector,
+  geometryDiagnosticMessages,
+} from './ai-geometry-tool-diagnostics'
+import {
   applyPromptSemanticsToRecipeInput,
   isOpenAssemblyRequest,
   openAssemblyFallbackInput,
@@ -3984,8 +3988,12 @@ export function executeGeometryToolCall(
     }
   }
 
+  const geometryDiagnostics = createGeometryDiagnosticCollector()
+  const onArrayDiagnostic = (d: { code: string; message: string; path?: string }) =>
+    geometryDiagnostics.error(d.code, d.message, d.path)
   let rawShapes = expandPrimitiveShapeArrays(
     (getRawShapes(name, args, context.prompt, context) ?? []) as PrimitiveArrayExpandableShape[],
+    { onDiagnostic: onArrayDiagnostic },
   ) as RawShape[]
   const revisionIssues = Array.isArray(args.__revisionIssues)
     ? (args.__revisionIssues as string[])
@@ -4016,6 +4024,7 @@ export function executeGeometryToolCall(
     if (aircraftFallbackShapes && aircraftFallbackShapes.length <= maxShapes) {
       rawShapes = expandPrimitiveShapeArrays(
         aircraftFallbackShapes as PrimitiveArrayExpandableShape[],
+        { onDiagnostic: onArrayDiagnostic },
       ) as RawShape[]
     }
   }
@@ -4048,8 +4057,14 @@ export function executeGeometryToolCall(
     }
   }
 
-  let shapes = normalizeGeometryToolShapes(rawShapes, { prompt: context.prompt })
-  const validationIssues = validateGeometryToolShapes(shapes)
+  let shapes = normalizeGeometryToolShapes(rawShapes, {
+    prompt: context.prompt,
+    diagnostics: geometryDiagnostics,
+  })
+  const validationIssues = [
+    ...geometryDiagnosticMessages(geometryDiagnostics.diagnostics),
+    ...validateGeometryToolShapes(shapes),
+  ]
 
   if (validationIssues.length > 0) {
     return {

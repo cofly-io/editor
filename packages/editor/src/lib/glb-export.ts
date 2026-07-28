@@ -50,6 +50,46 @@ export type GlbExportOptions = {
   textures?: 'embed' | 'reference'
 }
 
+/** Return a generated assembly root and every scene node below it. */
+export function collectGeneratedAssemblyNodes(
+  rootId: string,
+  nodes: Record<string, AnyNode>,
+): Record<string, AnyNode> {
+  const root = nodes[rootId]
+  if (!root || root.type !== 'generated-assembly') {
+    throw new Error(`Expected generated-assembly node ${rootId}`)
+  }
+  const included = new Set([rootId])
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const node of Object.values(nodes)) {
+      if (!included.has(node.id) && node.parentId && included.has(node.parentId)) {
+        included.add(node.id)
+        changed = true
+      }
+    }
+  }
+  return Object.fromEntries([...included].map((id) => [id, nodes[id]!]))
+}
+
+/**
+ * Export one generated assembly as a portable GLB, excluding unrelated scene
+ * nodes. The assembly must already be mounted in the scene registry.
+ */
+export async function exportGeneratedAssemblyToGlb(
+  rootId: string,
+  nodes: Record<string, AnyNode>,
+  options: GlbExportOptions = {},
+): Promise<ArrayBuffer> {
+  const assemblyNodes = collectGeneratedAssemblyNodes(rootId, nodes)
+  const rootObject = sceneRegistry.nodes.get(rootId)
+  if (!rootObject) {
+    throw new Error(`Generated assembly ${rootId} is not mounted for export`)
+  }
+  return exportSceneToGlb(rootObject, assemblyNodes, options)
+}
+
 /** Resolve after the next couple of animation frames, giving React/R3F time to
  * commit and mount export-only geometry (e.g. instanced kinds' real meshes)
  * before the exporter clones the scene graph. Callers must set
@@ -685,7 +725,15 @@ function bakeRegistryAnimationClips(
   node: AnyNode,
   object: THREE.Object3D,
 ): THREE.AnimationClip | THREE.AnimationClip[] | null | undefined {
-  return nodeRegistry.get(node.type)?.exportAnimation?.({ node, object })
+  const definition = nodeRegistry.get(node.type) as
+    | {
+        exportAnimation?: (input: {
+          node: AnyNode
+          object: THREE.Object3D
+        }) => THREE.AnimationClip | THREE.AnimationClip[] | null | undefined
+      }
+    | undefined
+  return definition?.exportAnimation?.({ node, object })
 }
 
 /**
@@ -972,7 +1020,7 @@ function bakeWindowClip(
  */
 function nodeDisplayLabel(node: AnyNode): string {
   if (node.name) return node.name
-  switch (node.type) {
+  switch (node.type as string) {
     case 'item':
       return (node as { asset?: { name?: string } }).asset?.name || 'Item'
     case 'wall':

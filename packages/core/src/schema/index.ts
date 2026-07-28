@@ -64,6 +64,7 @@ export {
 export { ExtrudeNode } from './nodes/extrude'
 export { FenceBaseStyle, FenceNode, FenceStyle } from './nodes/fence'
 export { FrustumNode } from './nodes/frustum'
+export { GeneratedAssemblyNode, GeneratedMeshNode } from './nodes/generated-mesh'
 export { GuideNode, GuideScaleReference } from './nodes/guide'
 export { HalfCylinderNode } from './nodes/half-cylinder'
 export { HemisphereNode } from './nodes/hemisphere'

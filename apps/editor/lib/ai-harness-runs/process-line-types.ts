@@ -85,6 +85,11 @@ export type ProcessStationPlan = {
   displayLabel?: string
   role: string
   equipmentHint: string
+  /** Explicitly selects the station geometry route; omitted preserves legacy primitive behavior. */
+  generationMode?: 'recipe' | 'primitive' | 'generator_dsl'
+  /** Author-provided DSL source for generator_dsl stations. Never executed by the planner. */
+  generatorDslSource?: string
+  generatorDslParams?: Record<string, unknown>
   footprintHint?: ProcessLineFootprintHint
   safetyTags?: string[]
 }
@@ -218,7 +223,14 @@ export type ProcessLineFocusBounds = {
 
 export type FactoryRouteObstacleMetadata = {
   stationId: string
-  source: 'layout' | 'artifact' | 'factory-node' | 'native' | 'catalog' | 'profile-parts' | 'synthesized'
+  source:
+    | 'layout'
+    | 'artifact'
+    | 'factory-node'
+    | 'native'
+    | 'catalog'
+    | 'profile-parts'
+    | 'synthesized'
   minHeight?: number
   maxHeight?: number
   box: ProcessStationClearanceBox

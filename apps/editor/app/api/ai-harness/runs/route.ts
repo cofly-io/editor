@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { resolveArticraftMaxTurns } from '@/lib/ai-harness-runs/articraft-turn-budget'
-import { createRun, isTerminalStatus, listRecentRuns } from '@/lib/ai-harness-runs/run-store'
-import type { AiHarnessRun, AiHarnessRunMode } from '@/lib/ai-harness-runs/types'
+import { createRun, listRecentRuns } from '@/lib/ai-harness-runs/run-store'
+import type { AiHarnessRunMode } from '@/lib/ai-harness-runs/types'
 import { parseJsonRequestBody } from '@/lib/request-json'
 
 export const runtime = 'nodejs'
@@ -18,30 +18,22 @@ function clientRunId(value: unknown) {
   return trimmed
 }
 
-export async function parseAiHarnessRunRequestBody(request: Request): Promise<unknown> {
-  return parseJsonRequestBody(request)
-}
-
-async function ensureRunRunning(run: AiHarnessRun) {
-  if (run.mode === 'articraft') {
-    const { ensureArticraftRunRunning } = await import('@/lib/ai-harness-runs/articraft-runner')
-    ensureArticraftRunRunning(run.id)
-  } else if (run.mode === 'image-to-3d') {
-    const { ensureImageTo3DRunRunning } = await import('@/lib/ai-harness-runs/image-to-3d-runner')
-    ensureImageTo3DRunRunning(run.id)
-  } else if (run.mode === 'primitive') {
-    const { ensurePrimitiveRunRunning } = await import('@/lib/ai-harness-runs/primitive-runner')
-    ensurePrimitiveRunRunning(run.id)
-  } else if (run.mode === 'factory') {
-    const { ensureFactoryRunRunning } = await import('@/lib/ai-harness-runs/factory-runner')
-    ensureFactoryRunRunning(run.id)
-  }
+function scheduleRunStart(request: Request, runId: string) {
+  const eventsUrl = new URL(
+    `/api/ai-harness/runs/${encodeURIComponent(runId)}/events?after=0`,
+    request.url,
+  )
+  setTimeout(() => {
+    void fetch(eventsUrl)
+      .then((response) => response.body?.cancel())
+      .catch(() => {})
+  }, 0)
 }
 
 export async function POST(request: Request) {
   let body: unknown
   try {
-    body = await parseAiHarnessRunRequestBody(request)
+    body = await parseJsonRequestBody(request)
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
@@ -85,9 +77,7 @@ export async function POST(request: Request) {
       image,
     })
 
-    if (!isTerminalStatus(run.status)) {
-      await ensureRunRunning(run)
-    }
+    if (run.status !== 'cancelled') scheduleRunStart(request, run.id)
 
     return NextResponse.json({ runId: run.id, conversationId: run.conversationId, run })
   } catch (error) {

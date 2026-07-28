@@ -136,6 +136,58 @@ function coreCapabilityFor(intent: CreateIntent) {
   )
 }
 
+function isBicycleWholeObjectIntent(intent: CreateIntent) {
+  return intent.scope === 'whole_object' && normalizedFamily(intent.family) === 'bicycle'
+}
+
+function isVehicleWholeObjectIntent(intent: CreateIntent) {
+  return intent.scope === 'whole_object' && normalizedFamily(intent.family) === 'vehicle'
+}
+
+function stringConstraint(intent: CreateIntent, key: string): string | undefined {
+  const value = intent.constraints?.[key]
+  return typeof value === 'string' && value.trim() ? value : undefined
+}
+
+function compileBicycleWholeObject(intent: CreateIntent) {
+  const primaryColor =
+    stringConstraint(intent, 'primaryColor') ??
+    stringConstraint(intent, 'color') ??
+    stringConstraint(intent, 'frameColor')
+  return {
+    tool: 'compose_assembly' as const,
+    args: {
+      family: 'bicycle',
+      ...(primaryColor ? { primaryColor } : {}),
+      geometryBrief: 'Complete bicycle with two wheels, frame, fork, handlebar, saddle, and chain.',
+    },
+    issues: [],
+    metadata: { capability: 'bicycle.whole_object', family: 'bicycle' },
+  }
+}
+
+function compileVehicleWholeObject(intent: CreateIntent) {
+  const primaryColor =
+    stringConstraint(intent, 'primaryColor') ??
+    stringConstraint(intent, 'color') ??
+    stringConstraint(intent, 'bodyColor')
+  const style =
+    stringConstraint(intent, 'style') ??
+    stringConstraint(intent, 'vehicleStyle') ??
+    stringConstraint(intent, 'variant')
+  return {
+    tool: 'compose_assembly' as const,
+    args: {
+      family: 'vehicle',
+      ...(primaryColor ? { primaryColor } : {}),
+      ...(style ? { style } : {}),
+      geometryBrief: 'Complete vehicle with body shell, four wheels, windows, lights, mirrors, and trim.',
+    },
+    issues: [],
+    metadata: { capability: 'vehicle.whole_object', family: 'vehicle' },
+  }
+}
+
 function compileCorePartComponent(intent: CreateIntent, capability: CoreComponentPartCapability) {
   const quantity = quantityFor(intent)
   const family = capability.family ?? normalizedFamily(intent.family)
@@ -325,6 +377,16 @@ function compileEngineComponent(intent: CreateIntent) {
 }
 
 export const createCapabilityRegistry: CreateCapabilityRegistry = [
+  {
+    id: 'vehicle.whole_object',
+    supports: isVehicleWholeObjectIntent,
+    compile: compileVehicleWholeObject,
+  },
+  {
+    id: 'bicycle.whole_object',
+    supports: isBicycleWholeObjectIntent,
+    compile: compileBicycleWholeObject,
+  },
   {
     id: 'wheel.component',
     supports: isWheelComponentIntent,

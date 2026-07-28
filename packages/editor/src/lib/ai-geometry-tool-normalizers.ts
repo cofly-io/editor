@@ -1,6 +1,8 @@
 import type { Vec3 } from '@pascal-app/core/lib/primitive-compose'
 import { isRecord } from './ai-geometry-tool-raw-shapes'
 
+const AXIS_INDEX: Record<string, number> = { x: 0, y: 1, z: 2 }
+
 export function normalizeVec3Object(value: unknown): Vec3 | undefined {
   if (Array.isArray(value) && value.length >= 3) {
     const [x, y, z] = value
@@ -29,6 +31,36 @@ export function normalizeVec3Object(value: unknown): Vec3 | undefined {
     }
   }
   return undefined
+}
+
+/**
+ * Parse a rotation given as a tagged single-axis rotation:
+ *   { axis: 'x'|'y'|'z', degrees: number }  or  { axis, radians: number }
+ * Returns a Vec3 euler (radians). Used ONLY for rotation, never position/scale.
+ */
+export function normalizeTaggedRotation(value: unknown): Vec3 | undefined {
+  if (!isRecord(value)) return undefined
+  const axisRaw = typeof value.axis === 'string' ? value.axis.toLowerCase() : undefined
+  const axisIndex = axisRaw != null ? AXIS_INDEX[axisRaw] : undefined
+  if (axisIndex == null) return undefined
+  const degrees = finiteNumberValue(value.degrees)
+  const radians = finiteNumberValue(value.radians)
+  const angle = radians ?? (degrees != null ? (degrees * Math.PI) / 180 : undefined)
+  if (angle == null) return undefined
+  const out: Vec3 = [0, 0, 0]
+  out[axisIndex] = angle
+  return out
+}
+
+/** True when the value looks like an intended rotation but could not be parsed. */
+export function isUnparseableRotation(value: unknown): boolean {
+  if (value == null) return false
+  // Already parseable as a plain Vec3 or tagged rotation → not an error.
+  if (normalizeVec3Object(value) !== undefined) return false
+  if (normalizeTaggedRotation(value) !== undefined) return false
+  // Anything else that is present (array of wrong length, {axis,degrees} with
+  // bad axis, a bare number, a string, ...) counts as an unparseable rotation.
+  return true
 }
 
 function finiteNumberValue(value: unknown): number | undefined {

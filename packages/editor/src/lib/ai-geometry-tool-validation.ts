@@ -1,5 +1,14 @@
 import type { GeneratedGeometryShapeSpec as ShapeSpec } from './ai-generated-geometry-core'
 import { getExpectedAttachmentSide, isPrimitiveAnchor } from './ai-geometry-tool-anchors'
+import { PRIMITIVE_ANCHORS } from './ai-geometry-tool-constants'
+
+const SUPPORTED_ANCHORS_LIST = [...PRIMITIVE_ANCHORS].join(', ')
+
+function formatAnchorIssue(value: unknown): string {
+  if (value == null) return 'missing'
+  if (typeof value !== 'string') return `not a string (got ${typeof value})`
+  return `unsupported value "${value}"`
+}
 
 export function validateGeometryToolShapes(shapes: ShapeSpec[]): string[] {
   const isPositiveNumber = (value: unknown) =>
@@ -26,8 +35,17 @@ export function validateGeometryToolShapes(shapes: ShapeSpec[]): string[] {
       numericAttachTo != null &&
       (!isPrimitiveAnchor(shape.anchor) || !isPrimitiveAnchor(shape.childAnchor))
     ) {
+      const anchorIssue = isPrimitiveAnchor(shape.anchor)
+        ? undefined
+        : `anchor is ${formatAnchorIssue(shape.anchor)}`
+      const childAnchorIssue = isPrimitiveAnchor(shape.childAnchor)
+        ? undefined
+        : `childAnchor is ${formatAnchorIssue(shape.childAnchor)}`
+      const problems = [anchorIssue, childAnchorIssue].filter(Boolean).join('; ')
       issues.push(
-        `${label}: attachTo requires explicit anchor and childAnchor. Examples: under desktop uses anchor="bottom", childAnchor="top"; front handle uses anchor="front", childAnchor="back".`,
+        `${label}: attachTo requires anchor and childAnchor from the supported set {${SUPPORTED_ANCHORS_LIST}}. ${problems}. ` +
+          `Compound anchors like "back_top" are NOT supported — pick a single primary face and express the secondary dimension via an explicit position offset. ` +
+          `Examples: under desktop uses anchor="bottom", childAnchor="top"; front handle uses anchor="front", childAnchor="back"; lid hinged at the back-top edge uses anchor="back", childAnchor="bottom" plus an explicit y position for height.`,
       )
     }
     if (
