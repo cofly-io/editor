@@ -88,6 +88,26 @@ const GOOD_PUMP_SKID = `
   nameplate({ id: 'nameplate', target: 'skid', side: 'front' });
 `
 
+const GOOD_CONVEYOR_WITH_ACCESS = `
+  ${GOOD_CONVEYOR}
+  platform({ id: 'service_platform', target: 'frame', side: 'front' });
+  ladder({ id: 'access_ladder', target: 'service_platform', side: 'front' });
+  handrail({ id: 'platform_handrail', target: 'service_platform', side: 'all' });
+`
+
+const RAW_ACCESS_CONVEYOR = `
+  ${GOOD_CONVEYOR}
+  part('platform.slab', box({ length: 1.8, width: 0.9, height: 0.05, material: 'metal', color: '#888888' }))
+    .atWorld([0, 1.2, 0.9])
+    .withRole('platform_grating');
+  part('ladder.one_rung', box({ length: 0.5, width: 0.03, height: 0.03, material: 'metal', color: '#facc15' }))
+    .atWorld([0, 0.5, 1.4])
+    .withRole('ladder_rung');
+  part('handrail.top', box({ length: 1.8, width: 0.03, height: 0.03, material: 'metal', color: '#facc15' }))
+    .atWorld([0, 2.3, 0.9])
+    .withRole('handrail_top_rail');
+`
+
 const RAW_PUMP_SKID = `
   part('skid.slab', box({ length: 2.4, width: 0.9, height: 0.12, material: 'metal', color: '#666666' }))
     .atWorld([0, 0.06, 0])
@@ -223,6 +243,55 @@ describe('reviewAssemblyRealism', () => {
         expect.stringContaining('realism_support_leg_count'),
         expect.stringContaining('realism_guard_too_simple'),
         expect.stringContaining('realism_sheet_metal_sharp'),
+      ]),
+    )
+  })
+
+  test('passes semantic platform ladder and handrail access details', () => {
+    const result = compileDsl(GOOD_CONVEYOR_WITH_ACCESS)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const review = reviewAssemblyRealism(result.ir, { source: GOOD_CONVEYOR_WITH_ACCESS })
+    expect(review.family).toBe('belt_conveyor')
+    expect(review.passed).toBe(true)
+    expect(review.evidence.semanticRoles).toEqual(
+      expect.arrayContaining(['platform_grating', 'ladder_rung', 'handrail_top_rail']),
+    )
+  })
+
+  test('rejects access details approximated with sparse raw primitives', () => {
+    const result = compileDsl(RAW_ACCESS_CONVEYOR)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const review = reviewAssemblyRealism(result.ir, { source: RAW_ACCESS_CONVEYOR })
+    expect(review.family).toBe('belt_conveyor')
+    expect(review.passed).toBe(false)
+    expect(review.issues).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('realism_access_platform_too_simple'),
+        expect.stringContaining('realism_access_ladder_too_simple'),
+        expect.stringContaining('realism_access_ladder_faceting'),
+        expect.stringContaining('realism_access_handrail_too_simple'),
+      ]),
+    )
+  })
+
+  test('rejects explicit access requests when the source omits access constructors', () => {
+    const result = compileDsl(GOOD_CONVEYOR)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const review = reviewAssemblyRealism(result.ir, {
+      source: `// add service platform, access ladder, and handrail\n${GOOD_CONVEYOR}`,
+    })
+    expect(review.passed).toBe(false)
+    expect(review.issues).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('realism_access_platform_missing'),
+        expect.stringContaining('realism_access_ladder_missing'),
+        expect.stringContaining('realism_access_handrail_missing'),
       ]),
     )
   })

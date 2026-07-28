@@ -109,6 +109,7 @@ export function reviewAssemblyRealism(
   checkConveyorDetails(ir, roles, opts.source, issues, warnings)
   checkControlCabinetDetails(ir, roles, issues, warnings)
   checkPumpSkidDetails(ir, roles, issues, warnings)
+  checkAccessDetails(ir, roles, opts.source, issues, warnings)
 
   const score = Math.max(0, Math.min(1, 1 - issues.length * 0.25 - warnings.length * 0.06))
   return {
@@ -448,8 +449,117 @@ function checkPumpSkidDetails(
   }
 }
 
+function checkAccessDetails(
+  ir: AssemblyIR,
+  roles: Set<string>,
+  source: string | undefined,
+  issues: string[],
+  warnings: string[],
+): void {
+  const requestsPlatform = sourceRequestsPlatform(source)
+  const requestsLadder = sourceRequestsLadder(source)
+  const requestsHandrail = sourceRequestsHandrail(source)
+  const hasPlatform = hasRoleLike(roles, 'platform_grating')
+  const hasLadder = hasRoleLike(roles, 'ladder_side_rail') || hasRoleLike(roles, 'ladder_rung')
+  const hasHandrail = hasRoleLike(roles, 'handrail_top_rail') || hasRoleLike(roles, 'handrail_post')
+  if (
+    !requestsPlatform &&
+    !requestsLadder &&
+    !requestsHandrail &&
+    !hasPlatform &&
+    !hasLadder &&
+    !hasHandrail
+  ) {
+    return
+  }
+
+  if (requestsPlatform && !hasPlatform) {
+    issues.push(
+      'realism_access_platform_missing: access/service platform requests must include platform()/platform_grating parts.',
+    )
+  }
+  if (requestsLadder && !hasLadder) {
+    issues.push(
+      'realism_access_ladder_missing: access ladder requests must include ladder side rails and repeated rungs.',
+    )
+  }
+  if (requestsHandrail && !hasHandrail) {
+    issues.push(
+      'realism_access_handrail_missing: platform or safety rail requests must include handrail top rails and posts.',
+    )
+  }
+
+  if (hasPlatform) {
+    const supports = ir.parts.filter((p) => p.semanticRole === 'platform_support_leg')
+    const edgeBeams = ir.parts.filter((p) => p.semanticRole === 'platform_edge_beam')
+    if (supports.length < 4 || edgeBeams.length < 2) {
+      issues.push(
+        `realism_access_platform_too_simple: platform has ${supports.length} support legs and ${edgeBeams.length} edge beams; use platform() so it has grating, beams, and supports.`,
+      )
+    }
+    const grating = ir.parts.find((p) => p.semanticRole === 'platform_grating')
+    if (grating?.material.preset !== 'wire_mesh') {
+      warnings.push(
+        'realism_access_platform_material: service platform should normally use wire_mesh grating.',
+      )
+    }
+  }
+
+  if (hasLadder) {
+    const rails = ir.parts.filter((p) => p.semanticRole === 'ladder_side_rail')
+    const rungs = ir.parts.filter((p) => p.semanticRole === 'ladder_rung')
+    if (rails.length < 2 || rungs.length < 4) {
+      issues.push(
+        `realism_access_ladder_too_simple: ladder has ${rails.length} side rails and ${rungs.length} rungs; use ladder() instead of a single box or sparse lines.`,
+      )
+    }
+    const facetedRung = rungs.find(
+      (p) =>
+        p.geometry.kind === 'primitive-recipe' &&
+        (p.geometry.recipeId !== 'primitive.cylinder' ||
+          typeof p.geometry.params.radialSegments !== 'number' ||
+          p.geometry.params.radialSegments < 16),
+    )
+    if (facetedRung) {
+      issues.push(
+        'realism_access_ladder_faceting: ladder rungs should be cylindrical with at least 16 radialSegments.',
+      )
+    }
+  }
+
+  if (hasHandrail) {
+    const topRails = ir.parts.filter((p) => p.semanticRole === 'handrail_top_rail')
+    const midRails = ir.parts.filter((p) => p.semanticRole === 'handrail_mid_rail')
+    const posts = ir.parts.filter((p) => p.semanticRole === 'handrail_post')
+    if (topRails.length < 1 || posts.length < 2) {
+      issues.push(
+        `realism_access_handrail_too_simple: handrail has ${topRails.length} top rails and ${posts.length} posts; use handrail() so platforms read as safe service access.`,
+      )
+    }
+    if (midRails.length < 1) {
+      warnings.push(
+        'realism_access_handrail_midrail_missing: handrails should usually include a mid rail.',
+      )
+    }
+  }
+}
+
 function sourceRequestsGuard(source: string | undefined): boolean {
   return /\b(guard|guarded|guardcover|safety|protective|cover)\b|防护|護罩|护罩|罩/.test(
     source?.toLowerCase() ?? '',
   )
+}
+
+function sourceRequestsPlatform(source: string | undefined): boolean {
+  return /\b(platform|walkway|service\s+access|grating)\b|平台|检修平台|走台|踏板|格栅/i.test(
+    source?.toLowerCase() ?? '',
+  )
+}
+
+function sourceRequestsLadder(source: string | undefined): boolean {
+  return /\b(ladder|rung|access\s+ladder)\b|爬梯|梯子|踏棍|踏步/i.test(source?.toLowerCase() ?? '')
+}
+
+function sourceRequestsHandrail(source: string | undefined): boolean {
+  return /\b(handrail|guardrail|safety\s+rail)\b|栏杆|扶手|护栏/i.test(source?.toLowerCase() ?? '')
 }

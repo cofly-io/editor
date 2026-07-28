@@ -1028,7 +1028,10 @@ export function buildHandrail(
         params: { radius: radius * 0.8, height: railLength, radialSegments: 20 },
       }),
     )
-    for (let i = 0; i < postCount; i += 1) {
+    const skipCornerPosts = side === 'all' && !isX
+    const firstPost = skipCornerPosts ? 1 : 0
+    const lastPost = skipCornerPosts ? postCount - 2 : postCount - 1
+    for (let i = firstPost; i <= lastPost; i += 1) {
       const t = postCount === 1 ? 0 : i / (postCount - 1)
       const along = -railLength / 2 + railLength * t
       const postPosition: Vec3 = isX

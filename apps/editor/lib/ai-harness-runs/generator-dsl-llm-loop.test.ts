@@ -402,6 +402,54 @@ describe('runDslSourceLoop', () => {
     expect(seen[seen.length - 1]).toContain('skidBase')
   })
 
+  it('access realism failures feed the same repair loop', async () => {
+    const baseConveyor = `
+      belt({ id: 'belt', length: 6, width: 0.72 });
+      rollerArray({ id: 'rollers', length: 6, width: 0.78, count: 8 });
+      boxFrame({ id: 'frame', length: 6, width: 0.92, height: 0.78 });
+      guardCover({ id: 'cover', target: 'belt', side: 'top', length: 3.8 });
+      motor({ id: 'drive_motor', target: 'belt', side: 'right', position: 'rear' });
+      inspectionDoor({ id: 'doors', target: 'cover', side: 'right', count: 2 });
+      nameplate({ id: 'nameplate', target: 'cover', side: 'front' });
+    `
+    const toyAccess = `
+      ${baseConveyor}
+      part('platform.slab', box({ length: 1.8, width: 0.9, height: 0.05, material: 'metal', color: '#888888' }))
+        .atWorld([0, 1.2, 2.0])
+        .withRole('platform_grating');
+      part('ladder.one_rung', box({ length: 0.5, width: 0.03, height: 0.03, material: 'metal', color: '#facc15' }))
+        .atWorld([0, 0.5, 2.45])
+        .withRole('ladder_rung');
+      part('handrail.top', box({ length: 1.8, width: 0.03, height: 0.03, material: 'metal', color: '#facc15' }))
+        .atWorld([0, 2.3, 2.0])
+        .withRole('handrail_top_rail');
+    `
+    const sdkAccess = `
+      ${baseConveyor}
+      platform({ id: 'service_platform', target: 'frame', side: 'front' });
+      ladder({ id: 'access_ladder', target: 'service_platform', side: 'front' });
+      handrail({ id: 'platform_handrail', target: 'service_platform', side: 'all' });
+    `
+    let call = 0
+    const seen: string[] = []
+    const result = await runDslSourceLoop({
+      userPrompt: 'generate a guarded conveyor with service platform, access ladder and handrail',
+      callLlm: async (msgs) => {
+        seen.push(msgs.map((m) => m.content).join('\n---\n'))
+        return call++ === 0 ? toyAccess : sdkAccess
+      },
+      runAttempt: directAttempt,
+    })
+
+    expect(result.kind).toBe('ok')
+    expect(result.attempts).toBe(2)
+    expect(seen[seen.length - 1]).toContain('Industrial realism gate feedback')
+    expect(seen[seen.length - 1]).toContain('realism_access_platform_too_simple')
+    expect(seen[seen.length - 1]).toContain('platform')
+    expect(seen[seen.length - 1]).toContain('ladder')
+    expect(seen[seen.length - 1]).toContain('handrail')
+  })
+
   it('reply without DSL → nudges the model once and counts the attempt', async () => {
     let call = 0
     const result = await runDslSourceLoop({
