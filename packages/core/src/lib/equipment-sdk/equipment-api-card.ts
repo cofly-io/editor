@@ -386,6 +386,49 @@ export const EQUIPMENT_DSL_API_CARDS: DSLApiCard[] = [
     cost: { parts: 4 },
     example: "pumpCasing({ id: 'pump', target: 'skid', diameter: 0.52 });",
   },
+  {
+    apiVersion: DSL_API_VERSION,
+    kind: 'geometry_api_card',
+    id: 'industrial.verticalVessel',
+    category: 'industrial',
+    signature:
+      'verticalVessel({ id, diameter?, height?, includeLadder?, includeManway?, includePorts?, material?, color? })',
+    inputs: {
+      id: stringInput(true),
+      diameter: numberInput([0.35, 8]),
+      height: numberInput([0.9, 18]),
+      includeLadder: { type: 'boolean' },
+      includeManway: { type: 'boolean' },
+      includePorts: { type: 'boolean' },
+      material: enumInput(['painted_steel', 'stainless_steel', 'cast_iron']),
+      color: stringInput(),
+    },
+    outputs: 'PartBuilder[]',
+    cost: { parts: 18 },
+    example:
+      "verticalVessel({ id: 'storage_tank', diameter: 1.6, height: 4.2, includeLadder: true });",
+  },
+  {
+    apiVersion: DSL_API_VERSION,
+    kind: 'geometry_api_card',
+    id: 'industrial.dustCollector',
+    category: 'industrial',
+    signature:
+      'dustCollector({ id, width?, depth?, height?, bagCount?, includeLadder?, material?, color? })',
+    inputs: {
+      id: stringInput(true),
+      width: numberInput([0.6, 8]),
+      depth: numberInput([0.45, 5]),
+      height: numberInput([1.4, 12]),
+      bagCount: { type: 'integer', unit: 'count', range: [4, 24] },
+      includeLadder: { type: 'boolean' },
+      material: enumInput(['painted_steel', 'stainless_steel']),
+      color: stringInput(),
+    },
+    outputs: 'PartBuilder[]',
+    cost: { parts: 22 },
+    example: "dustCollector({ id: 'baghouse', width: 2.2, depth: 1.4, height: 4.5 });",
+  },
 ]
 
 export function formatEquipmentDslApiCards(cards = EQUIPMENT_DSL_API_CARDS): string {

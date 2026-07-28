@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   buildBearingBlock,
   buildControlCabinet,
+  buildDustCollector,
   buildFlangePort,
   buildGearbox,
   buildGuardCover,
@@ -14,6 +15,7 @@ import {
   buildPumpCasing,
   buildSheetCover,
   buildSkidBase,
+  buildVerticalVessel,
   EQUIPMENT_MATERIALS,
   type EquipmentBounds,
 } from './equipment-functions'
@@ -177,6 +179,31 @@ describe('equipment SDK realism builders', () => {
     expect(parts.some((p) => p.semanticRole === 'pump_suction_nozzle')).toBe(true)
     expect(parts.some((p) => p.semanticRole === 'pump_discharge_nozzle')).toBe(true)
     expect(parts.find((p) => p.semanticRole === 'volute_casing')?.params.radialSegments).toBe(64)
+  })
+
+  test('verticalVessel creates a detailed vessel with heads ports access and nameplate', () => {
+    const parts = buildVerticalVessel({ id: 'tank', diameter: 1.4, height: 3.4 })
+
+    expect(parts.some((p) => p.semanticRole === 'vessel_shell')).toBe(true)
+    expect(parts.filter((p) => p.semanticRole === 'vessel_head').length).toBe(2)
+    expect(parts.filter((p) => p.semanticRole === 'flange_port').length).toBeGreaterThanOrEqual(3)
+    expect(parts.some((p) => p.semanticRole === 'inspection_door')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'equipment_nameplate')).toBe(true)
+    expect(parts.filter((p) => p.semanticRole === 'ladder_rung').length).toBeGreaterThanOrEqual(6)
+    expect(parts.find((p) => p.semanticRole === 'vessel_shell')?.params.radialSegments).toBe(72)
+  })
+
+  test('dustCollector creates a baghouse body hopper ducts supports pulse valves and access', () => {
+    const parts = buildDustCollector({ id: 'baghouse', width: 2, depth: 1.2, height: 4 })
+
+    expect(parts.some((p) => p.semanticRole === 'filter_body')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'bottom_discharge_hopper')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'inlet_duct')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'outlet_duct')).toBe(true)
+    expect(parts.filter((p) => p.semanticRole === 'support_leg').length).toBe(4)
+    expect(parts.filter((p) => p.semanticRole === 'pulse_valve').length).toBeGreaterThanOrEqual(4)
+    expect(parts.some((p) => p.semanticRole === 'inspection_door')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'equipment_nameplate')).toBe(true)
   })
 
   test('industrial material presets carry appearance data for realism gates', () => {

@@ -1,6 +1,11 @@
 import type { AssemblyIR, AssemblyPart } from '@pascal-app/core/lib/generated-assembly-ir'
 
-export type IndustrialEquipmentFamily = 'belt_conveyor' | 'control_cabinet' | 'pump_skid'
+export type IndustrialEquipmentFamily =
+  | 'belt_conveyor'
+  | 'control_cabinet'
+  | 'pump_skid'
+  | 'process_vessel'
+  | 'dust_collector'
 
 export type RealismGateReview = {
   applicable: boolean
@@ -38,6 +43,16 @@ const FAMILY_SPECS: Record<IndustrialEquipmentFamily, FamilySpec> = {
     required: ['skid_base', 'volute_casing', 'drive_motor', 'flange_port'],
     recommended: ['pipe_run', 'sheet_cover_panel', 'equipment_nameplate'],
     maxAnonymousPrimitiveRatio: 0.2,
+  },
+  process_vessel: {
+    required: ['vessel_shell', 'vessel_head', 'flange_port'],
+    recommended: ['inspection_door', 'equipment_nameplate', 'ladder_rung'],
+    maxAnonymousPrimitiveRatio: 0.18,
+  },
+  dust_collector: {
+    required: ['filter_body', 'bottom_discharge_hopper', 'inlet_duct', 'outlet_duct'],
+    recommended: ['support_leg', 'pulse_valve', 'inspection_door', 'equipment_nameplate'],
+    maxAnonymousPrimitiveRatio: 0.18,
   },
 }
 
@@ -109,6 +124,8 @@ export function reviewAssemblyRealism(
   checkConveyorDetails(ir, roles, opts.source, issues, warnings)
   checkControlCabinetDetails(ir, roles, issues, warnings)
   checkPumpSkidDetails(ir, roles, issues, warnings)
+  checkProcessVesselDetails(ir, roles, issues, warnings)
+  checkDustCollectorDetails(ir, roles, issues, warnings)
   checkAccessDetails(ir, roles, opts.source, issues, warnings)
 
   const score = Math.max(0, Math.min(1, 1 - issues.length * 0.25 - warnings.length * 0.06))
@@ -149,6 +166,26 @@ function inferIndustrialFamily(
     /\b(pump|volute|skid)\b/.test(idText)
   ) {
     return 'pump_skid'
+  }
+  if (
+    hasRoleLike(roles, 'filter_body') ||
+    hasRoleLike(roles, 'bottom_discharge_hopper') ||
+    /\b(dust[_\s-]?collector|baghouse|bag[_\s-]?filter|filter[_\s-]?collector|pulse[_\s-]?jet)\b/.test(
+      sourceText,
+    ) ||
+    /dust|baghouse|filter/.test(idText)
+  ) {
+    return 'dust_collector'
+  }
+  if (
+    hasRoleLike(roles, 'vessel_shell') ||
+    hasRoleLike(roles, 'vessel_head') ||
+    /\b(tank|vessel|vertical[_\s-]?vessel|storage[_\s-]?tank|pressure[_\s-]?vessel|silo)\b/.test(
+      sourceText,
+    ) ||
+    /tank|vessel|silo/.test(idText)
+  ) {
+    return 'process_vessel'
   }
   if (
     hasRoleLike(roles, 'belt') ||
@@ -198,6 +235,15 @@ function hasRoleLike(roles: Set<string>, needle: string): boolean {
     if (n === 'flange_port' && (r.includes('flange') || r.includes('port'))) {
       return true
     }
+    if (n === 'vessel_shell' && (r.includes('vessel_shell') || r.includes('tank_shell'))) {
+      return true
+    }
+    if (n === 'vessel_head' && r.includes('head')) return true
+    if (n === 'filter_body' && (r.includes('filter_body') || r.includes('baghouse'))) return true
+    if (n === 'bottom_discharge_hopper' && r.includes('hopper')) return true
+    if (n === 'inlet_duct' && (r.includes('inlet') || r.includes('duct'))) return true
+    if (n === 'outlet_duct' && (r.includes('outlet') || r.includes('duct'))) return true
+    if (n === 'pulse_valve' && r.includes('pulse')) return true
   }
   return false
 }
@@ -445,6 +491,133 @@ function checkPumpSkidDetails(
   if (!hasRoleLike(roles, 'sheet_cover_panel')) {
     warnings.push(
       'realism_pump_coupling_guard_missing: pump skids usually need a coupling guard or sheet cover between pump and motor.',
+    )
+  }
+}
+
+function checkProcessVesselDetails(
+  ir: AssemblyIR,
+  roles: Set<string>,
+  issues: string[],
+  warnings: string[],
+): void {
+  if (!hasRoleLike(roles, 'vessel_shell') && !hasRoleLike(roles, 'vessel_head')) return
+
+  if (ir.parts.length < 12) {
+    issues.push(
+      `realism_vessel_under_detailed: process_vessel has only ${ir.parts.length} parts; use verticalVessel() so it has shell, heads, seams, ports, supports, access, and nameplate details.`,
+    )
+  }
+
+  const shell = ir.parts.find((p) => p.semanticRole === 'vessel_shell')
+  if (shell?.geometry.kind === 'primitive-recipe') {
+    if (shell.geometry.recipeId !== 'primitive.cylinder') {
+      issues.push('realism_vessel_shell_shape: vessel shell should be cylindrical.')
+    }
+    const radialSegments = shell.geometry.params.radialSegments
+    if (typeof radialSegments !== 'number' || radialSegments < 48) {
+      issues.push(
+        'realism_vessel_shell_faceting: vessel shell should use at least 48 radialSegments.',
+      )
+    }
+    if (shell.material.preset !== 'painted_steel' && shell.material.preset !== 'stainless_steel') {
+      issues.push(
+        'realism_vessel_shell_material: vessel shell should use painted_steel or stainless_steel.',
+      )
+    }
+  }
+
+  const heads = ir.parts.filter((p) => p.semanticRole === 'vessel_head')
+  if (heads.length < 2) {
+    issues.push(
+      `realism_vessel_heads_missing: process vessel has only ${heads.length} heads; use top and bottom vessel_head parts.`,
+    )
+  }
+
+  const ports = ir.parts.filter((p) => p.semanticRole === 'flange_port')
+  if (ports.length < 2) {
+    issues.push(
+      `realism_vessel_ports_missing: process vessel has only ${ports.length} process ports; add inlet/outlet/top nozzles.`,
+    )
+  }
+
+  if (!hasRoleLike(roles, 'inspection_door')) {
+    issues.push('realism_vessel_access_missing: vessel needs a manway or inspection door.')
+  }
+  if (!hasRoleLike(roles, 'equipment_nameplate')) {
+    warnings.push('realism_vessel_nameplate_missing: vessel should include an equipment nameplate.')
+  }
+  if (!hasRoleLike(roles, 'vessel_support_skirt') && !hasRoleLike(roles, 'support_leg')) {
+    issues.push(
+      'realism_vessel_support_missing: vessel needs skirt or support legs, not a floating shell.',
+    )
+  }
+}
+
+function checkDustCollectorDetails(
+  ir: AssemblyIR,
+  roles: Set<string>,
+  issues: string[],
+  warnings: string[],
+): void {
+  if (!hasRoleLike(roles, 'filter_body') && !hasRoleLike(roles, 'bottom_discharge_hopper')) return
+
+  if (ir.parts.length < 16) {
+    issues.push(
+      `realism_dust_collector_under_detailed: dust_collector has only ${ir.parts.length} parts; use dustCollector() so it has filter body, hopper, ducts, support legs, pulse valves, access door, and nameplate.`,
+    )
+  }
+
+  const body = ir.parts.find((p) => p.semanticRole === 'filter_body')
+  if (body?.geometry.kind === 'primitive-recipe') {
+    if (body.geometry.recipeId !== 'primitive.box') {
+      issues.push(
+        'realism_dust_collector_body_shape: baghouse filter body should be a boxy enclosure.',
+      )
+    }
+    const cornerRadius = body.geometry.params.cornerRadius
+    if (typeof cornerRadius !== 'number' || cornerRadius <= 0) {
+      issues.push(
+        'realism_dust_collector_body_sharp: filter body should use rounded sheet-metal cornerRadius.',
+      )
+    }
+  }
+
+  const hopper = ir.parts.find((p) => p.semanticRole === 'bottom_discharge_hopper')
+  if (hopper?.geometry.kind === 'primitive-recipe') {
+    if (hopper.geometry.recipeId !== 'primitive.frustum') {
+      issues.push('realism_dust_collector_hopper_shape: dust collector needs a tapered hopper.')
+    }
+  }
+
+  const supportLegs = ir.parts.filter((p) => p.semanticRole === 'support_leg')
+  if (supportLegs.length < 4) {
+    issues.push(
+      `realism_dust_collector_supports_missing: dust collector has only ${supportLegs.length} support legs; hopper collectors should stand on four supports.`,
+    )
+  }
+
+  if (!hasRoleLike(roles, 'inlet_duct') || !hasRoleLike(roles, 'outlet_duct')) {
+    issues.push(
+      'realism_dust_collector_ducts_missing: dust collector needs distinct inlet and outlet ducts.',
+    )
+  }
+
+  const pulseValves = ir.parts.filter((p) => p.semanticRole === 'pulse_valve')
+  if (pulseValves.length < 4) {
+    issues.push(
+      `realism_dust_collector_pulse_valves_missing: dust collector has only ${pulseValves.length} pulse valves; add a visible row of pulse valves.`,
+    )
+  }
+
+  if (!hasRoleLike(roles, 'inspection_door')) {
+    warnings.push(
+      'realism_dust_collector_access_missing: dust collector should include an access door.',
+    )
+  }
+  if (!hasRoleLike(roles, 'equipment_nameplate')) {
+    warnings.push(
+      'realism_dust_collector_nameplate_missing: dust collector should include a nameplate.',
     )
   }
 }

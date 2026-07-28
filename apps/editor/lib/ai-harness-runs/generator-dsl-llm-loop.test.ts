@@ -450,6 +450,61 @@ describe('runDslSourceLoop', () => {
     expect(seen[seen.length - 1]).toContain('handrail')
   })
 
+  it('process vessel realism failures feed the same repair loop', async () => {
+    const toyVessel = `
+      part('tank.shell', cylinder({ radius: 0.7, height: 3.2, material: 'metal', color: '#64748b', radialSegments: 16 }))
+        .atWorld([0, 1.8, 0])
+        .withRole('vessel_shell');
+    `
+    const sdkVessel =
+      "verticalVessel({ id: 'buffer_tank', diameter: 1.4, height: 3.6, includeLadder: true });"
+    let call = 0
+    const seen: string[] = []
+    const result = await runDslSourceLoop({
+      userPrompt: 'generate a realistic vertical buffer tank with access ladder and nozzles',
+      callLlm: async (msgs) => {
+        seen.push(msgs.map((m) => m.content).join('\n---\n'))
+        return call++ === 0 ? toyVessel : sdkVessel
+      },
+      runAttempt: directAttempt,
+    })
+
+    expect(result.kind).toBe('ok')
+    expect(result.attempts).toBe(2)
+    expect(seen[seen.length - 1]).toContain('Industrial realism gate feedback')
+    expect(seen[seen.length - 1]).toContain('realism_vessel_under_detailed')
+    expect(seen[seen.length - 1]).toContain('verticalVessel')
+  })
+
+  it('dust collector realism failures feed the same repair loop', async () => {
+    const toyCollector = `
+      part('collector.body', box({ length: 2.0, width: 1.2, height: 2.0, material: 'metal', color: '#64748b' }))
+        .atWorld([0, 2.4, 0])
+        .withRole('filter_body');
+      part('collector.hopper', box({ length: 1.4, width: 0.9, height: 0.7, material: 'metal', color: '#64748b' }))
+        .atWorld([0, 1.0, 0])
+        .withRole('bottom_discharge_hopper');
+    `
+    const sdkCollector =
+      "dustCollector({ id: 'baghouse', width: 2.0, depth: 1.2, height: 4.2, bagCount: 6 });"
+    let call = 0
+    const seen: string[] = []
+    const result = await runDslSourceLoop({
+      userPrompt: 'generate a realistic baghouse dust collector with hopper ducts and pulse valves',
+      callLlm: async (msgs) => {
+        seen.push(msgs.map((m) => m.content).join('\n---\n'))
+        return call++ === 0 ? toyCollector : sdkCollector
+      },
+      runAttempt: directAttempt,
+    })
+
+    expect(result.kind).toBe('ok')
+    expect(result.attempts).toBe(2)
+    expect(seen[seen.length - 1]).toContain('Industrial realism gate feedback')
+    expect(seen[seen.length - 1]).toContain('realism_dust_collector_under_detailed')
+    expect(seen[seen.length - 1]).toContain('dustCollector')
+  })
+
   it('reply without DSL → nudges the model once and counts the attempt', async () => {
     let call = 0
     const result = await runDslSourceLoop({
@@ -477,6 +532,8 @@ describe('prompt + repair message content', () => {
     expect(prompt).toContain('platform')
     expect(prompt).toContain('ladder')
     expect(prompt).toContain('handrail')
+    expect(prompt).toContain('verticalVessel')
+    expect(prompt).toContain('dustCollector')
     expect(prompt).toContain('prefer semantic constructors')
     expect(prompt).toContain('keyboard.key.r')
     expect(prompt).toContain(`Prompt version: ${DSL_AUTHOR_PROMPT_VERSION}`)

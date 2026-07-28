@@ -145,4 +145,26 @@ describe('compileDsl — equipment semantic constructors', () => {
     expect(roles.has('pipe_run')).toBe(true)
     expect(roles.has('sheet_cover_panel')).toBe(true)
   })
+
+  test('compiles process vessel and dust collector constructors through the same DSL pipeline', () => {
+    const result = compileDsl(`
+      verticalVessel({ id: 'buffer_tank', diameter: 1.4, height: 3.6, includeLadder: true });
+      dustCollector({ id: 'baghouse', width: 2.0, depth: 1.2, height: 4.2, bagCount: 6 });
+    `)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const roles = new Set(result.ir.parts.map((p) => p.semanticRole))
+    expect(roles.has('vessel_shell')).toBe(true)
+    expect(roles.has('vessel_head')).toBe(true)
+    expect(roles.has('flange_port')).toBe(true)
+    expect(roles.has('filter_body')).toBe(true)
+    expect(roles.has('bottom_discharge_hopper')).toBe(true)
+    expect(roles.has('pulse_valve')).toBe(true)
+
+    const vesselShell = result.ir.parts.find((p) => p.semanticRole === 'vessel_shell')
+    const hopper = result.ir.parts.find((p) => p.semanticRole === 'bottom_discharge_hopper')
+    expect(vesselShell?.geometry.params.radialSegments).toBeGreaterThanOrEqual(64)
+    expect(hopper?.geometry.recipeId).toBe('primitive.frustum')
+  })
 })

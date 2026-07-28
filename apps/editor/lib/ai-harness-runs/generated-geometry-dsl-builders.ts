@@ -17,6 +17,7 @@ import {
   buildBelt,
   buildBoxFrame,
   buildControlCabinet,
+  buildDustCollector,
   buildEquipment,
   buildFlangePort,
   buildGearbox,
@@ -32,7 +33,9 @@ import {
   buildRollerArray,
   buildSheetCover,
   buildSkidBase,
+  buildVerticalVessel,
   type ControlCabinetParams,
+  type DustCollectorParams,
   EQUIPMENT_MATERIALS,
   type EquipmentBounds,
   type EquipmentBuildContext,
@@ -51,6 +54,7 @@ import {
   type RollerArrayParams,
   type SheetCoverParams,
   type SkidBaseParams,
+  type VerticalVesselParams,
 } from '@pascal-app/core/lib/equipment-sdk/equipment-functions'
 import type {
   AssemblyConstraint,
@@ -738,6 +742,8 @@ export function createDslApiBuilders(opts: CreateBuildersOptions) {
     skidBase: (o: SkidBaseParams) => registerEquipmentSpecs(buildSkidBase(o)),
     pumpCasing: (o: PumpCasingParams) =>
       registerEquipmentSpecs(buildPumpCasing(o, equipmentContext)),
+    verticalVessel: (o: VerticalVesselParams) => registerEquipmentSpecs(buildVerticalVessel(o)),
+    dustCollector: (o: DustCollectorParams) => registerEquipmentSpecs(buildDustCollector(o)),
 
     hinge: (o: {
       part: string
