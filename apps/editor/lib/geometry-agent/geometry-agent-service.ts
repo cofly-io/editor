@@ -63,6 +63,11 @@ export type GeometryAgentRunResponse = GeometryAgentSnapshot & {
     attempts: number
     sourceAvailable: boolean
   }
+  generatedAssembly?: {
+    rootNode: Extract<DslRunResult, { kind: 'ok' }>['rootNode']
+    patches: Extract<DslRunResult, { kind: 'ok' }>['patches']
+    nodeIdByPartId: Record<string, string>
+  }
   rerunSummary?: GeometryAgentRerunSummary
 }
 
@@ -96,6 +101,9 @@ export async function createGeometryAgentSessionFromRequest(
       attempts: result.attempts,
       sourceAvailable: result.source !== null,
     },
+    ...(result.kind === 'ok' && result.finalRun.kind === 'ok'
+      ? { generatedAssembly: generatedAssemblyFromRun(result.finalRun) }
+      : {}),
   }
 }
 
@@ -138,6 +146,9 @@ export async function sendGeometryAgentMessageFromRequest(
       attempts: result.attempts,
       sourceAvailable: result.source !== null,
     },
+    ...(result.kind === 'ok' && result.finalRun.kind === 'ok'
+      ? { generatedAssembly: generatedAssemblyFromRun(result.finalRun) }
+      : {}),
     ...(rerun ? { rerunSummary: rerun.summary } : {}),
   }
 }
@@ -257,6 +268,14 @@ function defaultRunAttempt(source: string): Promise<DslRunResult> {
       { params: { generatorDsl: true } },
     ),
   })
+}
+
+function generatedAssemblyFromRun(run: Extract<DslRunResult, { kind: 'ok' }>) {
+  return {
+    rootNode: run.rootNode,
+    patches: run.patches,
+    nodeIdByPartId: Object.fromEntries(run.nodeIdByPartId),
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

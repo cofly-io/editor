@@ -16,6 +16,12 @@ export const AI_GENERATION_MODES: AiGenerationModeConfig[] = [
     description: 'LLM \u8c03\u7528 Pascal primitive \u5de5\u5177\uff0c\u751f\u6210\u53ef\u7f16\u8f91\u51e0\u4f55\u4f53\u3002',
   },
   {
+    id: 'geometry-agent',
+    label: '几何 Agent',
+    tech: 'Source DSL',
+    description: '维护持久 DSL 源码，支持对话式局部编辑和调试详情。',
+  },
+  {
     id: 'image-to-3d',
     label: '\u56fe\u751f\u5efa\u6a21',
     tech: 'Image to 3D',
@@ -34,7 +40,12 @@ export function shouldRouteAssetPromptToFactory(input: {
   hasImageAttachment: boolean
   text: string
 }) {
-  if (input.generationMode !== 'primitive' || input.hasImageAttachment) return false
+  if (
+    (input.generationMode !== 'primitive' && input.generationMode !== 'geometry-agent') ||
+    input.hasImageAttachment
+  ) {
+    return false
+  }
   const text = input.text.trim().toLowerCase()
   if (!text) return false
   return (

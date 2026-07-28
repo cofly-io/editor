@@ -53,6 +53,7 @@ import { useFactorySelectionLabel } from './use-factory-selection-label'
 import { useFactoryRuns } from './use-factory-runs'
 import { useGeneratedArtifactActions } from './use-generated-artifact-actions'
 import { useGenerationRunControls } from './use-generation-run-controls'
+import { useGeometryAgentChat } from './use-geometry-agent-chat'
 import { useAiChatUiEffects } from './use-ai-chat-ui-effects'
 import { useImageAttachment } from './use-image-attachment'
 import { useImageTo3DRuns } from './use-image-to-3d-runs'
@@ -272,6 +273,18 @@ export function AiChatPanel({ sceneId }: { sceneId?: string } = {}) {
     subscribePrimitiveRun,
   })
 
+  const { sendGeometryAgentMessage } = useGeometryAgentChat({
+    activeAbortControllerRef,
+    input,
+    loading,
+    markGenerationStopped,
+    messages,
+    setImageAttachment,
+    setInput,
+    setLoading,
+    setMessages,
+  })
+
   const {
     conversationHistory,
     conversationHistoryLoading,
@@ -327,6 +340,7 @@ export function AiChatPanel({ sceneId }: { sceneId?: string } = {}) {
     loading,
     sendArticraftMessage,
     sendFactoryMessage,
+    sendGeometryAgentMessage,
     sendImageTo3DMessage,
     sendPrimitiveMessage,
     setConversationHistoryOpen,

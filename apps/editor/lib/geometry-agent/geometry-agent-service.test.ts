@@ -104,6 +104,11 @@ describe('geometry-agent service', () => {
       expect(response.manifest).toMatchObject({ status: 'succeeded', inputMode: 'text' })
       expect(response.source).toContain('guardCover')
       expect(response.lastRun).toMatchObject({ kind: 'ok', partCount: 2 })
+      expect(response.generatedAssembly).toMatchObject({
+        rootNode: { id: 'assembly_test' },
+        patches: [],
+        nodeIdByPartId: {},
+      })
     })
   })
 
@@ -175,6 +180,7 @@ describe('geometry-agent service', () => {
         updated: 1,
         unchanged: 1,
       })
+      expect(response.generatedAssembly?.rootNode).toMatchObject({ id: 'assembly_test' })
     })
   })
 

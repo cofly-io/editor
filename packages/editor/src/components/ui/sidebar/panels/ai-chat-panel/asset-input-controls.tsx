@@ -81,7 +81,9 @@ export function AssetInputControls({
                   key={mode.id}
                   onClick={() => {
                     setGenerationMode(mode.id)
-                    if (mode.id === 'primitive') setImageAttachment(undefined)
+                    if (mode.id === 'primitive' || mode.id === 'geometry-agent') {
+                      setImageAttachment(undefined)
+                    }
                     setModeMenuOpen(false)
                   }}
                   role="option"

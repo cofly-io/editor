@@ -3,6 +3,7 @@ import type { ArticraftJoint, ArticraftLink, ArticraftModelData } from '@pascal-
 import type { GeometryToolExecutionResult } from '../../../../../lib/ai-geometry-tool-executor'
 import type { GeometryContextDecision } from '../../../../../lib/ai-chat-harness'
 import type { GeneratedGeometryArtifact } from '../../../../../lib/ai-generated-geometry'
+import type { GeometryAgentSnapshot } from '../../../../../lib/geometry-agent-client-types'
 
 export type FactoryRunSummary = {
   title: string
@@ -29,9 +30,10 @@ export interface ChatMessage {
   image?: ChatImageAttachment
   generationRun?: {
     id: string
-    mode: 'articraft' | 'image-to-3d' | 'primitive' | 'factory'
+    mode: 'articraft' | 'image-to-3d' | 'primitive' | 'factory' | 'geometry-agent'
     status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
   }
+  geometryAgentSession?: GeometryAgentSnapshot
   articraftResult?: ArticraftResult
   imageTo3dResult?: ImageTo3DResult
   factoryRunSummary?: FactoryRunSummary
@@ -111,7 +113,7 @@ export type ApiMessage = {
   tool_calls?: unknown
 }
 
-export type AiGenerationMode = 'primitive' | 'articraft' | 'image-to-3d'
+export type AiGenerationMode = 'primitive' | 'geometry-agent' | 'articraft' | 'image-to-3d'
 export type AiConversationPurpose = 'factory' | 'asset'
 
 export interface ArticraftResult {

@@ -93,7 +93,9 @@ export function readPersistedAiChatPanelState(sceneId?: string): AiChatPanelStat
       messages,
       input: typeof parsed.input === 'string' ? parsed.input : '',
       generationMode:
-        parsed.generationMode === 'articraft' || parsed.generationMode === 'image-to-3d'
+        parsed.generationMode === 'articraft' ||
+        parsed.generationMode === 'image-to-3d' ||
+        parsed.generationMode === 'geometry-agent'
           ? parsed.generationMode
           : 'primitive',
       conversationPurpose,

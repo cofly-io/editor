@@ -1,7 +1,10 @@
 import type { AssemblyIR } from '@pascal-app/core/lib/generated-assembly-ir'
 import type { DSLDiagnostic } from '@pascal-app/core/lib/generated-geometry-dsl-contract'
 import type { GeneratedAssemblyNode, GeneratedMeshNode } from '@pascal-app/core/schema'
-import type { GeneratedAssemblyPlacementOptions } from './generated-geometry-placement'
+import type {
+  GeneratedAssemblyPatchPlan,
+  GeneratedAssemblyPlacementOptions,
+} from './generated-geometry-placement'
 
 export type GeometryAgentSessionStatus = 'idle' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 
@@ -153,6 +156,11 @@ export type GeometryAgentRunResponse = GeometryAgentSnapshot & {
     kind: 'ok' | 'failed'
     attempts: number
     sourceAvailable: boolean
+  }
+  generatedAssembly?: {
+    rootNode: GeneratedAssemblyNode
+    patches: GeneratedAssemblyPatchPlan['patches']
+    nodeIdByPartId: Record<string, string>
   }
   rerunSummary?: GeometryAgentRerunSummarySnapshot
 }

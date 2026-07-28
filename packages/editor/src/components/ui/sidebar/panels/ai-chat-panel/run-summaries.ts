@@ -1,4 +1,6 @@
 import type { GeneratedGeometryArtifact } from '../../../../../lib/ai-generated-geometry'
+import { geometryAgentDebugDetails } from '../../../../../lib/geometry-agent-client'
+import type { GeometryAgentRunResponse } from '../../../../../lib/geometry-agent-client-types'
 import type { ArticraftResult, FactoryRunSummary, GeneratedModelArtifact } from './types'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -151,6 +153,77 @@ function deviceResultTitle(mode: DeviceGenerationRoute) {
   if (mode === 'primitive') return '设备几何已生成'
   if (mode === 'image-to-3d') return '设备模型已生成'
   return '关节设备已生成'
+}
+
+export function buildGeometryAgentResultSummary(input: {
+  prompt: string
+  status: 'running' | 'succeeded' | 'failed'
+  isEdit?: boolean
+  response?: GeometryAgentRunResponse
+  applied?: boolean
+  patchCount?: number
+  applyError?: string
+  debugDetails?: string
+}): FactoryRunSummary {
+  const response = input.response
+  const lastRun = response?.lastRun
+  const partCount = lastRun?.partCount ?? 0
+  const sourceAvailable = response?.result.sourceAvailable === true
+  const changeText = lastRun?.changeFeedback?.text
+  const details = response ? geometryAgentDebugDetails(response) : input.debugDetails
+  const metrics: FactoryRunSummary['metrics'] = [
+    { label: '路线', value: 'geometry_agent' },
+    ...(partCount > 0 ? [{ label: '部件', value: `${partCount}` }] : []),
+    ...(input.patchCount != null ? [{ label: '场景节点', value: `${input.patchCount}` }] : []),
+    ...(response ? [{ label: '尝试', value: `${response.result.attempts}` }] : []),
+  ]
+  if (lastRun?.changed) {
+    metrics.push(
+      { label: '修改', value: `${lastRun.changed.updated}` },
+      { label: '新增', value: `${lastRun.changed.created}` },
+    )
+  }
+
+  return {
+    title:
+      input.status === 'running'
+        ? input.isEdit
+          ? '正在修改几何 Agent 源码'
+          : '正在创建几何 Agent 设备'
+        : input.status === 'succeeded'
+          ? input.isEdit
+            ? '几何 Agent 已完成源码编辑'
+            : '几何 Agent 已生成设备'
+          : '几何 Agent 需要检查',
+    icon: 'mdi:robot-excited-outline',
+    status: input.status,
+    description:
+      input.status === 'running'
+        ? input.isEdit
+          ? '正在读取持久 DSL 源码，并按本次指令做局部修改。'
+          : '正在让 LLM 编写持久 DSL 源码，随后编译、校验并应用到画布。'
+        : input.status === 'succeeded'
+          ? changeText ?? lastRun?.summary ?? '已通过持久 DSL 源码生成设备几何。'
+          : input.applyError
+            ? `几何已生成但应用到画布失败：${input.applyError}`
+            : lastRun?.summary ?? '这次几何 Agent 运行没有产出可应用结果。',
+    steps: [
+      { label: '理解设备需求', status: 'done' },
+      { label: input.isEdit ? '读取持久源码' : 'DSL 源码生成', status: sourceAvailable ? 'done' : input.status === 'failed' ? 'failed' : 'running' },
+      { label: 'Sandbox 编译 / IR', status: lastRun ? (lastRun.kind === 'ok' ? 'done' : 'failed') : input.status === 'running' ? 'running' : 'failed' },
+      { label: '真实感/空间质量检查', status: lastRun?.kind === 'ok' ? 'done' : input.status === 'running' ? 'pending' : 'failed' },
+      {
+        label: '应用到画布',
+        status: input.applied
+          ? 'done'
+          : input.status === 'running' || input.isEdit
+            ? 'pending'
+            : 'failed',
+      },
+    ],
+    metrics,
+    ...(details ? { details } : {}),
+  }
 }
 
 export function buildDeviceProgressSummary(input: {

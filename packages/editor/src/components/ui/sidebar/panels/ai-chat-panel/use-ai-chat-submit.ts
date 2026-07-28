@@ -13,6 +13,7 @@ export function useAiChatSubmit({
   loading,
   sendArticraftMessage,
   sendFactoryMessage,
+  sendGeometryAgentMessage,
   sendImageTo3DMessage,
   sendPrimitiveMessage,
   setConversationHistoryOpen,
@@ -26,6 +27,7 @@ export function useAiChatSubmit({
   loading: boolean
   sendArticraftMessage: (text: string, image?: ChatImageAttachment) => Promise<void>
   sendFactoryMessage: () => void
+  sendGeometryAgentMessage: (overrideText?: string) => Promise<void>
   sendImageTo3DMessage: (text: string, image?: ChatImageAttachment) => Promise<void>
   sendPrimitiveMessage: (overrideText?: string) => Promise<void>
   setConversationHistoryOpen: Dispatch<SetStateAction<boolean>>
@@ -36,7 +38,10 @@ export function useAiChatSubmit({
   const sendMessage = useCallback(
     async (overrideText?: string) => {
       const text = (overrideText ?? input).trim()
-      const attachedImage = generationMode === 'primitive' ? undefined : imageAttachment
+      const attachedImage =
+        generationMode === 'primitive' || generationMode === 'geometry-agent'
+          ? undefined
+          : imageAttachment
       if (loading) return
       if (generationMode === 'image-to-3d' && !attachedImage) {
         await sendImageTo3DMessage(text, attachedImage)
@@ -54,6 +59,11 @@ export function useAiChatSubmit({
         return
       }
 
+      if (generationMode === 'geometry-agent') {
+        await sendGeometryAgentMessage(overrideText)
+        return
+      }
+
       await sendPrimitiveMessage(overrideText)
     },
     [
@@ -62,6 +72,7 @@ export function useAiChatSubmit({
       input,
       loading,
       sendArticraftMessage,
+      sendGeometryAgentMessage,
       sendImageTo3DMessage,
       sendPrimitiveMessage,
     ],
