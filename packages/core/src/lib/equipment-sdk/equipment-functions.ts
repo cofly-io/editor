@@ -158,6 +158,19 @@ export type ControlCabinetParams = CommonParams & {
   depth?: number
 }
 
+export type SkidBaseParams = CommonParams & {
+  length?: number
+  width?: number
+  height?: number
+  railThickness?: number
+}
+
+export type PumpCasingParams = CommonParams & {
+  target?: string
+  diameter?: number
+  width?: number
+}
+
 const round = (value: number) => Number(value.toFixed(4))
 
 const clamp = (value: unknown, fallback: number, min: number, max: number): number => {
@@ -883,6 +896,104 @@ export function buildControlCabinet(
         cornerRadius: 0.006,
         cornerSegments: 4,
       },
+    }),
+  ]
+}
+
+export function buildSkidBase(params: SkidBaseParams): EquipmentPartSpec[] {
+  const length = clamp(params.length, 2.2, 0.6, 8)
+  const width = clamp(params.width, 0.9, 0.25, 3)
+  const height = clamp(params.height, 0.18, 0.06, 0.8)
+  const rail = clamp(params.railThickness, Math.max(width * 0.045, 0.04), 0.025, 0.18)
+  const material = params.material ?? 'painted_steel'
+  return [
+    spec({
+      id: `${params.id}.left_rail`,
+      kind: 'box',
+      semanticRole: 'skid_base',
+      position: [0, height, -width / 2],
+      size: [length, rail, rail],
+      material,
+      color: params.color,
+      params: { length, width: rail, height: rail, cornerRadius: rail * 0.2, cornerSegments: 5 },
+    }),
+    spec({
+      id: `${params.id}.right_rail`,
+      kind: 'box',
+      semanticRole: 'skid_base',
+      position: [0, height, width / 2],
+      size: [length, rail, rail],
+      material,
+      color: params.color,
+      params: { length, width: rail, height: rail, cornerRadius: rail * 0.2, cornerSegments: 5 },
+    }),
+    spec({
+      id: `${params.id}.front_cross_member`,
+      kind: 'box',
+      semanticRole: 'skid_cross_member',
+      position: [length * 0.36, height, 0],
+      material,
+      color: params.color,
+      params: { length: rail, width, height: rail, cornerRadius: rail * 0.18, cornerSegments: 4 },
+    }),
+    spec({
+      id: `${params.id}.rear_cross_member`,
+      kind: 'box',
+      semanticRole: 'skid_cross_member',
+      position: [-length * 0.36, height, 0],
+      material,
+      color: params.color,
+      params: { length: rail, width, height: rail, cornerRadius: rail * 0.18, cornerSegments: 4 },
+    }),
+  ]
+}
+
+export function buildPumpCasing(
+  params: PumpCasingParams,
+  context: EquipmentBuildContext = {},
+): EquipmentPartSpec[] {
+  const target = context.resolveTarget?.(params.target)
+  const diameter = clamp(params.diameter, 0.52, 0.16, 2)
+  const width = clamp(params.width, diameter * 0.38, 0.08, 0.9)
+  const x = (target?.center[0] ?? 0) + (target?.size[0] ?? 2.2) * 0.24
+  const y = (target?.center[1] ?? 0.18) + diameter * 0.62
+  const z = target?.center[2] ?? 0
+  return [
+    spec({
+      id: `${params.id}.volute_body`,
+      kind: 'cylinder',
+      semanticRole: 'volute_casing',
+      position: [x, y, z],
+      rotation: { axis: 'x', degrees: 90 },
+      material: params.material ?? 'painted_steel',
+      color: params.color,
+      params: { radius: diameter / 2, height: width, radialSegments: 64 },
+    }),
+    spec({
+      id: `${params.id}.volute_bulge`,
+      kind: 'sphere',
+      semanticRole: 'pump_casing_bulge',
+      position: [x + diameter * 0.38, y + diameter * 0.18, z],
+      material: params.material ?? 'painted_steel',
+      color: params.color,
+      params: { radius: diameter * 0.2 },
+    }),
+    spec({
+      id: `${params.id}.suction_nozzle`,
+      kind: 'cylinder',
+      semanticRole: 'pump_suction_nozzle',
+      position: [x, y, z - width * 0.9],
+      rotation: { axis: 'x', degrees: 90 },
+      material: 'cast_iron',
+      params: { radius: diameter * 0.22, height: width * 0.9, radialSegments: 48 },
+    }),
+    spec({
+      id: `${params.id}.discharge_nozzle`,
+      kind: 'cylinder',
+      semanticRole: 'pump_discharge_nozzle',
+      position: [x, y + diameter * 0.52, z],
+      material: 'cast_iron',
+      params: { radius: diameter * 0.18, height: diameter * 0.42, radialSegments: 48 },
     }),
   ]
 }

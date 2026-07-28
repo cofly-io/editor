@@ -6,7 +6,9 @@ import {
   buildInspectionDoor,
   buildMotor,
   buildPipeRun,
+  buildPumpCasing,
   buildSheetCover,
+  buildSkidBase,
   EQUIPMENT_MATERIALS,
   type EquipmentBounds,
 } from './equipment-functions'
@@ -91,6 +93,23 @@ describe('equipment SDK realism builders', () => {
     expect(parts.some((p) => p.semanticRole === 'control_panel_glass')).toBe(true)
     expect(parts.some((p) => p.semanticRole === 'cabinet_handle')).toBe(true)
     expect(parts.some((p) => p.semanticRole === 'equipment_nameplate')).toBe(true)
+  })
+
+  test('skidBase creates steel rails and cross members for package equipment', () => {
+    const parts = buildSkidBase({ id: 'skid', length: 2.4, width: 0.9 })
+
+    expect(parts.filter((p) => p.semanticRole === 'skid_base').length).toBe(2)
+    expect(parts.filter((p) => p.semanticRole === 'skid_cross_member').length).toBe(2)
+    expect(parts[0]?.params.cornerRadius).toBeGreaterThan(0)
+  })
+
+  test('pumpCasing creates a recognizable centrifugal casing with nozzles', () => {
+    const parts = buildPumpCasing({ id: 'pump', target: 'belt', diameter: 0.5 }, context)
+
+    expect(parts.some((p) => p.semanticRole === 'volute_casing')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'pump_suction_nozzle')).toBe(true)
+    expect(parts.some((p) => p.semanticRole === 'pump_discharge_nozzle')).toBe(true)
+    expect(parts.find((p) => p.semanticRole === 'volute_casing')?.params.radialSegments).toBe(64)
   })
 
   test('industrial material presets carry appearance data for realism gates', () => {

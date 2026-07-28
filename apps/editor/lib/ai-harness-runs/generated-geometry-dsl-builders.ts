@@ -9,18 +9,6 @@
  *  - H: childOf(...) must precede atLocal(...); evaluator enforces
  */
 
-import type {
-  AssemblyConstraint,
-  AssemblyIR,
-  AssemblyPart,
-  GeometryRecipe,
-  IRConnection,
-  IRPort,
-  Quat,
-  SerializableMaterial,
-  Vec3,
-} from '@pascal-app/core/lib/generated-assembly-ir'
-import { DSL_API_VERSION } from '@pascal-app/core/lib/generated-geometry-dsl-contract'
 import {
   type BeltParams,
   type BoxFrameParams,
@@ -34,8 +22,10 @@ import {
   buildMotor,
   buildNameplate,
   buildPipeRun,
+  buildPumpCasing,
   buildRollerArray,
   buildSheetCover,
+  buildSkidBase,
   type ControlCabinetParams,
   EQUIPMENT_MATERIALS,
   type EquipmentBounds,
@@ -47,9 +37,23 @@ import {
   type MotorParams,
   type NameplateParams,
   type PipeRunParams,
+  type PumpCasingParams,
   type RollerArrayParams,
   type SheetCoverParams,
-} from '../../../../packages/core/src/lib/equipment-sdk/equipment-functions'
+  type SkidBaseParams,
+} from '@pascal-app/core/lib/equipment-sdk/equipment-functions'
+import type {
+  AssemblyConstraint,
+  AssemblyIR,
+  AssemblyPart,
+  GeometryRecipe,
+  IRConnection,
+  IRPort,
+  Quat,
+  SerializableMaterial,
+  Vec3,
+} from '@pascal-app/core/lib/generated-assembly-ir'
+import { DSL_API_VERSION } from '@pascal-app/core/lib/generated-geometry-dsl-contract'
 
 // ---------------------------------------------------------------------------
 // Geometry builders
@@ -715,6 +719,9 @@ export function createDslApiBuilders(opts: CreateBuildersOptions) {
     pipeRun: (o: PipeRunParams) => registerEquipmentSpecs(buildPipeRun(o)),
     controlCabinet: (o: ControlCabinetParams) =>
       registerEquipmentSpecs(buildControlCabinet(o, equipmentContext)),
+    skidBase: (o: SkidBaseParams) => registerEquipmentSpecs(buildSkidBase(o)),
+    pumpCasing: (o: PumpCasingParams) =>
+      registerEquipmentSpecs(buildPumpCasing(o, equipmentContext)),
 
     hinge: (o: {
       part: string

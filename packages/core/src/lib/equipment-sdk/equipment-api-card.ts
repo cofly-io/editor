@@ -239,6 +239,43 @@ export const EQUIPMENT_DSL_API_CARDS: DSLApiCard[] = [
     cost: { parts: 5 },
     example: "controlCabinet({ id: 'control_cabinet', target: 'frame', side: 'right' });",
   },
+  {
+    apiVersion: DSL_API_VERSION,
+    kind: 'geometry_api_card',
+    id: 'industrial.skidBase',
+    category: 'industrial',
+    signature: 'skidBase({ id, length?, width?, height?, railThickness?, material?, color? })',
+    inputs: {
+      id: stringInput(true),
+      length: numberInput([0.6, 8]),
+      width: numberInput([0.25, 3]),
+      height: numberInput([0.06, 0.8]),
+      railThickness: numberInput([0.025, 0.18]),
+      material: enumInput(['painted_steel', 'stainless_steel']),
+      color: stringInput(),
+    },
+    outputs: 'PartBuilder[]',
+    cost: { parts: 4 },
+    example: "skidBase({ id: 'skid', length: 2.4, width: 0.9 });",
+  },
+  {
+    apiVersion: DSL_API_VERSION,
+    kind: 'geometry_api_card',
+    id: 'industrial.pumpCasing',
+    category: 'industrial',
+    signature: 'pumpCasing({ id, target?, diameter?, width?, material?, color? })',
+    inputs: {
+      id: stringInput(true),
+      target: stringInput(),
+      diameter: numberInput([0.16, 2]),
+      width: numberInput([0.08, 0.9]),
+      material: enumInput(['painted_steel', 'cast_iron', 'stainless_steel']),
+      color: stringInput(),
+    },
+    outputs: 'PartBuilder[]',
+    cost: { parts: 4 },
+    example: "pumpCasing({ id: 'pump', target: 'skid', diameter: 0.52 });",
+  },
 ]
 
 export function formatEquipmentDslApiCards(cards = EQUIPMENT_DSL_API_CARDS): string {

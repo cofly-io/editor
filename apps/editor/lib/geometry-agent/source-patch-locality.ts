@@ -15,6 +15,8 @@ const EQUIPMENT_CALLS = [
   'flangePort',
   'pipeRun',
   'controlCabinet',
+  'skidBase',
+  'pumpCasing',
 ] as const
 
 type EquipmentCallName = (typeof EQUIPMENT_CALLS)[number]
@@ -177,6 +179,14 @@ function allowedFunctionsForInstruction(instruction: string): EquipmentCallName[
   }
   if (/(cabinet|control|panel|electrical|plc|电柜|控制|控制柜|面板)/i.test(text)) {
     allowed.add('controlCabinet')
+  }
+  if (/(pump|centrifugal|volute|casing|skid|base|泵|离心|蜗壳|撬装|底座)/i.test(text)) {
+    allowed.add('pumpCasing')
+    allowed.add('skidBase')
+    allowed.add('motor')
+    allowed.add('flangePort')
+    allowed.add('pipeRun')
+    allowed.add('sheetCover')
   }
   return Array.from(allowed)
 }

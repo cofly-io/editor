@@ -140,6 +140,13 @@ describe('extractDslSource', () => {
     )
     expect(out?.startsWith('controlCabinet(')).toBe(true)
   })
+
+  it('accepts pump skid SDK constructors as DSL source', () => {
+    const out = extractDslSource(
+      "Here is the source:\n\nskidBase({ id: 'skid' });\npumpCasing({ id: 'pump', target: 'skid' });",
+    )
+    expect(out?.startsWith('skidBase(')).toBe(true)
+  })
 })
 
 describe('runDslSourceLoop', () => {
@@ -337,6 +344,50 @@ describe('runDslSourceLoop', () => {
     expect(seen[seen.length - 1]).toContain('controlCabinet')
   })
 
+  it('pump skid realism failures feed the same repair loop', async () => {
+    const toyPump = `
+      part('skid.slab', box({ length: 2.4, width: 0.9, height: 0.12, material: 'metal', color: '#666666' }))
+        .atWorld([0, 0.06, 0])
+        .withRole('skid_base');
+      part('pump.body', cylinder({ radius: 0.26, height: 0.36, material: 'metal', color: '#888888', radialSegments: 12 }))
+        .atWorld([-0.35, 0.45, 0])
+        .rotate({ axis: 'z', degrees: 90 })
+        .withRole('volute_casing');
+      part('motor.body', cylinder({ radius: 0.22, height: 0.58, material: 'metal', color: '#555555', radialSegments: 16 }))
+        .atWorld([0.55, 0.42, 0])
+        .rotate({ axis: 'z', degrees: 90 })
+        .withRole('drive_motor');
+    `
+    const sdkPump = `
+      skidBase({ id: 'skid', length: 2.4, width: 0.9 });
+      pumpCasing({ id: 'pump', target: 'skid', diameter: 0.52 });
+      motor({ id: 'drive_motor', target: 'skid', side: 'right', position: 'rear' });
+      flangePort({ id: 'inlet', target: 'pump', side: 'front', nominalDiameter: 0.18 });
+      flangePort({ id: 'outlet', target: 'pump', side: 'top', nominalDiameter: 0.16 });
+      pipeRun({ id: 'process_pipe', from: [-0.6, 0.6, -0.8], to: [0.8, 0.6, -0.8], radius: 0.05 });
+      sheetCover({ id: 'coupling_guard', target: 'drive_motor', side: 'top' });
+      nameplate({ id: 'nameplate', target: 'skid', side: 'front' });
+    `
+    let call = 0
+    const seen: string[] = []
+    const result = await runDslSourceLoop({
+      userPrompt: 'generate a centrifugal pump skid',
+      callLlm: async (msgs) => {
+        seen.push(msgs.map((m) => m.content).join('\n'))
+        call += 1
+        return call === 1 ? toyPump : sdkPump
+      },
+      runAttempt: directAttempt,
+    })
+
+    expect(result.kind).toBe('ok')
+    expect(result.attempts).toBe(2)
+    expect(seen[seen.length - 1]).toContain('Industrial realism gate feedback')
+    expect(seen[seen.length - 1]).toContain('realism_pump_under_detailed')
+    expect(seen[seen.length - 1]).toContain('pumpCasing')
+    expect(seen[seen.length - 1]).toContain('skidBase')
+  })
+
   it('reply without DSL → nudges the model once and counts the attempt', async () => {
     let call = 0
     const result = await runDslSourceLoop({
@@ -357,6 +408,8 @@ describe('prompt + repair message content', () => {
     expect(prompt).toContain('guardCover')
     expect(prompt).toContain('flangePort')
     expect(prompt).toContain('controlCabinet')
+    expect(prompt).toContain('pumpCasing')
+    expect(prompt).toContain('skidBase')
     expect(prompt).toContain('prefer semantic constructors')
     expect(prompt).toContain('keyboard.key.r')
     expect(prompt).toContain(`Prompt version: ${DSL_AUTHOR_PROMPT_VERSION}`)

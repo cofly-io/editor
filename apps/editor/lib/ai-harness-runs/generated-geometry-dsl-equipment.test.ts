@@ -81,4 +81,27 @@ describe('compileDsl — equipment semantic constructors', () => {
     expect(pipe?.geometry.recipeId).toBe('primitive.sweep')
     expect(pipe?.geometry.params.radialSegments).toBeGreaterThanOrEqual(32)
   })
+
+  test('compiles pump skid SDK constructors through the same DSL pipeline', () => {
+    const result = compileDsl(`
+      skidBase({ id: 'skid', length: 2.4, width: 0.9 });
+      pumpCasing({ id: 'pump', target: 'skid', diameter: 0.52 });
+      motor({ id: 'drive_motor', target: 'skid', side: 'right', position: 'rear' });
+      flangePort({ id: 'inlet', target: 'pump', side: 'front', nominalDiameter: 0.18 });
+      flangePort({ id: 'outlet', target: 'pump', side: 'top', nominalDiameter: 0.16 });
+      pipeRun({ id: 'process_pipe', from: [-0.6, 0.6, -0.8], to: [0.8, 0.6, -0.8], radius: 0.05 });
+      sheetCover({ id: 'coupling_guard', target: 'drive_motor', side: 'top' });
+      nameplate({ id: 'nameplate', target: 'skid', side: 'front' });
+    `)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const roles = new Set(result.ir.parts.map((p) => p.semanticRole))
+    expect(roles.has('skid_base')).toBe(true)
+    expect(roles.has('volute_casing')).toBe(true)
+    expect(roles.has('drive_motor')).toBe(true)
+    expect(roles.has('flange_port')).toBe(true)
+    expect(roles.has('pipe_run')).toBe(true)
+    expect(roles.has('sheet_cover_panel')).toBe(true)
+  })
 })

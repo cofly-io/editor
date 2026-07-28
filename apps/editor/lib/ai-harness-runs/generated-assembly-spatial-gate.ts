@@ -514,7 +514,8 @@ function checkOverlaps(ir: AssemblyIR, aabbs: Map<string, AABB>, issues: string[
   const familyOf = (id: string) => id.replace(/\.[a-z]\d+$/g, '')
   const labelOf = (part: AssemblyPart) => `${part.id} ${part.semanticRole ?? ''}`.toLowerCase()
   const isDoorPanel = (part: AssemblyPart) => /(door|panel|lid|闂ㄦ澘)/i.test(labelOf(part))
-  const isLeftSide = (part: AssemblyPart) => /(^|[._\s-])left($|[._\s-])|left_|_left|左/i.test(labelOf(part))
+  const isLeftSide = (part: AssemblyPart) =>
+    /(^|[._\s-])left($|[._\s-])|left_|_left|左/i.test(labelOf(part))
   const isRightSide = (part: AssemblyPart) =>
     /(^|[._\s-])right($|[._\s-])|right_|_right|右/i.test(labelOf(part))
   const isOpposingHingedDoorPair = (a: AssemblyPart, b: AssemblyPart) => {
@@ -587,6 +588,10 @@ function checkOverlaps(ir: AssemblyIR, aabbs: Map<string, AABB>, issues: string[
     (isInteriorVolumeMarker(b) && isInteriorContent(a))
   const isIntentionalSupportAttachment = (a: AssemblyPart, b: AssemblyPart) =>
     (isEnclosureHost(a) && isSupportDetail(b)) || (isEnclosureHost(b) && isSupportDetail(a))
+  const isIntentionalPumpCasingComposition = (a: AssemblyPart, b: AssemblyPart) => {
+    const roles = new Set([a.semanticRole, b.semanticRole])
+    return roles.has('volute_casing') && roles.has('pump_casing_bulge')
+  }
 
   const parts = ir.parts
   for (let i = 0; i < parts.length; i++) {
@@ -606,6 +611,7 @@ function checkOverlaps(ir: AssemblyIR, aabbs: Map<string, AABB>, issues: string[
       if (isIntentionalSurfaceAttachment(a, b)) continue
       if (isIntentionalInteriorVolumeOverlap(a, b)) continue
       if (isIntentionalSupportAttachment(a, b)) continue
+      if (isIntentionalPumpCasingComposition(a, b)) continue
       const ix = Math.min(boxA.max[0], boxB.max[0]) - Math.max(boxA.min[0], boxB.min[0])
       const iy = Math.min(boxA.max[1], boxB.max[1]) - Math.max(boxA.min[1], boxB.min[1])
       const iz = Math.min(boxA.max[2], boxB.max[2]) - Math.max(boxA.min[2], boxB.min[2])

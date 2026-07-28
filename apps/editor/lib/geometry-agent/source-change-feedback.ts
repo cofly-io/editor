@@ -11,6 +11,8 @@ const EQUIPMENT_CALLS = [
   'flangePort',
   'pipeRun',
   'controlCabinet',
+  'skidBase',
+  'pumpCasing',
 ] as const
 
 type EquipmentCallName = (typeof EQUIPMENT_CALLS)[number]
@@ -44,6 +46,8 @@ const IMPORTANT_IDS = [
   'nameplate',
   'control_cabinet',
   'process_pipe',
+  'skid',
+  'pump',
 ]
 
 export function summarizeGeometryAgentSourceChange(input: {

@@ -1,6 +1,6 @@
 import type { AssemblyIR, AssemblyPart } from '@pascal-app/core/lib/generated-assembly-ir'
 
-export type IndustrialEquipmentFamily = 'belt_conveyor' | 'control_cabinet'
+export type IndustrialEquipmentFamily = 'belt_conveyor' | 'control_cabinet' | 'pump_skid'
 
 export type RealismGateReview = {
   applicable: boolean
@@ -32,6 +32,11 @@ const FAMILY_SPECS: Record<IndustrialEquipmentFamily, FamilySpec> = {
   control_cabinet: {
     required: ['control_cabinet', 'cabinet_door_seam', 'cabinet_handle'],
     recommended: ['control_panel_glass', 'equipment_nameplate'],
+    maxAnonymousPrimitiveRatio: 0.2,
+  },
+  pump_skid: {
+    required: ['skid_base', 'volute_casing', 'drive_motor', 'flange_port'],
+    recommended: ['pipe_run', 'sheet_cover_panel', 'equipment_nameplate'],
     maxAnonymousPrimitiveRatio: 0.2,
   },
 }
@@ -103,6 +108,7 @@ export function reviewAssemblyRealism(
 
   checkConveyorDetails(ir, roles, opts.source, issues, warnings)
   checkControlCabinetDetails(ir, roles, issues, warnings)
+  checkPumpSkidDetails(ir, roles, issues, warnings)
 
   const score = Math.max(0, Math.min(1, 1 - issues.length * 0.25 - warnings.length * 0.06))
   return {
@@ -134,6 +140,14 @@ function inferIndustrialFamily(
     /control[_\s-]?cabinet|electrical[_\s-]?cabinet|plc/.test(idText)
   ) {
     return 'control_cabinet'
+  }
+  if (
+    hasRoleLike(roles, 'volute_casing') ||
+    hasRoleLike(roles, 'pump_suction_nozzle') ||
+    /\b(pump|centrifugal[_\s-]?pump|pumpcasing|skidbase|volute)\b/.test(sourceText) ||
+    /\b(pump|volute|skid)\b/.test(idText)
+  ) {
+    return 'pump_skid'
   }
   if (
     hasRoleLike(roles, 'belt') ||
@@ -178,6 +192,11 @@ function hasRoleLike(roles: Set<string>, needle: string): boolean {
     if (n === 'drive_motor' && r.includes('motor')) return true
     if (n === 'control_cabinet' && r.includes('cabinet')) return true
     if (n === 'control_panel_glass' && (r.includes('glass') || r.includes('panel'))) return true
+    if (n === 'skid_base' && r.includes('skid')) return true
+    if (n === 'volute_casing' && (r.includes('volute') || r.includes('pump_casing'))) return true
+    if (n === 'flange_port' && (r.includes('flange') || r.includes('port'))) {
+      return true
+    }
   }
   return false
 }
@@ -343,6 +362,88 @@ function checkControlCabinetDetails(
   if (!hasRoleLike(roles, 'equipment_nameplate')) {
     issues.push(
       'realism_cabinet_missing_nameplate: control cabinet needs an equipment nameplate or label.',
+    )
+  }
+}
+
+function checkPumpSkidDetails(
+  ir: AssemblyIR,
+  roles: Set<string>,
+  issues: string[],
+  warnings: string[],
+): void {
+  if (!hasRoleLike(roles, 'volute_casing') && !hasRoleLike(roles, 'skid_base')) return
+
+  if (ir.parts.length < 16) {
+    issues.push(
+      `realism_pump_under_detailed: pump_skid has only ${ir.parts.length} parts; use skidBase(), pumpCasing(), motor(), flangePort(), pipeRun(), sheetCover(), and nameplate() so the assembly reads as real industrial equipment.`,
+    )
+  }
+
+  const volute = ir.parts.find((p) => p.semanticRole === 'volute_casing')
+  if (volute?.geometry.kind === 'primitive-recipe') {
+    if (volute.geometry.recipeId !== 'primitive.cylinder') {
+      issues.push(
+        'realism_pump_casing_shape: volute casing should be a rounded cylinder-like casing.',
+      )
+    }
+    const radialSegments = volute.geometry.params.radialSegments
+    if (typeof radialSegments !== 'number' || radialSegments < 48) {
+      issues.push(
+        'realism_pump_casing_faceting: volute casing should use at least 48 radialSegments.',
+      )
+    }
+    if (volute.material.preset !== 'painted_steel' && volute.material.preset !== 'cast_iron') {
+      issues.push(
+        'realism_pump_casing_material: volute casing should use painted_steel or cast_iron.',
+      )
+    }
+  }
+
+  const suctionNozzles = ir.parts.filter((p) => p.semanticRole === 'pump_suction_nozzle')
+  const dischargeNozzles = ir.parts.filter((p) => p.semanticRole === 'pump_discharge_nozzle')
+  if (suctionNozzles.length < 1 || dischargeNozzles.length < 1) {
+    issues.push(
+      'realism_pump_nozzles_missing: pump casing must include distinct suction and discharge nozzles.',
+    )
+  }
+
+  const flangePorts = ir.parts.filter((p) => p.semanticRole === 'flange_port')
+  if (flangePorts.length < 2) {
+    issues.push(
+      `realism_pump_flange_count: pump skid has only ${flangePorts.length} flange ports; use inlet and outlet flangePort() details.`,
+    )
+  }
+
+  const skidRails = ir.parts.filter((p) => p.semanticRole === 'skid_base')
+  const skidCrossMembers = ir.parts.filter((p) => p.semanticRole === 'skid_cross_member')
+  if (skidRails.length < 2 || skidCrossMembers.length < 2) {
+    issues.push(
+      'realism_pump_skid_too_simple: skid base needs paired rails plus cross members, not a single slab.',
+    )
+  }
+
+  const motor = ir.parts.find((p) => p.semanticRole === 'drive_motor')
+  const motorDetails = ir.parts.filter((p) => p.semanticRole?.startsWith('motor_'))
+  const hasMotorMount = motorDetails.some((p) => p.semanticRole === 'motor_mounting_foot')
+  const hasTerminalBox = motorDetails.some((p) => p.semanticRole === 'motor_terminal_box')
+  if (motor && (!hasMotorMount || !hasTerminalBox)) {
+    issues.push(
+      'realism_pump_motor_detail_missing: pump drive motor must include mounting feet and a terminal box.',
+    )
+  }
+  if (motor?.geometry.kind === 'primitive-recipe') {
+    const radialSegments = motor.geometry.params.radialSegments
+    if (typeof radialSegments !== 'number' || radialSegments < 32) {
+      issues.push(
+        'realism_pump_motor_faceting: pump drive motor cylinder should use at least 32 radialSegments.',
+      )
+    }
+  }
+
+  if (!hasRoleLike(roles, 'sheet_cover_panel')) {
+    warnings.push(
+      'realism_pump_coupling_guard_missing: pump skids usually need a coupling guard or sheet cover between pump and motor.',
     )
   }
 }

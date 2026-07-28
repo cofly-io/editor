@@ -231,6 +231,8 @@ export type DSLGlobalEnv = {
   flangePort: unknown
   pipeRun: unknown
   controlCabinet: unknown
+  skidBase: unknown
+  pumpCasing: unknown
   // Assembly
   part: unknown
   hinge: unknown
@@ -264,6 +266,8 @@ export const DSL_ALLOWED_GLOBALS: ReadonlyArray<keyof DSLGlobalEnv> = [
   'flangePort',
   'pipeRun',
   'controlCabinet',
+  'skidBase',
+  'pumpCasing',
   'part',
   'hinge',
   'grid',

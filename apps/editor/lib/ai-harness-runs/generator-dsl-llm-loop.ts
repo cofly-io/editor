@@ -40,6 +40,8 @@ const DSL_EQUIPMENT_API_SUMMARY = `
   flangePort({ id, target?, side?, nominalDiameter?, length?, material?, color? }) — short nozzle neck + flange ring for process connections
   pipeRun({ id, from?, to?, radius?, includeFlanges?, material?, color? }) — swept pipe segment with optional end flanges
   controlCabinet({ id, target?, side?, width?, height?, depth?, material?, color? }) — rounded electrical/control cabinet with door seam, glass, handle and nameplate
+  skidBase({ id, length?, width?, height?, railThickness?, material?, color? }) — steel skid frame with rails and cross members
+  pumpCasing({ id, target?, diameter?, width?, material?, color? }) — centrifugal pump casing with volute body and suction/discharge nozzles
 `.trimEnd()
 
 const DSL_API_SUMMARY = `
@@ -140,7 +142,9 @@ const DSL_RULES = `
     guarded conveyor should start with belt(), rollerArray(), boxFrame(),
     guardCover(), motor(), inspectionDoor(), and nameplate(). Process or
     factory devices should use sheetCover(), flangePort(), pipeRun(), and
-    controlCabinet() for covers, nozzles, piping and controls. Only add
+    controlCabinet() for covers, nozzles, piping and controls. Pump skids
+    should use skidBase(), pumpCasing(), motor(), flangePort(), pipeRun(),
+    sheetCover(), and nameplate(). Only add
     raw part(..., box/cylinder/...) for missing details that the semantic
     constructor does not cover.
 `.trim()
@@ -194,7 +198,7 @@ export function extractDslSource(reply: string): string | null {
     // No fence: drop leading prose lines until the first DSL-looking line.
     const lines = text.split('\n')
     const start = lines.findIndex((l) =>
-      /^\s*(const|function|part\(|equipment\(|belt\(|rollerArray\(|boxFrame\(|guardCover\(|motor\(|inspectionDoor\(|nameplate\(|sheetCover\(|flangePort\(|pipeRun\(|controlCabinet\(|for\s*\(|if\s*\(|hinge\(|grid\(|connect\(|let\b)/.test(
+      /^\s*(const|function|part\(|equipment\(|belt\(|rollerArray\(|boxFrame\(|guardCover\(|motor\(|inspectionDoor\(|nameplate\(|sheetCover\(|flangePort\(|pipeRun\(|controlCabinet\(|skidBase\(|pumpCasing\(|for\s*\(|if\s*\(|hinge\(|grid\(|connect\(|let\b)/.test(
         l,
       ),
     )
@@ -203,7 +207,7 @@ export function extractDslSource(reply: string): string | null {
   }
   // Sanity: must reference at least one whitelisted global.
   if (
-    !/\b(part|params|box|cylinder|sphere|cone|frustum|torus|lathe|extrude|sweep|equipment|belt|rollerArray|boxFrame|guardCover|motor|inspectionDoor|nameplate|sheetCover|flangePort|pipeRun|controlCabinet)\s*\(/.test(
+    !/\b(part|params|box|cylinder|sphere|cone|frustum|torus|lathe|extrude|sweep|equipment|belt|rollerArray|boxFrame|guardCover|motor|inspectionDoor|nameplate|sheetCover|flangePort|pipeRun|controlCabinet|skidBase|pumpCasing)\s*\(/.test(
       text,
     )
   ) {
