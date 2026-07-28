@@ -28,6 +28,16 @@ import type { DslRunResult } from './generator-dsl-run'
 /** Prompt version for the DSL author prompt (dashboard joins). */
 export const DSL_AUTHOR_PROMPT_VERSION = '1.2.0'
 
+const DSL_EQUIPMENT_API_SUMMARY = `
+  belt({ id, length?, width?, thickness?, material?, color? }) — conveyor belt surface + pulley hints
+  rollerArray({ id, length?, width?, count?, radius?, material?, color? }) — repeated cross rollers
+  boxFrame({ id, length?, width?, height?, railThickness?, legCount?, material? }) — rails, legs and cross ties
+  guardCover({ id, target?, side?, length?, width?, height?, clearance?, material?, color? }) — transparent/wire safety cover with frame and mounts
+  motor({ id, target?, side?, position?, diameter?, length?, material?, color? }) — ribbed industrial drive motor, end caps, terminal box and feet
+  inspectionDoor({ id, target?, side?, count?, width?, height?, material?, color? }) — door panels, handles and hinge strips
+  nameplate({ id, target?, side?, width?, height?, text? }) — small equipment nameplate
+`.trimEnd()
+
 const DSL_API_SUMMARY = `
 ===== DSL API (version ${DSL_API_VERSION}) =====
 Geometry constructors (each returns a GeometryBuilder):
@@ -43,6 +53,15 @@ Geometry constructors (each returns a GeometryBuilder):
   material: 'metal' | 'plastic' | 'glass'   — shading preset (optional)
   color: CSS hex string, e.g. '#cc0000'     — surface tint (optional, composes with material)
   roughness / metalness: 0..1 PBR scalars (optional, override the preset base)
+
+Industrial equipment semantic constructors (preferred for factory equipment):
+${DSL_EQUIPMENT_API_SUMMARY}
+  material presets for these constructors:
+    painted_steel, stainless_steel, cast_iron, transparent_polycarbonate,
+    wire_mesh, rubber_belt, aluminum_frame, yellow_safety, dark_fastener,
+    control_panel_glass.
+  These functions create multiple named parts with semantic roles and realism
+  parameters. Use them before hand-building anonymous primitive piles.
 
 Assembly:
   part(id, geometry)                  — id is a stable dotted path, e.g. 'keyboard.key.r0.c3'
@@ -112,6 +131,12 @@ const DSL_RULES = `
     hinges and buttons; sphere/hemisphere for rounded caps; lathe for
     turned profiles; extrude for shaped plates; torus for rings. A flat
     all-box model of a non-box object is a quality defect.
+11. For industrial/factory equipment, prefer semantic constructors over
+    raw primitives when they match the requested device. For example, a
+    guarded conveyor should start with belt(), rollerArray(), boxFrame(),
+    guardCover(), motor(), inspectionDoor(), and nameplate(). Only add
+    raw part(..., box/cylinder/...) for missing details that the semantic
+    constructor does not cover.
 `.trim()
 
 /**
@@ -163,14 +188,18 @@ export function extractDslSource(reply: string): string | null {
     // No fence: drop leading prose lines until the first DSL-looking line.
     const lines = text.split('\n')
     const start = lines.findIndex((l) =>
-      /^\s*(const|function|part\(|for\s*\(|if\s*\(|hinge\(|grid\(|connect\(|let\b)/.test(l),
+      /^\s*(const|function|part\(|equipment\(|belt\(|rollerArray\(|boxFrame\(|guardCover\(|motor\(|inspectionDoor\(|nameplate\(|for\s*\(|if\s*\(|hinge\(|grid\(|connect\(|let\b)/.test(
+        l,
+      ),
     )
     if (start === -1) return null
     text = lines.slice(start).join('\n').trim()
   }
   // Sanity: must reference at least one whitelisted global.
   if (
-    !/\b(part|params|box|cylinder|sphere|cone|frustum|torus|lathe|extrude|sweep)\s*\(/.test(text)
+    !/\b(part|params|box|cylinder|sphere|cone|frustum|torus|lathe|extrude|sweep|equipment|belt|rollerArray|boxFrame|guardCover|motor|inspectionDoor|nameplate)\s*\(/.test(
+      text,
+    )
   ) {
     return null
   }

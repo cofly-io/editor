@@ -161,6 +161,23 @@ export {
   SECTIONAL_GARAGE_RENDER_OPEN_SCALE,
 } from './lib/door-operation'
 export {
+  type BeltParams,
+  type BoxFrameParams,
+  EQUIPMENT_DSL_API_CARDS,
+  EQUIPMENT_MATERIALS,
+  type EquipmentBounds,
+  type EquipmentBuildContext,
+  type EquipmentMaterial,
+  type EquipmentMaterialPreset,
+  type EquipmentPartSpec,
+  formatEquipmentDslApiCards,
+  type GuardCoverParams,
+  type InspectionDoorParams,
+  type MotorParams,
+  type NameplateParams,
+  type RollerArrayParams,
+} from './lib/equipment-sdk'
+export {
   executableFamilyForLayoutFamily,
   FAMILY_DEFINITIONS,
   type FamilyDefinition,

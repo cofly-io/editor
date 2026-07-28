@@ -1,0 +1,173 @@
+import {
+  DSL_API_VERSION,
+  type DSLApiCard,
+  type DSLApiCardInput,
+} from '../generated-geometry-dsl-contract'
+
+const numberInput = (
+  range: [number, number],
+  unit: DSLApiCardInput['unit'] = 'm',
+): DSLApiCardInput => ({
+  type: 'number',
+  unit,
+  range,
+})
+
+const stringInput = (required = false): DSLApiCardInput => ({
+  type: 'string',
+  ...(required ? { required: true } : {}),
+})
+
+const enumInput = (values: string[]): DSLApiCardInput => ({
+  type: 'string',
+  enum: values,
+})
+
+export const EQUIPMENT_DSL_API_CARDS: DSLApiCard[] = [
+  {
+    apiVersion: DSL_API_VERSION,
+    kind: 'geometry_api_card',
+    id: 'industrial.belt',
+    category: 'industrial',
+    signature: 'belt({ id, length?, width?, thickness?, material?, color? })',
+    inputs: {
+      id: stringInput(true),
+      length: numberInput([0.5, 30]),
+      width: numberInput([0.15, 3]),
+      thickness: numberInput([0.015, 0.18]),
+      material: enumInput(['rubber_belt']),
+      color: stringInput(),
+    },
+    outputs: 'PartBuilder[]',
+    cost: { parts: 3 },
+    example: "belt({ id: 'belt', length: 6, width: 0.72 });",
+  },
+  {
+    apiVersion: DSL_API_VERSION,
+    kind: 'geometry_api_card',
+    id: 'industrial.rollerArray',
+    category: 'industrial',
+    signature: 'rollerArray({ id, length?, width?, count?, radius?, material?, color? })',
+    inputs: {
+      id: stringInput(true),
+      length: numberInput([0.5, 30]),
+      width: numberInput([0.15, 3]),
+      count: { type: 'integer', unit: 'count', range: [2, 64] },
+      radius: numberInput([0.015, 0.16]),
+      material: enumInput(['stainless_steel']),
+      color: stringInput(),
+    },
+    outputs: 'PartBuilder[]',
+    cost: { parts: 8 },
+    example: "rollerArray({ id: 'rollers', length: 6, width: 0.78, count: 10 });",
+  },
+  {
+    apiVersion: DSL_API_VERSION,
+    kind: 'geometry_api_card',
+    id: 'industrial.boxFrame',
+    category: 'industrial',
+    signature: 'boxFrame({ id, length?, width?, height?, railThickness?, legCount?, material? })',
+    inputs: {
+      id: stringInput(true),
+      length: numberInput([0.5, 30]),
+      width: numberInput([0.2, 4]),
+      height: numberInput([0.2, 4]),
+      railThickness: numberInput([0.025, 0.16]),
+      legCount: { type: 'integer', unit: 'count', range: [4, 16] },
+      material: enumInput(['aluminum_frame', 'painted_steel', 'stainless_steel']),
+    },
+    outputs: 'PartBuilder[]',
+    cost: { parts: 14 },
+    example: "boxFrame({ id: 'frame', length: 6, width: 0.92, height: 0.78 });",
+  },
+  {
+    apiVersion: DSL_API_VERSION,
+    kind: 'geometry_api_card',
+    id: 'industrial.guardCover',
+    category: 'industrial',
+    signature:
+      'guardCover({ id, target?, side?, length?, width?, height?, clearance?, material?, color? })',
+    inputs: {
+      id: stringInput(true),
+      target: stringInput(),
+      side: enumInput(['top', 'left', 'right']),
+      length: numberInput([0.3, 30]),
+      width: numberInput([0.2, 5]),
+      height: numberInput([0.12, 4]),
+      clearance: numberInput([0.02, 0.5]),
+      material: enumInput(['transparent_polycarbonate', 'wire_mesh', 'yellow_safety']),
+      color: stringInput(),
+    },
+    outputs: 'PartBuilder[]',
+    cost: { parts: 13 },
+    example: "guardCover({ id: 'cover', target: 'belt', side: 'top', length: 3.8 });",
+  },
+  {
+    apiVersion: DSL_API_VERSION,
+    kind: 'geometry_api_card',
+    id: 'industrial.motor',
+    category: 'industrial',
+    signature: 'motor({ id, target?, side?, position?, diameter?, length?, material?, color? })',
+    inputs: {
+      id: stringInput(true),
+      target: stringInput(),
+      side: enumInput(['left', 'right']),
+      position: enumInput(['front', 'rear', 'center']),
+      diameter: numberInput([0.12, 1.4]),
+      length: numberInput([0.16, 2.4]),
+      material: enumInput(['painted_steel', 'cast_iron']),
+      color: stringInput(),
+    },
+    outputs: 'PartBuilder[]',
+    cost: { parts: 6 },
+    example: "motor({ id: 'drive_motor', target: 'belt', side: 'right', position: 'rear' });",
+  },
+  {
+    apiVersion: DSL_API_VERSION,
+    kind: 'geometry_api_card',
+    id: 'industrial.inspectionDoor',
+    category: 'industrial',
+    signature: 'inspectionDoor({ id, target?, side?, count?, width?, height?, material?, color? })',
+    inputs: {
+      id: stringInput(true),
+      target: stringInput(),
+      side: enumInput(['left', 'right', 'front', 'back']),
+      count: { type: 'integer', unit: 'count', range: [1, 8] },
+      width: numberInput([0.15, 2]),
+      height: numberInput([0.12, 2]),
+      material: enumInput(['painted_steel', 'stainless_steel']),
+      color: stringInput(),
+    },
+    outputs: 'PartBuilder[]',
+    cost: { parts: 3 },
+    example: "inspectionDoor({ id: 'doors', target: 'cover', side: 'right', count: 2 });",
+  },
+  {
+    apiVersion: DSL_API_VERSION,
+    kind: 'geometry_api_card',
+    id: 'industrial.nameplate',
+    category: 'industrial',
+    signature: 'nameplate({ id, target?, side?, width?, height?, text? })',
+    inputs: {
+      id: stringInput(true),
+      target: stringInput(),
+      side: enumInput(['front', 'back', 'left', 'right']),
+      width: numberInput([0.08, 1]),
+      height: numberInput([0.04, 0.5]),
+      text: stringInput(),
+    },
+    outputs: 'PartBuilder[]',
+    cost: { parts: 1 },
+    example: "nameplate({ id: 'nameplate', target: 'cover', side: 'front' });",
+  },
+]
+
+export function formatEquipmentDslApiCards(cards = EQUIPMENT_DSL_API_CARDS): string {
+  return cards
+    .map((card) => {
+      const example = card.example.replace(/\s+/g, ' ').trim()
+      const cost = card.cost.parts ? ` ~${card.cost.parts} parts` : ''
+      return `  ${card.signature} — ${card.id};${cost}; example: ${example}`
+    })
+    .join('\n')
+}

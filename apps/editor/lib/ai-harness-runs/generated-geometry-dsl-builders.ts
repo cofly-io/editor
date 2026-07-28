@@ -21,6 +21,27 @@ import type {
   Vec3,
 } from '@pascal-app/core/lib/generated-assembly-ir'
 import { DSL_API_VERSION } from '@pascal-app/core/lib/generated-geometry-dsl-contract'
+import {
+  type BeltParams,
+  type BoxFrameParams,
+  buildBelt,
+  buildBoxFrame,
+  buildEquipment,
+  buildGuardCover,
+  buildInspectionDoor,
+  buildMotor,
+  buildNameplate,
+  buildRollerArray,
+  EQUIPMENT_MATERIALS,
+  type EquipmentBounds,
+  type EquipmentBuildContext,
+  type EquipmentPartSpec,
+  type GuardCoverParams,
+  type InspectionDoorParams,
+  type MotorParams,
+  type NameplateParams,
+  type RollerArrayParams,
+} from '../../../../packages/core/src/lib/equipment-sdk/equipment-functions'
 
 // ---------------------------------------------------------------------------
 // Geometry builders
@@ -37,6 +58,7 @@ export type GeometryAppearance = {
   color?: string
   roughness?: number
   metalness?: number
+  opacity?: number
 }
 
 export type GeometryBuilder =
@@ -46,22 +68,39 @@ export type GeometryBuilder =
       width: number
       height: number
       material?: string
+      cornerRadius?: number
+      cornerSegments?: number
     } & GeometryAppearance)
-  | ({ kind: 'cylinder'; radius: number; height: number; material?: string } & GeometryAppearance)
+  | ({
+      kind: 'cylinder'
+      radius: number
+      height: number
+      material?: string
+      radialSegments?: number
+    } & GeometryAppearance)
   | ({ kind: 'sphere'; radius: number; material?: string } & GeometryAppearance)
-  | ({ kind: 'cone'; radius: number; height: number; material?: string } & GeometryAppearance)
+  | ({
+      kind: 'cone'
+      radius: number
+      height: number
+      material?: string
+      radialSegments?: number
+    } & GeometryAppearance)
   | ({
       kind: 'frustum'
       radiusTop: number
       radiusBottom: number
       height: number
       material?: string
+      radialSegments?: number
     } & GeometryAppearance)
   | ({
       kind: 'torus'
       majorRadius: number
       tubeRadius: number
       material?: string
+      radialSegments?: number
+      tubularSegments?: number
     } & GeometryAppearance)
   | ({ kind: 'lathe'; profile: Array<[number, number]>; material?: string } & GeometryAppearance)
   | ({
@@ -69,11 +108,29 @@ export type GeometryBuilder =
       profile: Array<[number, number]>
       depth: number
       material?: string
+      bevelSize?: number
+      bevelThickness?: number
+      bevelSegments?: number
     } & GeometryAppearance)
-  | ({ kind: 'sweep'; path: Vec3[]; radius: number; material?: string } & GeometryAppearance)
+  | ({
+      kind: 'sweep'
+      path: Vec3[]
+      radius: number
+      material?: string
+      radialSegments?: number
+      tubularSegments?: number
+    } & GeometryAppearance)
 
 function toRecipe(g: GeometryBuilder): GeometryRecipe {
-  const { kind, material: _m, color: _c, roughness: _r, metalness: _met, ...params } = g
+  const {
+    kind,
+    material: _m,
+    color: _c,
+    roughness: _r,
+    metalness: _met,
+    opacity: _opacity,
+    ...params
+  } = g
   return { kind: 'primitive-recipe', recipeId: `primitive.${kind}`, params }
 }
 
@@ -204,6 +261,7 @@ export function makePartBuilder(id: string, geometry: GeometryBuilder): PartBuil
       ...(color ? { color } : {}),
       ...(geometry.roughness !== undefined ? { roughness: geometry.roughness } : {}),
       ...(geometry.metalness !== undefined ? { metalness: geometry.metalness } : {}),
+      ...(geometry.opacity !== undefined ? { opacity: geometry.opacity } : {}),
     },
     position: [0, 0, 0],
     rotation: [0, 0, 0, 1],
@@ -495,6 +553,7 @@ export type CreateBuildersOptions = {
 
 export function createDslApiBuilders(opts: CreateBuildersOptions) {
   const { acc, onDiagnostic } = opts
+  const equipmentTargets = new Map<string, EquipmentBounds>()
 
   const registerPart = (id: unknown, geometry: GeometryBuilder): PartBuilder | undefined => {
     if (typeof id !== 'string' || id.length === 0) {
@@ -512,6 +571,85 @@ export function createDslApiBuilders(opts: CreateBuildersOptions) {
     const builder = makePartBuilder(id, geometry)
     acc.parts.push(builder)
     return builder
+  }
+
+  const rememberTarget = (key: string | undefined, bounds: EquipmentBounds | undefined) => {
+    if (!key || !bounds || equipmentTargets.has(key)) return
+    equipmentTargets.set(key, bounds)
+  }
+
+  const unionBounds = (id: string, bounds: EquipmentBounds[]): EquipmentBounds | undefined => {
+    if (bounds.length === 0) return undefined
+    const mins: Vec3 = [
+      Number.POSITIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+    ]
+    const maxs: Vec3 = [
+      Number.NEGATIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+    ]
+    for (const b of bounds) {
+      const [cx, cy, cz] = b.center
+      const [sx, sy, sz] = b.size
+      mins[0] = Math.min(mins[0], cx - sx / 2)
+      mins[1] = Math.min(mins[1], cy - sy / 2)
+      mins[2] = Math.min(mins[2], cz - sz / 2)
+      maxs[0] = Math.max(maxs[0], cx + sx / 2)
+      maxs[1] = Math.max(maxs[1], cy + sy / 2)
+      maxs[2] = Math.max(maxs[2], cz + sz / 2)
+    }
+    return {
+      id,
+      center: [(mins[0] + maxs[0]) / 2, (mins[1] + maxs[1]) / 2, (mins[2] + maxs[2]) / 2],
+      size: [maxs[0] - mins[0], maxs[1] - mins[1], maxs[2] - mins[2]],
+      ...(bounds[0]?.semanticRole ? { semanticRole: bounds[0].semanticRole } : {}),
+    }
+  }
+
+  const baseIdOf = (id: string) => id.split('.')[0] ?? id
+
+  const registerEquipmentSpecs = (specs: EquipmentPartSpec[]): PartBuilder[] => {
+    const builders: PartBuilder[] = []
+    const boundsByBase = new Map<string, EquipmentBounds[]>()
+
+    for (const s of specs) {
+      if (s.bounds) {
+        const baseId = baseIdOf(s.id)
+        const list = boundsByBase.get(baseId) ?? []
+        list.push(s.bounds)
+        boundsByBase.set(baseId, list)
+      }
+    }
+    for (const [baseId, bounds] of boundsByBase) {
+      rememberTarget(baseId, unionBounds(baseId, bounds))
+    }
+
+    for (const s of specs) {
+      const materialPreset = s.material ? EQUIPMENT_MATERIALS[s.material] : undefined
+      const geometry = {
+        kind: s.kind,
+        ...s.params,
+        ...(s.material ? { material: s.material } : {}),
+        ...((s.color ?? materialPreset?.color) ? { color: s.color ?? materialPreset?.color } : {}),
+        ...(materialPreset?.roughness !== undefined ? { roughness: materialPreset.roughness } : {}),
+        ...(materialPreset?.metalness !== undefined ? { metalness: materialPreset.metalness } : {}),
+        ...(materialPreset?.opacity !== undefined ? { opacity: materialPreset.opacity } : {}),
+      } as GeometryBuilder
+      const builder = registerPart(s.id, geometry)
+      if (!builder) continue
+      builder.atWorld(s.position).withRole(s.semanticRole)
+      if (s.rotation) builder.rotate(s.rotation)
+      builders.push(builder)
+      rememberTarget(s.id, s.bounds)
+      rememberTarget(s.semanticRole, s.bounds)
+    }
+    return builders
+  }
+
+  const equipmentContext: EquipmentBuildContext = {
+    resolveTarget: (idOrRole) => (idOrRole ? equipmentTargets.get(idOrRole) : undefined),
   }
 
   return {
@@ -548,6 +686,20 @@ export function createDslApiBuilders(opts: CreateBuildersOptions) {
       ({ kind: 'sweep', ...o }) as GeometryBuilder,
 
     part: registerPart,
+
+    equipment: (_kind: string | Record<string, unknown>, o?: Record<string, unknown>) =>
+      registerEquipmentSpecs(
+        buildEquipment((typeof _kind === 'string' ? { id: _kind, ...o } : _kind) as never),
+      ),
+    belt: (o: BeltParams) => registerEquipmentSpecs(buildBelt(o)),
+    rollerArray: (o: RollerArrayParams) => registerEquipmentSpecs(buildRollerArray(o)),
+    boxFrame: (o: BoxFrameParams) => registerEquipmentSpecs(buildBoxFrame(o)),
+    guardCover: (o: GuardCoverParams) =>
+      registerEquipmentSpecs(buildGuardCover(o, equipmentContext)),
+    motor: (o: MotorParams) => registerEquipmentSpecs(buildMotor(o, equipmentContext)),
+    inspectionDoor: (o: InspectionDoorParams) =>
+      registerEquipmentSpecs(buildInspectionDoor(o, equipmentContext)),
+    nameplate: (o: NameplateParams) => registerEquipmentSpecs(buildNameplate(o, equipmentContext)),
 
     hinge: (o: {
       part: string

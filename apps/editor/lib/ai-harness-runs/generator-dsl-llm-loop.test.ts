@@ -96,6 +96,13 @@ describe('extractDslSource', () => {
   it('returns null when there is no DSL at all', () => {
     expect(extractDslSource('I cannot help with that.')).toBeNull()
   })
+
+  it('accepts equipment semantic constructors as DSL source', () => {
+    const out = extractDslSource(
+      "Sure, here is the source:\n\nbelt({ id: 'belt', length: 6 });\nguardCover({ id: 'cover', target: 'belt' });",
+    )
+    expect(out?.startsWith('belt(')).toBe(true)
+  })
 })
 
 describe('runDslSourceLoop', () => {
@@ -242,8 +249,10 @@ describe('runDslSourceLoop', () => {
 describe('prompt + repair message content', () => {
   it('system prompt contains the API card, rules, fixture, and version', () => {
     const prompt = buildDslAuthorSystemPrompt()
-    expect(prompt).toContain('DSL API (version 1.0.0)')
+    expect(prompt).toContain('DSL API (version 1.1.0)')
     expect(prompt).toContain('rotateAround')
+    expect(prompt).toContain('guardCover')
+    expect(prompt).toContain('prefer semantic constructors')
     expect(prompt).toContain('keyboard.key.r')
     expect(prompt).toContain(`Prompt version: ${DSL_AUTHOR_PROMPT_VERSION}`)
     // few-shot fixture is embedded verbatim

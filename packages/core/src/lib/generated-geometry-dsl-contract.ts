@@ -14,7 +14,7 @@
 import type { Vec3 } from './primitive-compose'
 
 /** Bump on any breaking change to the DSL API, diagnostics, or params schema. */
-export const DSL_API_VERSION = '1.0.0' as const
+export const DSL_API_VERSION = '1.1.0' as const
 
 // ---------------------------------------------------------------------------
 // API cards (Prompt contract §3.1)
@@ -218,6 +218,15 @@ export type DSLGlobalEnv = {
   lathe: unknown
   extrude: unknown
   sweep: unknown
+  // Industrial equipment semantic constructors
+  equipment: unknown
+  boxFrame: unknown
+  belt: unknown
+  rollerArray: unknown
+  guardCover: unknown
+  motor: unknown
+  inspectionDoor: unknown
+  nameplate: unknown
   // Assembly
   part: unknown
   hinge: unknown
@@ -239,6 +248,14 @@ export const DSL_ALLOWED_GLOBALS: ReadonlyArray<keyof DSLGlobalEnv> = [
   'lathe',
   'extrude',
   'sweep',
+  'equipment',
+  'boxFrame',
+  'belt',
+  'rollerArray',
+  'guardCover',
+  'motor',
+  'inspectionDoor',
+  'nameplate',
   'part',
   'hinge',
   'grid',
