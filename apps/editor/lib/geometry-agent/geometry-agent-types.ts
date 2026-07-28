@@ -82,6 +82,17 @@ export type GeometryAgentLastRun = {
     removedPartIds?: string[]
     orphanedOverridePartIds?: string[]
   }
+  changeFeedback?: {
+    changed: Array<{
+      id: string
+      functionName: string
+      changedParams: Array<{ name: string; before: string; after: string }>
+    }>
+    added: Array<{ id: string; functionName: string }>
+    removed: Array<{ id: string; functionName: string }>
+    unchangedImportantIds: string[]
+    text: string
+  }
   summary: string
   at: string
 }

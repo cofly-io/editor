@@ -133,6 +133,18 @@ describe('geometry-agent session', () => {
         status: 'succeeded',
         sourceOrigin: 'workspace',
       })
+      expect(await readGeometryAgentLastRun(workspace)).toMatchObject({
+        changeFeedback: {
+          changed: [
+            {
+              id: 'cover',
+              functionName: 'guardCover',
+              changedParams: [{ name: 'height', before: '0.55', after: '0.75' }],
+            },
+          ],
+        },
+        summary: expect.stringContaining('guardCover(cover)'),
+      })
     })
   })
 

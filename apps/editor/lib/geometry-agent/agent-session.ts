@@ -14,6 +14,10 @@ import {
   type GeometryAgentRerunSummary,
   planGeometryAgentRerun,
 } from './rerun-summary'
+import {
+  type GeometryAgentChangeFeedback,
+  summarizeGeometryAgentSourceChange,
+} from './source-change-feedback'
 import { patchLocalityFailureRun, reviewGeometryAgentPatchLocality } from './source-patch-locality'
 import {
   appendGeometryAgentEvent,
@@ -114,7 +118,22 @@ export async function editGeometryAgentSession(input: GeometryAgentEditInput): P
           irHash: result.finalRun.irHash,
         })
       : null
-  await persistLoopResult(input.workspace, result, 'workspace', now(), rerun?.summary)
+  const changeFeedback =
+    result.kind === 'ok'
+      ? summarizeGeometryAgentSourceChange({
+          beforeSource: sourceBefore,
+          afterSource: result.source,
+          instruction: input.instruction,
+        })
+      : undefined
+  await persistLoopResult(
+    input.workspace,
+    result,
+    'workspace',
+    now(),
+    rerun?.summary,
+    changeFeedback,
+  )
   return { result, sourceBefore, sourceAfter, rerun }
 }
 
@@ -162,6 +181,7 @@ async function persistLoopResult(
   sourceOrigin: 'llm' | 'workspace',
   at: string,
   rerunSummary?: GeometryAgentRerunSummary,
+  changeFeedback?: GeometryAgentChangeFeedback,
 ): Promise<void> {
   if (result.source !== null && result.kind === 'ok') {
     await writeGeometryAgentSource(workspace, result.source, {
@@ -196,7 +216,10 @@ async function persistLoopResult(
               }
             : {}),
           summary:
-            rerunSummary?.text ?? `Generated ${finalRun.ir.parts.length} parts via geometry agent.`,
+            changeFeedback?.text ??
+            rerunSummary?.text ??
+            `Generated ${finalRun.ir.parts.length} parts via geometry agent.`,
+          ...(changeFeedback ? { changeFeedback } : {}),
         }
       : {
           partCount: finalRun?.budgetUsage.partCount ?? 0,
