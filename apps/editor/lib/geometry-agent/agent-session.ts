@@ -9,6 +9,12 @@ import {
 } from '../ai-harness-runs/generator-dsl-llm-loop'
 import type { DslRunResult } from '../ai-harness-runs/generator-dsl-run'
 import {
+  type GeometryAgentRerunContext,
+  type GeometryAgentRerunResult,
+  type GeometryAgentRerunSummary,
+  planGeometryAgentRerun,
+} from './rerun-summary'
+import {
   appendGeometryAgentEvent,
   type CreateGeometryAgentWorkspaceInput,
   createGeometryAgentWorkspace,
@@ -34,6 +40,7 @@ export type GeometryAgentEditInput = {
   runAttempt: (source: string) => Promise<DslRunResult>
   maxAttempts?: number
   now?: () => string
+  rerun?: GeometryAgentRerunContext
 }
 
 export async function createGeometryAgentSession(input: GeometryAgentCreateInput): Promise<{
@@ -61,6 +68,7 @@ export async function editGeometryAgentSession(input: GeometryAgentEditInput): P
   result: DslSourceLoopResult
   sourceBefore: string
   sourceAfter: string | null
+  rerun: GeometryAgentRerunResult | null
 }> {
   const now = input.now ?? (() => new Date().toISOString())
   const sourceBefore = await readGeometryAgentSource(input.workspace)
@@ -88,8 +96,17 @@ export async function editGeometryAgentSession(input: GeometryAgentEditInput): P
   })
 
   const sourceAfter = result.source
-  await persistLoopResult(input.workspace, result, 'workspace', now())
-  return { result, sourceBefore, sourceAfter }
+  const rerun =
+    input.rerun && result.kind === 'ok' && result.finalRun.kind === 'ok'
+      ? planGeometryAgentRerun({
+          context: input.rerun,
+          nextIr: result.finalRun.ir,
+          source: result.source,
+          irHash: result.finalRun.irHash,
+        })
+      : null
+  await persistLoopResult(input.workspace, result, 'workspace', now(), rerun?.summary)
+  return { result, sourceBefore, sourceAfter, rerun }
 }
 
 export function buildGeometryAgentEditPrompt(input: {
@@ -135,6 +152,7 @@ async function persistLoopResult(
   result: DslSourceLoopResult,
   sourceOrigin: 'llm' | 'workspace',
   at: string,
+  rerunSummary?: GeometryAgentRerunSummary,
 ): Promise<void> {
   if (result.source !== null && result.kind === 'ok') {
     await writeGeometryAgentSource(workspace, result.source, {
@@ -154,7 +172,22 @@ async function persistLoopResult(
           irHash: finalRun.irHash,
           artifactId: finalRun.rootNode.id,
           partCount: finalRun.ir.parts.length,
-          summary: `Generated ${finalRun.ir.parts.length} parts via geometry agent.`,
+          ...(rerunSummary
+            ? {
+                changed: {
+                  created: rerunSummary.created,
+                  updated: rerunSummary.updated,
+                  deleted: rerunSummary.deleted,
+                  unchanged: rerunSummary.unchanged,
+                  changedPartIds: rerunSummary.changedPartIds,
+                  addedPartIds: rerunSummary.addedPartIds,
+                  removedPartIds: rerunSummary.removedPartIds,
+                  orphanedOverridePartIds: rerunSummary.orphanedOverridePartIds,
+                },
+              }
+            : {}),
+          summary:
+            rerunSummary?.text ?? `Generated ${finalRun.ir.parts.length} parts via geometry agent.`,
         }
       : {
           partCount: finalRun?.budgetUsage.partCount ?? 0,

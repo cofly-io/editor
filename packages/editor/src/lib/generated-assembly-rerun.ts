@@ -200,7 +200,7 @@ export function planGeneratedAssemblyRerun(
           createdIdByPartId.get(part.parentId as string))
         : existingRoot.id
       if (isLocal && parentSceneId === undefined) continue // parent still pending
-      const withParent = { ...node, parentId: parentSceneId ?? existingRoot.id }
+      const withParent = { ...node, parentId: (parentSceneId ?? existingRoot.id) as AnyNodeId }
       creates.push({ node: withParent as AnyNode, parentId: withParent.parentId })
       createdIdByPartId.set(partId, node.id)
       pending.delete(partId)

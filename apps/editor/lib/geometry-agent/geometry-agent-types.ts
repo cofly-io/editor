@@ -77,6 +77,10 @@ export type GeometryAgentLastRun = {
     updated: number
     deleted: number
     unchanged: number
+    changedPartIds?: string[]
+    addedPartIds?: string[]
+    removedPartIds?: string[]
+    orphanedOverridePartIds?: string[]
   }
   summary: string
   at: string

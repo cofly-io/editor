@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type { AssemblyIR } from '@pascal-app/core/lib/generated-assembly-ir'
+import { buildGeneratedAssemblyNodes } from '../../../../packages/editor/src/lib/generated-geometry-placement'
 import type { DslRunResult } from '../ai-harness-runs/generator-dsl-run'
 import {
   buildGeometryAgentEditPrompt,
@@ -52,7 +53,7 @@ function okRun(partCount = 3): DslRunResult {
   }
 }
 
-function makePart(id: string): AssemblyIR['parts'][number] {
+function makePart(id: string, fingerprint = `fp-${id}`): AssemblyIR['parts'][number] {
   return {
     id,
     transform: { space: 'world', position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
@@ -62,7 +63,7 @@ function makePart(id: string): AssemblyIR['parts'][number] {
       params: { length: 1, width: 1, height: 1 },
     },
     material: {},
-    fingerprint: `fp-${id}`,
+    fingerprint,
   }
 }
 
@@ -131,6 +132,69 @@ describe('geometry-agent session', () => {
       expect(await readGeometryAgentManifest(workspace)).toMatchObject({
         status: 'succeeded',
         sourceOrigin: 'workspace',
+      })
+    })
+  })
+
+  test('edit session can plan incremental rerun and persist changed counts', async () => {
+    await withTempRoot(async (rootDir) => {
+      const previousIr = {
+        ...IR,
+        parts: [makePart('belt'), makePart('cover.top_panel'), makePart('motor')],
+      }
+      const { rootNode, childNodes } = buildGeneratedAssemblyNodes(previousIr)
+      const nextIr = {
+        ...IR,
+        parts: [
+          makePart('belt'),
+          makePart('cover.top_panel', 'fp-cover-v2'),
+          makePart('motor'),
+          makePart('doors.door.0.panel'),
+        ],
+      }
+      const workspace = await createGeometryAgentWorkspace({
+        rootDir,
+        sessionId: 'geo_agent_rerun',
+        input: { mode: 'text', prompt: '生成皮带输送机' },
+        initialSource: SOURCE,
+      })
+
+      const { rerun } = await editGeometryAgentSession({
+        workspace,
+        instruction: '右侧加两个检修门',
+        callLlm: async () =>
+          `${SOURCE}\ninspectionDoor({ id: 'doors', target: 'cover', count: 1 });`,
+        runAttempt: async (): Promise<DslRunResult> => ({
+          ...okRun(4),
+          ir: nextIr,
+          irHash: 'next-ir',
+        }),
+        rerun: {
+          existingRoot: rootNode as never,
+          existingParts: childNodes,
+          previousIr,
+          detectedAt: '2026-07-28T00:00:00.000Z',
+        },
+        now: () => '2026-07-28T00:00:04.000Z',
+      })
+
+      expect(rerun?.summary).toMatchObject({
+        created: 1,
+        updated: 1,
+        deleted: 0,
+        unchanged: 2,
+        changedPartIds: ['cover.top_panel'],
+        addedPartIds: ['doors.door.0.panel'],
+      })
+      expect(await readGeometryAgentLastRun(workspace)).toMatchObject({
+        changed: {
+          created: 1,
+          updated: 1,
+          deleted: 0,
+          unchanged: 2,
+          changedPartIds: ['cover.top_panel'],
+          addedPartIds: ['doors.door.0.panel'],
+        },
       })
     })
   })
