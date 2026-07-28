@@ -429,6 +429,27 @@ export const EQUIPMENT_DSL_API_CARDS: DSLApiCard[] = [
     cost: { parts: 22 },
     example: "dustCollector({ id: 'baghouse', width: 2.2, depth: 1.4, height: 4.5 });",
   },
+  {
+    apiVersion: DSL_API_VERSION,
+    kind: 'geometry_api_card',
+    id: 'industrial.heatExchanger',
+    category: 'industrial',
+    signature:
+      'heatExchanger({ id, length?, diameter?, tubeCount?, includeSaddles?, includePorts?, material?, color? })',
+    inputs: {
+      id: stringInput(true),
+      length: numberInput([0.8, 14]),
+      diameter: numberInput([0.22, 3.2]),
+      tubeCount: { type: 'integer', unit: 'count', range: [4, 48] },
+      includeSaddles: { type: 'boolean' },
+      includePorts: { type: 'boolean' },
+      material: enumInput(['painted_steel', 'stainless_steel', 'cast_iron']),
+      color: stringInput(),
+    },
+    outputs: 'PartBuilder[]',
+    cost: { parts: 24 },
+    example: "heatExchanger({ id: 'exchanger', length: 3.6, diameter: 0.9, tubeCount: 12 });",
+  },
 ]
 
 export function formatEquipmentDslApiCards(cards = EQUIPMENT_DSL_API_CARDS): string {

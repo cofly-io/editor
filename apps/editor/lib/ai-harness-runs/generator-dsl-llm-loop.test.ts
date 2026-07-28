@@ -505,6 +505,40 @@ describe('runDslSourceLoop', () => {
     expect(seen[seen.length - 1]).toContain('dustCollector')
   })
 
+  it('heat exchanger realism failures feed the same repair loop', async () => {
+    const toyExchanger = `
+      part('exchanger.shell', cylinder({ radius: 0.45, height: 3.6, material: 'metal', color: '#64748b', radialSegments: 16 }))
+        .atWorld([0, 0.9, 0])
+        .rotate({ axis: 'z', degrees: 90 })
+        .withRole('heat_exchanger_shell');
+      part('exchanger.inlet', cylinder({ radius: 0.08, height: 0.3, material: 'metal', color: '#64748b', radialSegments: 12 }))
+        .atWorld([-0.9, 1.4, 0])
+        .withRole('flange_port');
+      part('exchanger.outlet', cylinder({ radius: 0.08, height: 0.3, material: 'metal', color: '#64748b', radialSegments: 12 }))
+        .atWorld([0.9, 1.4, 0])
+        .withRole('flange_port');
+    `
+    const sdkExchanger =
+      "heatExchanger({ id: 'exchanger', length: 3.6, diameter: 0.9, tubeCount: 12 });"
+    let call = 0
+    const seen: string[] = []
+    const result = await runDslSourceLoop({
+      userPrompt:
+        'generate a realistic shell and tube heat exchanger with saddles and flanged nozzles',
+      callLlm: async (msgs) => {
+        seen.push(msgs.map((m) => m.content).join('\n---\n'))
+        return call++ === 0 ? toyExchanger : sdkExchanger
+      },
+      runAttempt: directAttempt,
+    })
+
+    expect(result.kind).toBe('ok')
+    expect(result.attempts).toBe(2)
+    expect(seen[seen.length - 1]).toContain('Industrial realism gate feedback')
+    expect(seen[seen.length - 1]).toContain('realism_heat_exchanger_under_detailed')
+    expect(seen[seen.length - 1]).toContain('heatExchanger')
+  })
+
   it('reply without DSL → nudges the model once and counts the attempt', async () => {
     let call = 0
     const result = await runDslSourceLoop({
@@ -534,6 +568,7 @@ describe('prompt + repair message content', () => {
     expect(prompt).toContain('handrail')
     expect(prompt).toContain('verticalVessel')
     expect(prompt).toContain('dustCollector')
+    expect(prompt).toContain('heatExchanger')
     expect(prompt).toContain('prefer semantic constructors')
     expect(prompt).toContain('keyboard.key.r')
     expect(prompt).toContain(`Prompt version: ${DSL_AUTHOR_PROMPT_VERSION}`)

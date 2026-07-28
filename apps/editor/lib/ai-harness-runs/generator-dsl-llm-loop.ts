@@ -49,6 +49,7 @@ const DSL_EQUIPMENT_API_SUMMARY = `
   pumpCasing({ id, target?, diameter?, width?, material?, color? }) — centrifugal pump casing with volute body and suction/discharge nozzles
   verticalVessel({ id, diameter?, height?, includeLadder?, includeManway?, includePorts?, material?, color? }) — vertical tank/vessel with heads, seam rings, ports, manway, support skirt and ladder
   dustCollector({ id, width?, depth?, height?, bagCount?, includeLadder?, material?, color? }) — baghouse dust collector with filter body, hopper, ducts, support legs, pulse valves and access
+  heatExchanger({ id, length?, diameter?, tubeCount?, includeSaddles?, includePorts?, material?, color? }) — shell-and-tube heat exchanger with shell, tube sheets, channel heads, tube bundle, saddles and flanged ports
 `.trimEnd()
 
 const DSL_API_SUMMARY = `
@@ -154,6 +155,7 @@ const DSL_RULES = `
     motor(), gearbox(), flangePort(), pipeRun(), sheetCover(), and nameplate().
     Tall tanks and pressure/process vessels should use verticalVessel().
     Baghouse filters and dust collectors should use dustCollector().
+    Shell-and-tube heat exchangers should use heatExchanger().
     Serviceable equipment should use platform(), ladder(), and handrail()
     for access details. Only add raw part(..., box/cylinder/...) for missing
     details that the semantic constructor does not cover.
@@ -208,7 +210,7 @@ export function extractDslSource(reply: string): string | null {
     // No fence: drop leading prose lines until the first DSL-looking line.
     const lines = text.split('\n')
     const start = lines.findIndex((l) =>
-      /^\s*(const|function|part\(|equipment\(|belt\(|rollerArray\(|boxFrame\(|guardCover\(|motor\(|gearbox\(|bearingBlock\(|platform\(|ladder\(|handrail\(|inspectionDoor\(|nameplate\(|sheetCover\(|flangePort\(|pipeRun\(|controlCabinet\(|skidBase\(|pumpCasing\(|verticalVessel\(|dustCollector\(|for\s*\(|if\s*\(|hinge\(|grid\(|connect\(|let\b)/.test(
+      /^\s*(const|function|part\(|equipment\(|belt\(|rollerArray\(|boxFrame\(|guardCover\(|motor\(|gearbox\(|bearingBlock\(|platform\(|ladder\(|handrail\(|inspectionDoor\(|nameplate\(|sheetCover\(|flangePort\(|pipeRun\(|controlCabinet\(|skidBase\(|pumpCasing\(|verticalVessel\(|dustCollector\(|heatExchanger\(|for\s*\(|if\s*\(|hinge\(|grid\(|connect\(|let\b)/.test(
         l,
       ),
     )
@@ -217,7 +219,7 @@ export function extractDslSource(reply: string): string | null {
   }
   // Sanity: must reference at least one whitelisted global.
   if (
-    !/\b(part|params|box|cylinder|sphere|cone|frustum|torus|lathe|extrude|sweep|equipment|belt|rollerArray|boxFrame|guardCover|motor|gearbox|bearingBlock|platform|ladder|handrail|inspectionDoor|nameplate|sheetCover|flangePort|pipeRun|controlCabinet|skidBase|pumpCasing|verticalVessel|dustCollector)\s*\(/.test(
+    !/\b(part|params|box|cylinder|sphere|cone|frustum|torus|lathe|extrude|sweep|equipment|belt|rollerArray|boxFrame|guardCover|motor|gearbox|bearingBlock|platform|ladder|handrail|inspectionDoor|nameplate|sheetCover|flangePort|pipeRun|controlCabinet|skidBase|pumpCasing|verticalVessel|dustCollector|heatExchanger)\s*\(/.test(
       text,
     )
   ) {

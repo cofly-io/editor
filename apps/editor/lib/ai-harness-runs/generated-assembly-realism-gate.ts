@@ -6,6 +6,7 @@ export type IndustrialEquipmentFamily =
   | 'pump_skid'
   | 'process_vessel'
   | 'dust_collector'
+  | 'heat_exchanger'
 
 export type RealismGateReview = {
   applicable: boolean
@@ -52,6 +53,11 @@ const FAMILY_SPECS: Record<IndustrialEquipmentFamily, FamilySpec> = {
   dust_collector: {
     required: ['filter_body', 'bottom_discharge_hopper', 'inlet_duct', 'outlet_duct'],
     recommended: ['support_leg', 'pulse_valve', 'inspection_door', 'equipment_nameplate'],
+    maxAnonymousPrimitiveRatio: 0.18,
+  },
+  heat_exchanger: {
+    required: ['heat_exchanger_shell', 'tube_sheet', 'tube_bundle', 'flange_port'],
+    recommended: ['channel_head', 'saddle_support', 'baffle_plate', 'equipment_nameplate'],
     maxAnonymousPrimitiveRatio: 0.18,
   },
 }
@@ -126,6 +132,7 @@ export function reviewAssemblyRealism(
   checkPumpSkidDetails(ir, roles, issues, warnings)
   checkProcessVesselDetails(ir, roles, issues, warnings)
   checkDustCollectorDetails(ir, roles, issues, warnings)
+  checkHeatExchangerDetails(ir, roles, issues, warnings)
   checkAccessDetails(ir, roles, opts.source, issues, warnings)
 
   const score = Math.max(0, Math.min(1, 1 - issues.length * 0.25 - warnings.length * 0.06))
@@ -176,6 +183,14 @@ function inferIndustrialFamily(
     /dust|baghouse|filter/.test(idText)
   ) {
     return 'dust_collector'
+  }
+  if (
+    hasRoleLike(roles, 'heat_exchanger_shell') ||
+    hasRoleLike(roles, 'tube_sheet') ||
+    /\b(heat[_\s-]?exchanger|shell[_\s-]?and[_\s-]?tube|condenser|cooler)\b/.test(sourceText) ||
+    /exchanger|condenser|cooler/.test(idText)
+  ) {
+    return 'heat_exchanger'
   }
   if (
     hasRoleLike(roles, 'vessel_shell') ||
@@ -238,12 +253,18 @@ function hasRoleLike(roles: Set<string>, needle: string): boolean {
     if (n === 'vessel_shell' && (r.includes('vessel_shell') || r.includes('tank_shell'))) {
       return true
     }
-    if (n === 'vessel_head' && r.includes('head')) return true
+    if (n === 'vessel_head' && (r === 'vessel_head' || r.includes('tank_head'))) return true
     if (n === 'filter_body' && (r.includes('filter_body') || r.includes('baghouse'))) return true
     if (n === 'bottom_discharge_hopper' && r.includes('hopper')) return true
     if (n === 'inlet_duct' && (r.includes('inlet') || r.includes('duct'))) return true
     if (n === 'outlet_duct' && (r.includes('outlet') || r.includes('duct'))) return true
     if (n === 'pulse_valve' && r.includes('pulse')) return true
+    if (n === 'heat_exchanger_shell' && r.includes('heat_exchanger_shell')) return true
+    if (n === 'tube_sheet' && r.includes('tube_sheet')) return true
+    if (n === 'tube_bundle' && r.includes('tube_bundle')) return true
+    if (n === 'channel_head' && r.includes('channel_head')) return true
+    if (n === 'saddle_support' && r.includes('saddle')) return true
+    if (n === 'baffle_plate' && r.includes('baffle')) return true
   }
   return false
 }
@@ -618,6 +639,74 @@ function checkDustCollectorDetails(
   if (!hasRoleLike(roles, 'equipment_nameplate')) {
     warnings.push(
       'realism_dust_collector_nameplate_missing: dust collector should include a nameplate.',
+    )
+  }
+}
+
+function checkHeatExchangerDetails(
+  ir: AssemblyIR,
+  roles: Set<string>,
+  issues: string[],
+  warnings: string[],
+): void {
+  if (!hasRoleLike(roles, 'heat_exchanger_shell') && !hasRoleLike(roles, 'tube_sheet')) return
+
+  if (ir.parts.length < 18) {
+    issues.push(
+      `realism_heat_exchanger_under_detailed: heat_exchanger has only ${ir.parts.length} parts; use heatExchanger() so it has shell, tube sheets, channel heads, visible tube bundle, saddles, baffles, flanged ports, and nameplate.`,
+    )
+  }
+
+  const shell = ir.parts.find((p) => p.semanticRole === 'heat_exchanger_shell')
+  if (shell?.geometry.kind === 'primitive-recipe') {
+    if (shell.geometry.recipeId !== 'primitive.cylinder') {
+      issues.push('realism_heat_exchanger_shell_shape: heat exchanger shell should be cylindrical.')
+    }
+    const radialSegments = shell.geometry.params.radialSegments
+    if (typeof radialSegments !== 'number' || radialSegments < 48) {
+      issues.push(
+        'realism_heat_exchanger_shell_faceting: heat exchanger shell should use at least 48 radialSegments.',
+      )
+    }
+  }
+
+  const tubeSheets = ir.parts.filter((p) => p.semanticRole === 'tube_sheet')
+  if (tubeSheets.length < 2) {
+    issues.push(
+      `realism_heat_exchanger_tube_sheets_missing: heat exchanger has only ${tubeSheets.length} tube sheets; both ends need visible tube-sheet plates.`,
+    )
+  }
+
+  const tubes = ir.parts.filter((p) => p.semanticRole === 'tube_bundle')
+  if (tubes.length < 6) {
+    issues.push(
+      `realism_heat_exchanger_tube_bundle_missing: heat exchanger has only ${tubes.length} visible tubes; add a repeated tube bundle.`,
+    )
+  }
+
+  const saddles = ir.parts.filter((p) => p.semanticRole === 'saddle_support')
+  if (saddles.length < 2) {
+    issues.push(
+      `realism_heat_exchanger_saddles_missing: heat exchanger has only ${saddles.length} saddle supports; horizontal exchangers need two saddles.`,
+    )
+  }
+
+  const flangePorts = ir.parts.filter((p) => p.semanticRole === 'flange_port')
+  if (flangePorts.length < 4) {
+    issues.push(
+      `realism_heat_exchanger_ports_missing: heat exchanger has only ${flangePorts.length} flanged ports; add shell-side and tube-side nozzles.`,
+    )
+  }
+
+  if (!hasRoleLike(roles, 'channel_head')) {
+    warnings.push('realism_heat_exchanger_channel_heads_missing: add channel heads on both ends.')
+  }
+  if (!hasRoleLike(roles, 'baffle_plate')) {
+    warnings.push('realism_heat_exchanger_baffles_missing: add visible baffle/tube support cues.')
+  }
+  if (!hasRoleLike(roles, 'equipment_nameplate')) {
+    warnings.push(
+      'realism_heat_exchanger_nameplate_missing: heat exchanger should include a nameplate.',
     )
   }
 }

@@ -167,4 +167,20 @@ describe('compileDsl — equipment semantic constructors', () => {
     expect(vesselShell?.geometry.params.radialSegments).toBeGreaterThanOrEqual(64)
     expect(hopper?.geometry.recipeId).toBe('primitive.frustum')
   })
+
+  test('compiles heat exchanger constructor through the same DSL pipeline', () => {
+    const result = compileDsl(`
+      heatExchanger({ id: 'exchanger', length: 3.6, diameter: 0.9, tubeCount: 12 });
+    `)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const roles = new Set(result.ir.parts.map((p) => p.semanticRole))
+    expect(roles.has('heat_exchanger_shell')).toBe(true)
+    expect(roles.has('tube_sheet')).toBe(true)
+    expect(roles.has('channel_head')).toBe(true)
+    expect(roles.has('tube_bundle')).toBe(true)
+    expect(roles.has('saddle_support')).toBe(true)
+    expect(roles.has('flange_port')).toBe(true)
+  })
 })

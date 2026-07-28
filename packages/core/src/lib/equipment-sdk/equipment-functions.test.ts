@@ -7,6 +7,7 @@ import {
   buildGearbox,
   buildGuardCover,
   buildHandrail,
+  buildHeatExchanger,
   buildInspectionDoor,
   buildLadder,
   buildMotor,
@@ -204,6 +205,26 @@ describe('equipment SDK realism builders', () => {
     expect(parts.filter((p) => p.semanticRole === 'pulse_valve').length).toBeGreaterThanOrEqual(4)
     expect(parts.some((p) => p.semanticRole === 'inspection_door')).toBe(true)
     expect(parts.some((p) => p.semanticRole === 'equipment_nameplate')).toBe(true)
+  })
+
+  test('heatExchanger creates shell tube sheets bundle saddles ports and nameplate', () => {
+    const parts = buildHeatExchanger({
+      id: 'exchanger',
+      length: 3.4,
+      diameter: 0.82,
+      tubeCount: 10,
+    })
+
+    expect(parts.some((p) => p.semanticRole === 'heat_exchanger_shell')).toBe(true)
+    expect(parts.filter((p) => p.semanticRole === 'tube_sheet').length).toBe(2)
+    expect(parts.filter((p) => p.semanticRole === 'channel_head').length).toBe(2)
+    expect(parts.filter((p) => p.semanticRole === 'tube_bundle').length).toBeGreaterThanOrEqual(6)
+    expect(parts.filter((p) => p.semanticRole === 'saddle_support').length).toBe(2)
+    expect(parts.filter((p) => p.semanticRole === 'flange_port').length).toBeGreaterThanOrEqual(4)
+    expect(parts.some((p) => p.semanticRole === 'equipment_nameplate')).toBe(true)
+    expect(
+      parts.find((p) => p.semanticRole === 'heat_exchanger_shell')?.params.radialSegments,
+    ).toBe(72)
   })
 
   test('industrial material presets carry appearance data for realism gates', () => {

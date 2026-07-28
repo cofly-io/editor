@@ -233,6 +233,14 @@ export type DustCollectorParams = CommonParams & {
   includeLadder?: boolean
 }
 
+export type HeatExchangerParams = CommonParams & {
+  length?: number
+  diameter?: number
+  tubeCount?: number
+  includeSaddles?: boolean
+  includePorts?: boolean
+}
+
 const round = (value: number) => Number(value.toFixed(4))
 
 const clamp = (value: unknown, fallback: number, min: number, max: number): number => {
@@ -1834,6 +1842,181 @@ export function buildDustCollector(params: DustCollectorParams): EquipmentPartSp
       )
     }
   }
+  return parts
+}
+
+export function buildHeatExchanger(params: HeatExchangerParams): EquipmentPartSpec[] {
+  const length = clamp(params.length, 3.2, 0.8, 14)
+  const diameter = clamp(params.diameter, 0.82, 0.22, 3.2)
+  const tubeCount = Math.round(clamp(params.tubeCount, Math.max(6, Math.ceil(diameter * 8)), 4, 48))
+  const radius = diameter / 2
+  const y = radius + 0.42
+  const shellMaterial = params.material ?? 'painted_steel'
+  const includeSaddles = params.includeSaddles ?? true
+  const includePorts = params.includePorts ?? true
+  const parts: EquipmentPartSpec[] = [
+    spec({
+      id: `${params.id}.shell`,
+      kind: 'cylinder',
+      semanticRole: 'heat_exchanger_shell',
+      position: [0, y, 0],
+      rotation: { axis: 'z', degrees: 90 },
+      size: [length, diameter, diameter],
+      material: shellMaterial,
+      color: params.color,
+      params: { radius, height: length, radialSegments: 72 },
+    }),
+    spec({
+      id: `${params.id}.front_tube_sheet`,
+      kind: 'cylinder',
+      semanticRole: 'tube_sheet',
+      position: [length / 2 + diameter * 0.09, y, 0],
+      rotation: { axis: 'z', degrees: 90 },
+      material: 'stainless_steel',
+      params: { radius: radius * 0.98, height: diameter * 0.08, radialSegments: 72 },
+    }),
+    spec({
+      id: `${params.id}.rear_tube_sheet`,
+      kind: 'cylinder',
+      semanticRole: 'tube_sheet',
+      position: [-length / 2 - diameter * 0.09, y, 0],
+      rotation: { axis: 'z', degrees: 90 },
+      material: 'stainless_steel',
+      params: { radius: radius * 0.98, height: diameter * 0.08, radialSegments: 72 },
+    }),
+    spec({
+      id: `${params.id}.front_channel_head`,
+      kind: 'cylinder',
+      semanticRole: 'channel_head',
+      position: [length / 2 + diameter * 0.24, y, 0],
+      rotation: { axis: 'z', degrees: 90 },
+      material: 'cast_iron',
+      params: { radius: radius * 0.96, height: diameter * 0.16, radialSegments: 72 },
+    }),
+    spec({
+      id: `${params.id}.rear_channel_head`,
+      kind: 'cylinder',
+      semanticRole: 'channel_head',
+      position: [-length / 2 - diameter * 0.24, y, 0],
+      rotation: { axis: 'z', degrees: 90 },
+      material: 'cast_iron',
+      params: { radius: radius * 0.96, height: diameter * 0.16, radialSegments: 72 },
+    }),
+    spec({
+      id: `${params.id}.nameplate`,
+      kind: 'box',
+      semanticRole: 'equipment_nameplate',
+      position: [0, y + radius + 0.03, radius * 0.35],
+      material: 'stainless_steel',
+      params: {
+        length: length * 0.16,
+        width: 0.01,
+        height: diameter * 0.12,
+        cornerRadius: 0.006,
+        cornerSegments: 4,
+      },
+    }),
+  ]
+
+  const tubeRows = Math.max(2, Math.ceil(Math.sqrt(tubeCount)))
+  const tubeSpacing = (diameter * 0.56) / Math.max(1, tubeRows - 1)
+  let tubeIndex = 0
+  for (let row = 0; row < tubeRows && tubeIndex < tubeCount; row += 1) {
+    for (let col = 0; col < tubeRows && tubeIndex < tubeCount; col += 1) {
+      const localY = (row - (tubeRows - 1) / 2) * tubeSpacing
+      const localZ = (col - (tubeRows - 1) / 2) * tubeSpacing
+      if (Math.hypot(localY, localZ) > radius * 0.68) continue
+      parts.push(
+        spec({
+          id: `${params.id}.tube.${tubeIndex}`,
+          kind: 'cylinder',
+          semanticRole: 'tube_bundle',
+          position: [length / 2 + diameter * 0.58, y + localY, localZ],
+          rotation: { axis: 'z', degrees: 90 },
+          material: 'stainless_steel',
+          params: { radius: diameter * 0.012, height: diameter * 0.08, radialSegments: 16 },
+        }),
+      )
+      tubeIndex += 1
+    }
+  }
+
+  for (const x of [-length * 0.22, 0, length * 0.22]) {
+    parts.push(
+      spec({
+        id: `${params.id}.baffle.${x < 0 ? 'rear' : x > 0 ? 'front' : 'center'}`,
+        kind: 'box',
+        semanticRole: 'baffle_plate',
+        position: [x, y, -radius - 0.018],
+        material: 'stainless_steel',
+        params: {
+          length: diameter * 0.05,
+          width: 0.018,
+          height: diameter * 0.74,
+          cornerRadius: 0.006,
+          cornerSegments: 4,
+        },
+      }),
+    )
+  }
+
+  if (includeSaddles) {
+    for (const [label, x] of [
+      ['rear', -length * 0.32],
+      ['front', length * 0.32],
+    ] as const) {
+      parts.push(
+        spec({
+          id: `${params.id}.saddle.${label}`,
+          kind: 'box',
+          semanticRole: 'saddle_support',
+          position: [x, 0.22, 0],
+          material: 'painted_steel',
+          params: {
+            length: diameter * 0.34,
+            width: diameter * 0.72,
+            height: 0.36,
+            cornerRadius: 0.025,
+            cornerSegments: 6,
+          },
+        }),
+      )
+    }
+  }
+
+  if (includePorts) {
+    const portRadius = diameter * 0.11
+    const portHeight = diameter * 0.32
+    for (const [label, x, z, axis] of [
+      ['shell_inlet', -length * 0.24, radius + portHeight / 2 + 0.04, 'y'],
+      ['shell_outlet', length * 0.24, radius + portHeight / 2 + 0.04, 'y'],
+      ['tube_inlet', length / 2 + diameter * 0.34, radius * 0.48, 'z'],
+      ['tube_outlet', -length / 2 - diameter * 0.34, -radius * 0.48, 'z'],
+    ] as const) {
+      const isTop = axis === 'y'
+      parts.push(
+        spec({
+          id: `${params.id}.${label}`,
+          kind: 'cylinder',
+          semanticRole: 'flange_port',
+          position: isTop ? [x, y + z, 0] : [x, y, z],
+          rotation: isTop ? undefined : { axis: 'z', degrees: 90 },
+          material: 'stainless_steel',
+          params: { radius: portRadius, height: portHeight, radialSegments: 48 },
+        }),
+        spec({
+          id: `${params.id}.${label}.flange`,
+          kind: 'cylinder',
+          semanticRole: 'flange_ring',
+          position: isTop ? [x, y + z + portHeight * 0.52, 0] : [x, y, z],
+          rotation: isTop ? undefined : { axis: 'z', degrees: 90 },
+          material: 'cast_iron',
+          params: { radius: portRadius * 1.42, height: portRadius * 0.32, radialSegments: 56 },
+        }),
+      )
+    }
+  }
+
   return parts
 }
 

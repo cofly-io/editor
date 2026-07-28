@@ -23,6 +23,7 @@ import {
   buildGearbox,
   buildGuardCover,
   buildHandrail,
+  buildHeatExchanger,
   buildInspectionDoor,
   buildLadder,
   buildMotor,
@@ -44,6 +45,7 @@ import {
   type GearboxParams,
   type GuardCoverParams,
   type HandrailParams,
+  type HeatExchangerParams,
   type InspectionDoorParams,
   type LadderParams,
   type MotorParams,
@@ -744,6 +746,7 @@ export function createDslApiBuilders(opts: CreateBuildersOptions) {
       registerEquipmentSpecs(buildPumpCasing(o, equipmentContext)),
     verticalVessel: (o: VerticalVesselParams) => registerEquipmentSpecs(buildVerticalVessel(o)),
     dustCollector: (o: DustCollectorParams) => registerEquipmentSpecs(buildDustCollector(o)),
+    heatExchanger: (o: HeatExchangerParams) => registerEquipmentSpecs(buildHeatExchanger(o)),
 
     hinge: (o: {
       part: string
