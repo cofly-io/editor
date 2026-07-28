@@ -14,6 +14,7 @@ import {
   type GeometryAgentRerunSummary,
   planGeometryAgentRerun,
 } from './rerun-summary'
+import { patchLocalityFailureRun, reviewGeometryAgentPatchLocality } from './source-patch-locality'
 import {
   appendGeometryAgentEvent,
   type CreateGeometryAgentWorkspaceInput,
@@ -91,7 +92,15 @@ export async function editGeometryAgentSession(input: GeometryAgentEditInput): P
       memoryJson: JSON.stringify(memory, null, 2),
     }),
     callLlm: input.callLlm,
-    runAttempt: input.runAttempt,
+    runAttempt: async (candidateSource) => {
+      const locality = reviewGeometryAgentPatchLocality({
+        instruction: input.instruction,
+        beforeSource: sourceBefore,
+        afterSource: candidateSource,
+      })
+      if (!locality.passed) return patchLocalityFailureRun(locality)
+      return input.runAttempt(candidateSource)
+    },
     maxAttempts: input.maxAttempts,
   })
 

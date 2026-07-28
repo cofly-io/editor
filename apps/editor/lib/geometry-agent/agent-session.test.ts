@@ -136,6 +136,59 @@ describe('geometry-agent session', () => {
     })
   })
 
+  test('edit session rejects unrelated rewrites before compiling, then repairs locally', async () => {
+    await withTempRoot(async (rootDir) => {
+      const workspace = await createGeometryAgentWorkspace({
+        rootDir,
+        sessionId: 'geo_agent_locality',
+        input: { mode: 'text', prompt: '生成皮带输送机' },
+        initialSource: `
+equipment('belt_conveyor', { id: 'conveyor', length: 6 });
+boxFrame({ id: 'frame', length: 6, width: 0.9, height: 0.8 });
+belt({ id: 'belt', length: 6, width: 0.72 });
+rollerArray({ id: 'rollers', length: 6, width: 0.78, count: 12 });
+guardCover({ id: 'top_guard_cover', target: 'belt', height: 0.55 });
+motor({ id: 'drive_motor', target: 'belt', side: 'right', position: 'rear' });
+`,
+      })
+      const badRewrite = `
+equipment('belt_conveyor', { id: 'conveyor', length: 6 });
+boxFrame({ id: 'frame', length: 6, width: 0.9, height: 0.8 });
+belt({ id: 'belt', length: 6, width: 1.4 });
+rollerArray({ id: 'rollers', length: 6, width: 0.78, count: 12 });
+guardCover({ id: 'top_guard_cover', target: 'belt', height: 0.75 });
+motor({ id: 'drive_motor', target: 'belt', side: 'left', position: 'front' });
+`
+      const localPatch = badRewrite
+        .replace('width: 1.4', 'width: 0.72')
+        .replace("side: 'left', position: 'front'", "side: 'right', position: 'rear'")
+      let llmCalls = 0
+      let compileCalls = 0
+
+      const { result, sourceAfter } = await editGeometryAgentSession({
+        workspace,
+        instruction: '罩子大一点',
+        callLlm: async () => {
+          llmCalls += 1
+          return llmCalls === 1 ? badRewrite : localPatch
+        },
+        runAttempt: async () => {
+          compileCalls += 1
+          return okRun(8)
+        },
+        maxAttempts: 3,
+        now: () => '2026-07-28T00:00:03.000Z',
+      })
+
+      expect(result.kind).toBe('ok')
+      expect(llmCalls).toBe(2)
+      expect(compileCalls).toBe(1)
+      expect(sourceAfter).toContain('height: 0.75')
+      expect(sourceAfter).toContain('width: 0.72')
+      expect(sourceAfter).toContain("side: 'right', position: 'rear'")
+    })
+  })
+
   test('edit session can plan incremental rerun and persist changed counts', async () => {
     await withTempRoot(async (rootDir) => {
       const previousIr = {
