@@ -687,6 +687,40 @@ describe('prompt + repair message content', () => {
     expect(msg).toContain('COMPLETE corrected source')
   })
 
+  it('repair message explains how to separate duplicate joint detail positions', () => {
+    const failed: Extract<DslRunResult, { kind: 'failed' }> = {
+      kind: 'failed',
+      downgrade: {
+        reason: 'spatial_gate_failed',
+        message:
+          'Spatial quality gate rejected the assembly: gate_duplicate_position: 3 identical parts share one world position: robot_arm.elbow_motor.front_end_cap, robot_arm.shoulder_motor.front_end_cap, robot_arm.wrist_motor.front_end_cap [primitive.cylinder:{"radius":0.056,"height":0.02}]',
+        attempts: 1,
+        diagnosticCodes: ['gate_duplicate_position'],
+        route,
+      },
+      attempts: [
+        {
+          attempt: 1,
+          sandboxMs: 0,
+          diagnostics: [],
+          spatial: {
+            passed: false,
+            score: 0.5,
+            issues: [
+              'gate_duplicate_position: 3 identical parts share one world position: robot_arm.elbow_motor.front_end_cap, robot_arm.shoulder_motor.front_end_cap, robot_arm.wrist_motor.front_end_cap [primitive.cylinder:{"radius":0.056,"height":0.02}]',
+            ],
+            warnings: [],
+          },
+        },
+      ],
+      budgetUsage: { sandboxAttempts: 1, totalSandboxMs: 0, partCount: 3, wallTimeBudgetMs: 5000 },
+    }
+    const msg = buildDslRepairMessage(failed)
+    expect(msg).toContain('Separate the 3 identical parts')
+    expect(msg).toContain('derive its position from its own parent/joint pivot')
+    expect(msg).toContain('compute shoulder/elbow/wrist motors')
+  })
+
   it('repair message translates severe overlap into outward accessory placement hints', () => {
     const failed: Extract<DslRunResult, { kind: 'failed' }> = {
       kind: 'failed',

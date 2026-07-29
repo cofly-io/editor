@@ -166,6 +166,9 @@ const DSL_RULES = `
    such as 25/-35/20 degrees for robot shoulder/elbow/wrist joints, and use
    the same angle in rotateAround(...) and hinge().restAngle. If a part should
    remain perfectly straight/static, do not declare a hinge for it.
+   Repeated joint accessories (motors, end caps, bolts, covers, gripper
+   pieces) must be positioned from their own joint pivot or parent part. Do
+   not reuse one base/world position for shoulder, elbow, and wrist details.
 7. Child parts that move with a parent (screen in a lid, handle on a
    door) use .childOf(parentId).atLocal([...]). Once a part is a child,
    never call .atWorld or .rotateAround on it — use .rotate to reorient.
@@ -329,6 +332,27 @@ export function buildDslRepairMessage(result: Extract<DslRunResult, { kind: 'fai
 function spatialRepairHints(issues: readonly string[]): string[] {
   const hints: string[] = []
   for (const issue of issues) {
+    const duplicate =
+      /gate_duplicate_position:\s*(\d+)\s+identical parts share one world position:\s*([^[]+)/i.exec(
+        issue,
+      )
+    if (duplicate) {
+      const [, countText, idsText] = duplicate
+      const ids = (idsText ?? '')
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean)
+      hints.push(
+        `Separate the ${countText ?? 'multiple'} identical parts that share one world position: ${ids.slice(0, 5).join(', ')}. Each repeated detail must derive its position from its own parent/joint pivot or loop index; do not reuse one constant atWorld(...) coordinate for multiple parts with the same geometry.`,
+      )
+      if (ids.some((id) => /(robot|shoulder|elbow|wrist|gripper|motor|end_cap)/i.test(id))) {
+        hints.push(
+          `For robot arms, compute shoulder/elbow/wrist motors and end caps from shoulderPivot/elbowPivot/wristPivot respectively, or childOf() them to the matching joint part with distinct atLocal offsets. The front/end cap of each joint motor must move with that joint and cannot all sit at the base/default origin.`,
+        )
+      }
+      continue
+    }
+
     const hingeZero =
       /gate_hinge_zero_angle:\s*part\s*"([^"]+)"\s*declares a hinge on\s*"([^"]+)"/i.exec(issue)
     if (hingeZero) {
