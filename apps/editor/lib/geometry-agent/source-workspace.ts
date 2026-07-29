@@ -14,6 +14,7 @@ import type {
 } from './geometry-agent-types'
 
 const SESSION_ID_RE = /^[a-zA-Z0-9_-]+$/
+const MAX_RECENT_DECISIONS = 8
 
 export type CreateGeometryAgentWorkspaceInput = {
   rootDir?: string
@@ -143,6 +144,25 @@ export async function writeGeometryAgentMemory(
   await writeJson(workspace.memoryPath, memory)
   await updateGeometryAgentManifest(workspace, {}, now)
   await appendGeometryAgentEvent(workspace, { type: 'memory.updated', at: now })
+}
+
+export async function appendGeometryAgentRecentDecision(
+  workspace: GeometryAgentWorkspace,
+  decision: string,
+  now = new Date().toISOString(),
+): Promise<GeometryAgentMemory> {
+  const normalized = decision.trim()
+  const current = await readGeometryAgentMemory(workspace)
+  if (!normalized) return current
+  const next: GeometryAgentMemory = {
+    ...current,
+    recentDecisions: [
+      normalized,
+      ...current.recentDecisions.filter((existing) => existing !== normalized),
+    ].slice(0, MAX_RECENT_DECISIONS),
+  }
+  await writeGeometryAgentMemory(workspace, next, now)
+  return next
 }
 
 export async function appendGeometryAgentEvent(

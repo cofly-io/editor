@@ -2752,7 +2752,3 @@ export function buildBlowerPackage(params: BlowerPackageParams): EquipmentPartSp
 
   return parts
 }
-
-export function buildEquipment(_params: CommonParams): EquipmentPartSpec[] {
-  return []
-}

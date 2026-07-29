@@ -23,7 +23,6 @@ import {
   buildCentrifugalFan,
   buildControlCabinet,
   buildDustCollector,
-  buildEquipment,
   buildFlangePort,
   buildGearbox,
   buildGuardCover,
@@ -721,10 +720,7 @@ export function createDslApiBuilders(opts: CreateBuildersOptions) {
 
     part: registerPart,
 
-    equipment: (_kind: string | Record<string, unknown>, o?: Record<string, unknown>) =>
-      registerEquipmentSpecs(
-        buildEquipment((typeof _kind === 'string' ? { id: _kind, ...o } : _kind) as never),
-      ),
+    equipment: (_kind: string | Record<string, unknown>, _o?: Record<string, unknown>) => [],
     belt: (o: BeltParams) => registerEquipmentSpecs(buildBelt(o)),
     rollerArray: (o: RollerArrayParams) => registerEquipmentSpecs(buildRollerArray(o)),
     boxFrame: (o: BoxFrameParams) => registerEquipmentSpecs(buildBoxFrame(o)),

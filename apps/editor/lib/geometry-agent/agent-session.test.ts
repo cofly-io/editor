@@ -15,6 +15,7 @@ import {
   readGeometryAgentDiagnostics,
   readGeometryAgentLastRun,
   readGeometryAgentManifest,
+  readGeometryAgentMemory,
   readGeometryAgentSource,
 } from './source-workspace'
 
@@ -98,6 +99,9 @@ describe('geometry-agent session', () => {
         kind: 'ok',
         partCount: 7,
       })
+      expect((await readGeometryAgentMemory(workspace)).recentDecisions).toEqual([
+        'Created belt_conveyor source with 7 parts.',
+      ])
     })
   })
 
@@ -145,6 +149,9 @@ describe('geometry-agent session', () => {
         },
         summary: expect.stringContaining('guardCover(cover)'),
       })
+      expect((await readGeometryAgentMemory(workspace)).recentDecisions).toEqual([
+        'Edited belt_conveyor source locally (1 changed, 0 added, 0 removed; 8 parts).',
+      ])
     })
   })
 

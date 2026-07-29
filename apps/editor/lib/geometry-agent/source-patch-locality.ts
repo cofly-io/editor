@@ -1,42 +1,7 @@
 import type { DSLDiagnostic } from '@pascal-app/core/lib/generated-geometry-dsl-contract'
 import { type GenerationRouteDecision, NO_SIGNALS } from '../ai-harness-runs/generation-route'
 import type { DslRunResult } from '../ai-harness-runs/generator-dsl-run'
-
-const EQUIPMENT_CALLS = [
-  'equipment',
-  'boxFrame',
-  'belt',
-  'rollerArray',
-  'guardCover',
-  'motor',
-  'gearbox',
-  'bearingBlock',
-  'platform',
-  'ladder',
-  'handrail',
-  'inspectionDoor',
-  'nameplate',
-  'sheetCover',
-  'flangePort',
-  'pipeRun',
-  'controlCabinet',
-  'skidBase',
-  'pumpCasing',
-  'centrifugalFan',
-  'blowerPackage',
-  'verticalVessel',
-  'dustCollector',
-  'heatExchanger',
-  'agitatorTank',
-] as const
-
-type EquipmentCallName = (typeof EQUIPMENT_CALLS)[number]
-
-type SourceCall = {
-  name: EquipmentCallName
-  id: string
-  text: string
-}
+import { type EquipmentCallName, extractEquipmentCalls } from './equipment-source-parser'
 
 export type PatchLocalityIssue = {
   code:
@@ -255,60 +220,6 @@ function allowedFunctionsForInstruction(instruction: string): EquipmentCallName[
     allowed.add('controlCabinet')
   }
   return Array.from(allowed)
-}
-
-function extractEquipmentCalls(source: string): SourceCall[] {
-  const calls: SourceCall[] = []
-  for (const name of EQUIPMENT_CALLS) {
-    let offset = 0
-    const token = `${name}(`
-    while (offset < source.length) {
-      const start = source.indexOf(token, offset)
-      if (start === -1) break
-      const end = findMatchingParen(source, start + name.length)
-      if (end === -1) {
-        offset = start + token.length
-        continue
-      }
-      const text = source.slice(start, end + 1)
-      const id = extractCallId(name, text)
-      if (id) calls.push({ name, id, text })
-      offset = end + 1
-    }
-  }
-  return calls.sort((a, b) => a.id.localeCompare(b.id))
-}
-
-function extractCallId(name: EquipmentCallName, callText: string): string | null {
-  if (name === 'equipment') {
-    const match = /^\s*equipment\s*\(\s*['"]([^'"]+)['"]/.exec(callText)
-    return match?.[1] ?? null
-  }
-  const match = /\bid\s*:\s*['"]([^'"]+)['"]/.exec(callText)
-  return match?.[1] ?? null
-}
-
-function findMatchingParen(source: string, openParenIndex: number): number {
-  let depth = 0
-  let quote: '"' | "'" | null = null
-  for (let i = openParenIndex; i < source.length; i++) {
-    const char = source[i]
-    const previous = source[i - 1]
-    if (quote) {
-      if (char === quote && previous !== '\\') quote = null
-      continue
-    }
-    if (char === '"' || char === "'") {
-      quote = char
-      continue
-    }
-    if (char === '(') depth += 1
-    if (char === ')') {
-      depth -= 1
-      if (depth === 0) return i
-    }
-  }
-  return -1
 }
 
 function normalizeCallText(text: string): string {

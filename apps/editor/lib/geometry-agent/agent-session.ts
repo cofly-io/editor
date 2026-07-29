@@ -21,6 +21,7 @@ import {
 import { patchLocalityFailureRun, reviewGeometryAgentPatchLocality } from './source-patch-locality'
 import {
   appendGeometryAgentEvent,
+  appendGeometryAgentRecentDecision,
   type CreateGeometryAgentWorkspaceInput,
   createGeometryAgentWorkspace,
   emptyDiagnostics,
@@ -227,6 +228,35 @@ async function persistLoopResult(
         }),
     at,
   })
+
+  if (result.kind === 'ok' && finalRun?.kind === 'ok') {
+    await appendGeometryAgentRecentDecision(
+      workspace,
+      formatRecentDecision({
+        sourceOrigin,
+        partCount: finalRun.ir.parts.length,
+        family: finalRun.realism?.family,
+        changeFeedback,
+      }),
+      at,
+    )
+  }
+}
+
+function formatRecentDecision(input: {
+  sourceOrigin: 'llm' | 'workspace'
+  partCount: number
+  family?: string
+  changeFeedback?: GeometryAgentChangeFeedback
+}): string {
+  const family = input.family ? ` ${input.family}` : ''
+  if (input.sourceOrigin === 'workspace') {
+    const changed = input.changeFeedback?.changed.length ?? 0
+    const added = input.changeFeedback?.added.length ?? 0
+    const removed = input.changeFeedback?.removed.length ?? 0
+    return `Edited${family} source locally (${changed} changed, ${added} added, ${removed} removed; ${input.partCount} parts).`
+  }
+  return `Created${family} source with ${input.partCount} parts.`
 }
 
 function diagnosticsFromRun(run: DslRunResult | null) {

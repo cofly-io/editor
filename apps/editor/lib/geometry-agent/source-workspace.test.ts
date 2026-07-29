@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import {
   appendGeometryAgentEvent,
+  appendGeometryAgentRecentDecision,
   createGeometryAgentWorkspace,
   defaultGeometryAgentSessionsRoot,
   readGeometryAgentDiagnostics,
@@ -116,6 +117,36 @@ describe('geometry-agent source workspace', () => {
         userGoal: '按参考图生成设备',
         referenceImageAssetId: 'asset-123',
       })
+    })
+  })
+
+  test('appends bounded recent memory decisions', async () => {
+    await withTempRoot(async (rootDir) => {
+      const workspace = await createGeometryAgentWorkspace({
+        rootDir,
+        sessionId: 'geo_agent_memory',
+        input: { mode: 'text', prompt: 'x' },
+      })
+
+      for (let i = 0; i < 10; i += 1) {
+        await appendGeometryAgentRecentDecision(
+          workspace,
+          `decision ${i}`,
+          '2026-07-28T00:00:00.000Z',
+        )
+      }
+      await appendGeometryAgentRecentDecision(workspace, 'decision 8', '2026-07-28T00:00:01.000Z')
+
+      expect((await readGeometryAgentMemory(workspace)).recentDecisions).toEqual([
+        'decision 8',
+        'decision 9',
+        'decision 7',
+        'decision 6',
+        'decision 5',
+        'decision 4',
+        'decision 3',
+        'decision 2',
+      ])
     })
   })
 
