@@ -177,21 +177,16 @@ function stableBucket(key: string): number {
  *  4. weak structural DSL signal → generator_dsl, flag-gated as above
  *  5. appearance-first without editability requirement → ai_3d
  *  6. default → recipe (legacy primitive path is the 'recipe' family)
+ *
+ * NOTE: The implementation below is authoritative: fixed legacy families
+ * are first, stage-1 LLM explicit mode is second, and verified profiles
+ * only beat heuristic DSL signals.
  */
 export function resolveGenerationMode(
   signals: GenerationRouteSignals,
   flagInput: GeneratorDslFlagInput = {},
 ): GenerationRouteDecision {
   const flag = evaluateGeneratorDslFlag(flagInput)
-
-  if (signals.recipeAvailable && signals.recipeParamsInRange) {
-    return {
-      mode: 'recipe',
-      reasons: ['verified_recipe_in_range'],
-      signals,
-      flag,
-    }
-  }
 
   if (signals.legacyPartsAvailable) {
     return {
@@ -202,15 +197,10 @@ export function resolveGenerationMode(
     }
   }
 
-  // Highest priority: the stage-1 analyst LLM explicitly declared a pipeline.
-  // The model
-  // editable standard equipment (grate coolers, conveyors, vessels) — when
-  // one covers the request it beats BOTH the LLM's DSL declaration and the
-  // structural heuristics.
-  // inspected the requested structure directly, so its judgment beats
-  // keyword heuristics — but (per above) NOT an industry-pack hit. DSL
-  // stays flag-gated; when the flag is off we record an explicit downgrade
-  // rather than silently rerouting.
+  // Stage-1 explicit mode is authoritative after fixed legacy routes.
+  // It beats broad profile matches and keyword heuristics. DSL stays
+  // flag-gated; when disabled, record an explicit downgrade instead of
+  // silently rerouting.
   if (signals.llmExplicitMode === 'generator_dsl') {
     if (flag.enabled) {
       return { mode: 'generator_dsl', reasons: ['llm_declared:generator_dsl'], signals, flag }
@@ -227,6 +217,15 @@ export function resolveGenerationMode(
   }
   if (signals.llmExplicitMode === 'recipe') {
     return { mode: 'recipe', reasons: ['llm_declared:recipe'], signals, flag }
+  }
+
+  if (signals.recipeAvailable && signals.recipeParamsInRange) {
+    return {
+      mode: 'recipe',
+      reasons: ['verified_recipe_in_range'],
+      signals,
+      flag,
+    }
   }
 
   const dslSignals: string[] = []

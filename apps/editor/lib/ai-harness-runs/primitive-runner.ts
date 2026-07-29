@@ -1,3 +1,5 @@
+import { promises as fs } from 'node:fs'
+import path from 'node:path'
 import {
   evaluateDeviceProfileQuality,
   inferDeviceProfileDefinition,
@@ -13,6 +15,7 @@ import {
   type GeometryContextDecision,
   INITIAL_PRIMITIVE_REPAIR_STAGNATION_STATE,
   inferCreateIntentFromBlueprint,
+  isLikelyGeometryRevisionRequest,
   nextPrimitiveRepairStagnationState,
   PRIMITIVE_STAGE1_ANALYST_PROMPT,
   PRIMITIVE_STAGE2_GENERATOR_PROMPT,
@@ -86,8 +89,6 @@ import {
 } from './resource-candidate-presentation'
 import { resolveProfileResourceCandidates } from './resource-profile-resolver'
 import { appendRunEvent, isTerminalStatus, loadRun, runDir, updateRun } from './run-store'
-import { promises as fs } from 'node:fs'
-import path from 'node:path'
 
 export { basicPrimitiveDeterministicRoute } from './primitive-basic-routes'
 export { precisionPartDeterministicRoute } from './primitive-precision-routes'
@@ -333,6 +334,16 @@ function uniqueDeviceProfilePackDirs(refs: readonly IndustryPackRef[]) {
 function latestArtifactFromContext(context: Record<string, unknown>, key = 'latestArtifact') {
   const value = context[key]
   return isRecord(value) ? (value as unknown as GeneratedGeometryArtifact) : null
+}
+
+function isExplicitFreshGeometryCreate(userPrompt: string): boolean {
+  const text = userPrompt.trim().toLowerCase()
+  return (
+    /^(please\s*)?(create|generate|make|build|model|draw|new|start|regenerate)\b/i.test(text) ||
+    /^(\u8bf7)?(\u751f\u6210|\u521b\u5efa|\u5236\u4f5c|\u505a|\u642d\u5efa|\u5efa\u6a21|\u753b|\u65b0\u5efa|\u65b0\u505a|\u53e6\u505a|\u91cd\u65b0\u751f\u6210|\u518d\u751f\u6210)/.test(
+      text,
+    )
+  )
 }
 
 function harnessMessagesFromContext(context: Record<string, unknown>): AiChatHarnessMessage[] {
@@ -983,10 +994,19 @@ async function runPrimitiveRun(runId: string) {
     const context = contextRecord(run.context)
     const userPrompt = run.prompt
     const recentMessages = harnessMessagesFromContext(context)
-    const latestArtifactCandidate =
+    const contextArtifactCandidate =
       latestArtifactFromContext(context, 'latestArtifactCandidate') ??
       latestArtifactFromContext(context)
-    const basicPrimitiveRoute = basicPrimitiveDeterministicRoute(userPrompt, latestArtifactCandidate)
+    const latestArtifactCandidate =
+      contextArtifactCandidate &&
+      isExplicitFreshGeometryCreate(userPrompt) &&
+      !isLikelyGeometryRevisionRequest(userPrompt, contextArtifactCandidate)
+        ? null
+        : contextArtifactCandidate
+    const basicPrimitiveRoute = basicPrimitiveDeterministicRoute(
+      userPrompt,
+      latestArtifactCandidate,
+    )
     // Basic primitives are the narrowest and safest route in the harness. They should not
     // wait for the context resolver, device profile loading, Stage-1 analysis, or DSL routing.
     // Explicit creation prompts ("生成一个球", "create a sphere") always mean a new primitive;

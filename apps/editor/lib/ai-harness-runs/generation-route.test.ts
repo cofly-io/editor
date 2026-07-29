@@ -121,7 +121,7 @@ describe('resolveGenerationMode', () => {
     expect(d.reasons).toContain('needs_hinge')
   })
 
-  it('verified recipe/profile wins over LLM-declared generator_dsl after Stage1', () => {
+  it('LLM-declared generator_dsl after Stage1 wins over a broad profile match', () => {
     const routeSignals = signalsFromBlueprint(
       {
         route: 'compose_parts',
@@ -150,6 +150,21 @@ describe('resolveGenerationMode', () => {
     )
 
     const d = resolveGenerationMode(routeSignals, { params: { generatorDsl: true }, env: {} })
+    expect(d.mode).toBe('generator_dsl')
+    expect(d.reasons).toEqual(['llm_declared:generator_dsl'])
+  })
+
+  it('verified recipe/profile still wins over heuristic DSL signals', () => {
+    const d = resolveGenerationMode(
+      signals({
+        recipeAvailable: true,
+        recipeParamsInRange: true,
+        needsHierarchy: true,
+        needsHinge: true,
+        needsComputedLayout: true,
+      }),
+      { params: { generatorDsl: true }, env: {} },
+    )
     expect(d.mode).toBe('recipe')
     expect(d.reasons).toEqual(['verified_recipe_in_range'])
   })
