@@ -619,6 +619,8 @@ describe('prompt + repair message content', () => {
     expect(prompt).toContain('DSL API (version 1.1.0)')
     expect(prompt).toContain('REALISM CHECKLIST')
     expect(prompt).toContain('do not make the motor wider than the belt')
+    expect(prompt).toContain('Surface-mounted details must sit OUTSIDE')
+    expect(prompt).toContain('Do not bury accessories inside larger bodies')
     expect(prompt).toContain('rotateAround')
     expect(prompt).toContain('guardCover')
     expect(prompt).toContain('flangePort')
@@ -681,5 +683,39 @@ describe('prompt + repair message content', () => {
     expect(msg).toContain('line 3')
     expect(msg).toContain('gate_duplicate_position')
     expect(msg).toContain('COMPLETE corrected source')
+  })
+
+  it('repair message translates severe overlap into outward accessory placement hints', () => {
+    const failed: Extract<DslRunResult, { kind: 'failed' }> = {
+      kind: 'failed',
+      downgrade: {
+        reason: 'spatial_gate_failed',
+        message:
+          'Spatial quality gate rejected the assembly: gate_part_overlap: parts "robot.arm1" and "robot.nameplate" overlap 100% of the smaller volume.',
+        attempts: 1,
+        diagnosticCodes: ['gate_part_overlap'],
+        route,
+      },
+      attempts: [
+        {
+          attempt: 1,
+          sandboxMs: 0,
+          diagnostics: [],
+          spatial: {
+            passed: false,
+            score: 0.5,
+            issues: [
+              'gate_part_overlap: parts "robot.arm1" and "robot.nameplate" overlap 100% of the smaller volume.',
+            ],
+            warnings: [],
+          },
+        },
+      ],
+      budgetUsage: { sandboxAttempts: 1, totalSandboxMs: 0, partCount: 2, wallTimeBudgetMs: 5000 },
+    }
+    const msg = buildDslRepairMessage(failed)
+    expect(msg).toContain('Spatial repair hints')
+    expect(msg).toContain('Move "robot.nameplate" to the OUTSIDE surface of "robot.arm1"')
+    expect(msg).toContain('0.01m-0.03m clearance')
   })
 })

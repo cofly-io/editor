@@ -118,6 +118,8 @@ const REALISM_CHECKLIST = `
 General:
 - Prefer semantic equipment constructors; they create named parts, material presets, rounded details, and stable IDs.
 - Avoid obviously distorted proportions: motors, doors, covers, ports, and guards must be scaled relative to the equipment they attach to.
+- Surface-mounted details must sit OUTSIDE the target part, never at its center. Nameplates, labels, handles, buttons, inspection doors, hinges, flanges, pipe ports, brackets, feet, and guards need a small outward offset/clearance along the chosen side normal.
+- When adding details by hand with part(...), compute positions from the host surface: use host half-size + detail half-thickness + 0.01m clearance on the outward axis. If you cannot calculate that safely, use nameplate(), inspectionDoor(), flangePort(), guardCover(), sheetCover(), motor(), gearbox(), platform(), ladder(), or handrail() with target/side.
 
 Conveyors:
 - Use belt(), rollerArray(), boxFrame(), motor(), guardCover()/inspectionDoor()/nameplate() when requested.
@@ -189,6 +191,13 @@ const DSL_RULES = `
     Serviceable equipment should use platform(), ladder(), and handrail()
     for access details. Only add raw part(..., box/cylinder/...) for missing
     details that the semantic constructor does not cover.
+12. Do not bury accessories inside larger bodies. A surface accessory whose
+    id or role is a nameplate, label, warning plate, handle, knob, button,
+    inspection door, hinge, flange, port, pipe neck, bracket, foot, ladder,
+    platform, guard, or cover must be placed on the exterior face of its
+    host with a visible outward clearance (typically 0.01m to 0.03m). If a
+    previous attempt reports gate_part_overlap, move the smaller/accessory
+    part outward along the nearest side normal; do not delete the detail.
 `.trim()
 
 /**
@@ -284,6 +293,11 @@ export function buildDslRepairMessage(result: Extract<DslRunResult, { kind: 'fai
   if (gateIssues.length > 0) {
     lines.push('', 'Spatial quality gate issues:')
     for (const issue of gateIssues.slice(0, 10)) lines.push(`- ${issue}`)
+    const hints = spatialRepairHints(gateIssues)
+    if (hints.length > 0) {
+      lines.push('', 'Spatial repair hints:')
+      for (const hint of hints.slice(0, 10)) lines.push(`- ${hint}`)
+    }
   }
   const realismIssues = result.attempts.flatMap((a) => a.realism?.issues ?? [])
   const realismWarnings = result.attempts.flatMap((a) => a.realism?.warnings ?? [])
@@ -293,6 +307,55 @@ export function buildDslRepairMessage(result: Extract<DslRunResult, { kind: 'fai
     for (const warning of realismWarnings.slice(0, 8)) lines.push(`- WARNING: ${warning}`)
   }
   return lines.join('\n')
+}
+
+function spatialRepairHints(issues: readonly string[]): string[] {
+  const hints: string[] = []
+  for (const issue of issues) {
+    const overlap = /gate_part_overlap:\s*parts\s*"([^"]+)"\s*and\s*"([^"]+)"\s*overlap\s*(\d+)%/i.exec(
+      issue,
+    )
+    if (!overlap) continue
+    const [, first, second, percentText] = overlap
+    const percent = Number(percentText)
+    const accessory = chooseLikelyAccessory(first ?? '', second ?? '')
+    const host = accessory === first ? second : first
+    if (accessory && host && Number.isFinite(percent) && percent >= 80) {
+      hints.push(
+        `Move "${accessory}" to the OUTSIDE surface of "${host}" with 0.01m-0.03m clearance along the chosen side normal. It is likely embedded inside the host; keep the detail but change its position/side/atLocal offset.`,
+      )
+    } else if (first && second && Number.isFinite(percent) && percent >= 80) {
+      hints.push(
+        `Separate "${first}" and "${second}" so neither part contains the other. If one is an attachment, place it on the exterior face with a small outward clearance.`,
+      )
+    }
+  }
+  return [...new Set(hints)]
+}
+
+function chooseLikelyAccessory(first: string, second: string): string | null {
+  const firstScore = accessoryScore(first)
+  const secondScore = accessoryScore(second)
+  if (firstScore === 0 && secondScore === 0) return null
+  return firstScore >= secondScore ? first : second
+}
+
+function accessoryScore(id: string): number {
+  const text = id.toLowerCase()
+  let score = 0
+  if (/(nameplate|label|warning|tag|铭牌|标签|警示)/i.test(text)) score += 6
+  if (/(handle|knob|button|switch|door|hinge|manway|inspection|把手|按钮|门|铰链|检修)/i.test(text)) {
+    score += 5
+  }
+  if (/(flange|port|nozzle|pipe|neck|valve|法兰|接口|管口|喷嘴|阀)/i.test(text)) score += 4
+  if (/(bracket|mount|foot|feet|bolt|fastener|ladder|platform|rail|支架|地脚|螺栓|爬梯|平台)/i.test(text)) {
+    score += 3
+  }
+  if (/(cover|guard|panel|罩|护罩|面板)/i.test(text)) score += 2
+  if (/(body|base|frame|shell|casing|cabinet|arm|link|tank|vessel|housing|主体|底座|框架|壳体|罐|臂)/i.test(text)) {
+    score -= 2
+  }
+  return Math.max(0, score)
 }
 
 // ---------------------------------------------------------------------------
