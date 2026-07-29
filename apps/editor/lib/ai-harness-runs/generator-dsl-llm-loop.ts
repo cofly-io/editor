@@ -113,6 +113,30 @@ Statements: const declarations, function name(args) { ... return x },
 Numbers, strings, arrays, objects, + - * / %, comparisons, && || !, parens.
 `.trim()
 
+const REALISM_CHECKLIST = `
+===== REALISM CHECKLIST (your output must pass these checks) =====
+General:
+- Prefer semantic equipment constructors; they create named parts, material presets, rounded details, and stable IDs.
+- Avoid obviously distorted proportions: motors, doors, covers, ports, and guards must be scaled relative to the equipment they attach to.
+
+Conveyors:
+- Use belt(), rollerArray(), boxFrame(), motor(), guardCover()/inspectionDoor()/nameplate() when requested.
+- Include at least 4 rollers, visible supports, and a rubber_belt/high-roughness belt.
+- Drive motors need mounting feet, terminal box, and cylinder radialSegments >= 32; do not make the motor wider than the belt.
+
+Pump skids:
+- Use skidBase(), pumpCasing(), motor(), flangePort(), pipeRun(), sheetCover()/nameplate().
+- Include distinct suction/discharge nozzles, at least 2 flange ports, paired skid rails, and cross members.
+
+Fan/blower packages:
+- Use centrifugalFan() or blowerPackage().
+- Include volute casing, inlet ring/nozzle, outlet duct, repeated impeller blade cues, bearing block, motor, guard, base, flanges, and nameplate.
+
+Vessels, dust collectors, heat exchangers, and reactors:
+- Use verticalVessel(), dustCollector(), heatExchanger(), or agitatorTank() instead of raw cylinder/box piles.
+- Include required industrial details: heads/ports/access/nameplate for vessels, hopper/ducts/pulse valves for dust collectors, tube sheets/bundle/saddles for heat exchangers, and motor/gearbox/shaft/impeller cues for reactors.
+`.trim()
+
 const DSL_RULES = `
 ===== AUTHORING RULES =====
 1. Output ONLY DSL source text. No markdown fences, no commentary.
@@ -177,6 +201,8 @@ export function buildDslAuthorSystemPrompt(): string {
     'You write Generator DSL source that compiles to a 3D assembly.',
     '',
     DSL_API_SUMMARY,
+    '',
+    REALISM_CHECKLIST,
     '',
     DSL_RULES,
     '',

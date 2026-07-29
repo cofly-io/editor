@@ -27,6 +27,28 @@ const NO_GUARD_CONVEYOR = `
   motor({ id: 'drive_motor', target: 'belt', side: 'right', position: 'rear' });
 `
 
+const OVERSIZED_MOTOR_CONVEYOR = `
+  belt({ id: 'belt', length: 6, width: 0.5 });
+  rollerArray({ id: 'rollers', length: 6, width: 0.58, count: 8 });
+  boxFrame({ id: 'frame', length: 6, width: 0.7, height: 0.78 });
+  guardCover({ id: 'cover', target: 'belt', side: 'top', length: 3.8 });
+  inspectionDoor({ id: 'doors', target: 'cover', side: 'right', count: 2 });
+  nameplate({ id: 'nameplate', target: 'cover', side: 'front' });
+  part('drive_motor.ribbed_body', cylinder({ radius: 0.42, height: 0.8, material: 'painted_steel', color: '#64748b', radialSegments: 48 }))
+    .atWorld([-2.4, 0.84, 0.85])
+    .rotate({ axis: 'z', degrees: 90 })
+    .withRole('drive_motor');
+  part('drive_motor.terminal_box', box({ length: 0.24, width: 0.08, height: 0.08, material: 'painted_steel', color: '#64748b', cornerRadius: 0.01 }))
+    .atWorld([-2.4, 1.28, 0.85])
+    .withRole('motor_terminal_box');
+  part('drive_motor.foot.0', box({ length: 0.18, width: 0.18, height: 0.05, material: 'cast_iron', color: '#4a4a4a', cornerRadius: 0.01 }))
+    .atWorld([-2.55, 0.44, 0.85])
+    .withRole('motor_mounting_foot');
+  part('drive_motor.foot.1', box({ length: 0.18, width: 0.18, height: 0.05, material: 'cast_iron', color: '#4a4a4a', cornerRadius: 0.01 }))
+    .atWorld([-2.25, 0.44, 0.85])
+    .withRole('motor_mounting_foot');
+`
+
 const SINGLE_BOX_GUARD_CONVEYOR = `
   part('belt.surface', box({ length: 6, width: 0.72, height: 0.055, material: 'plastic', color: '#222222' }))
     .atWorld([0, 0.82, 0])
@@ -281,6 +303,19 @@ describe('reviewAssemblyRealism', () => {
     expect(review.passed).toBe(false)
     expect(review.issues).toContain(
       'realism_missing_required_role: belt_conveyor must include semantic role "drive_motor".',
+    )
+  })
+
+  test('rejects obviously oversized conveyor drive motor proportions', () => {
+    const result = compileDsl(OVERSIZED_MOTOR_CONVEYOR)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const review = reviewAssemblyRealism(result.ir, { source: OVERSIZED_MOTOR_CONVEYOR })
+    expect(review.family).toBe('belt_conveyor')
+    expect(review.passed).toBe(false)
+    expect(review.issues).toEqual(
+      expect.arrayContaining([expect.stringContaining('realism_conveyor_motor_oversized')]),
     )
   })
 

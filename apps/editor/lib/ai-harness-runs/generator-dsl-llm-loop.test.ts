@@ -617,6 +617,8 @@ describe('prompt + repair message content', () => {
   it('system prompt contains the API card, rules, fixture, and version', () => {
     const prompt = buildDslAuthorSystemPrompt()
     expect(prompt).toContain('DSL API (version 1.1.0)')
+    expect(prompt).toContain('REALISM CHECKLIST')
+    expect(prompt).toContain('do not make the motor wider than the belt')
     expect(prompt).toContain('rotateAround')
     expect(prompt).toContain('guardCover')
     expect(prompt).toContain('flangePort')

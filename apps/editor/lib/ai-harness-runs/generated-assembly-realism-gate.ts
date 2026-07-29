@@ -274,6 +274,26 @@ function isAnonymousPrimitive(part: AssemblyPart): boolean {
   return /^(part|piece|component|object|body|box|cylinder|sphere|detail|misc)$/.test(role)
 }
 
+function primitiveDimension(
+  part: AssemblyPart | undefined,
+  key: 'length' | 'width' | 'height',
+): number | undefined {
+  if (part?.geometry.kind !== 'primitive-recipe') return undefined
+  const value = part.geometry.params[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function primitiveDiameter(part: AssemblyPart | undefined): number | undefined {
+  if (part?.geometry.kind !== 'primitive-recipe') return undefined
+  const radius = part.geometry.params.radius
+  if (typeof radius === 'number' && Number.isFinite(radius)) return radius * 2
+  return primitiveDimension(part, 'width') ?? primitiveDimension(part, 'length')
+}
+
+function formatMeters(value: number): string {
+  return `${Number(value.toFixed(3))}m`
+}
+
 function hasRoleLike(roles: Set<string>, needle: string): boolean {
   const n = needle.toLowerCase()
   for (const role of roles) {
@@ -378,6 +398,13 @@ function checkConveyorDetails(
       )
     }
   }
+  const beltWidth = primitiveDimension(belt, 'width')
+  const motorDiameter = primitiveDiameter(motor)
+  if (beltWidth !== undefined && motorDiameter !== undefined && motorDiameter > beltWidth * 1.1) {
+    issues.push(
+      `realism_conveyor_motor_oversized: drive motor diameter ${formatMeters(motorDiameter)} exceeds 110% of belt width ${formatMeters(beltWidth)}; scale the motor relative to the conveyor.`,
+    )
+  }
 
   const supportLegs = ir.parts.filter((p) => p.semanticRole === 'support_leg')
   if (supportLegs.length < 4) {
@@ -400,6 +427,12 @@ function checkConveyorDetails(
   if (cover && (coverParts.length < 8 || coverFrames.length < 2 || coverMounts.length < 2)) {
     issues.push(
       'realism_guard_too_simple: guarded conveyor cover must include panels plus frame rails and mounting brackets, not a single box.',
+    )
+  }
+  const coverHeight = primitiveDimension(cover, 'height')
+  if (beltWidth !== undefined && coverHeight !== undefined && coverHeight > beltWidth * 2) {
+    issues.push(
+      `realism_conveyor_guard_oversized: guard cover height ${formatMeters(coverHeight)} exceeds 200% of belt width ${formatMeters(beltWidth)}; covers should protect the belt without becoming a wall.`,
     )
   }
   if (cover && cover.material.opacity === undefined && cover.material.preset !== 'wire_mesh') {
@@ -567,6 +600,17 @@ function checkPumpSkidDetails(
       )
     }
   }
+  const pumpDiameter = primitiveDiameter(volute)
+  const pumpMotorDiameter = primitiveDiameter(motor)
+  if (
+    pumpDiameter !== undefined &&
+    pumpMotorDiameter !== undefined &&
+    pumpMotorDiameter > pumpDiameter * 1.25
+  ) {
+    issues.push(
+      `realism_pump_motor_oversized: pump motor diameter ${formatMeters(pumpMotorDiameter)} exceeds 125% of pump casing diameter ${formatMeters(pumpDiameter)}; scale the motor to the skid.`,
+    )
+  }
 
   if (!hasRoleLike(roles, 'sheet_cover_panel')) {
     warnings.push(
@@ -624,6 +668,18 @@ function checkFanBlowerDetails(
   }
   if (!hasRoleLike(roles, 'drive_motor')) {
     issues.push('realism_fan_motor_missing: fan/blower packages need a visible drive motor.')
+  }
+  const fanDiameter = primitiveDiameter(casing)
+  const fanMotor = ir.parts.find((p) => p.semanticRole === 'drive_motor')
+  const fanMotorDiameter = primitiveDiameter(fanMotor)
+  if (
+    fanDiameter !== undefined &&
+    fanMotorDiameter !== undefined &&
+    fanMotorDiameter > fanDiameter * 0.75
+  ) {
+    issues.push(
+      `realism_fan_motor_oversized: fan motor diameter ${formatMeters(fanMotorDiameter)} exceeds 75% of fan casing diameter ${formatMeters(fanDiameter)}; scale package drivetrain parts proportionally.`,
+    )
   }
   if (!hasRoleLike(roles, 'coupling_guard')) {
     warnings.push('realism_fan_coupling_guard_missing: add a yellow coupling/belt guard.')
@@ -689,6 +745,18 @@ function checkProcessVesselDetails(
 
   if (!hasRoleLike(roles, 'inspection_door')) {
     issues.push('realism_vessel_access_missing: vessel needs a manway or inspection door.')
+  }
+  const shellDiameter = primitiveDiameter(shell)
+  const manway = ir.parts.find((p) => p.semanticRole === 'inspection_door')
+  const manwayDiameter = primitiveDiameter(manway) ?? primitiveDimension(manway, 'length')
+  if (
+    shellDiameter !== undefined &&
+    manwayDiameter !== undefined &&
+    manwayDiameter > shellDiameter * 0.55
+  ) {
+    issues.push(
+      `realism_vessel_manhole_oversized: inspection door diameter ${formatMeters(manwayDiameter)} exceeds 55% of vessel shell diameter ${formatMeters(shellDiameter)}; scale access details to the vessel.`,
+    )
   }
   if (!hasRoleLike(roles, 'equipment_nameplate')) {
     warnings.push('realism_vessel_nameplate_missing: vessel should include an equipment nameplate.')
