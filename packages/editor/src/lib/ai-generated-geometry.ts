@@ -22,11 +22,11 @@ export {
   buildGeneratedGeometryNodes,
   clampD,
   clampR,
-  markGeneratedPlacementDraft,
-  toAssemblyLocalPosition,
   type GeneratedGeometryCreatePatch,
   type GeneratedGeometryPatchPlan,
   type GeneratedGeometryPlacementSpec,
+  markGeneratedPlacementDraft,
+  toAssemblyLocalPosition,
 } from './ai-generated-geometry-nodes'
 
 export const AI_GEOMETRY_ASSETS_STORAGE_KEY = 'pascal.ai.geometryAssets'
@@ -250,7 +250,7 @@ export function buildRevisionContext(artifact: GeneratedGeometryArtifact, userRe
   ].join('\n')
 }
 
-function beginGeneratedGeometryPlacement(root: AnyNode) {
+export function beginGeneratedGeometryPlacement(root: AnyNode) {
   const editor = useEditor.getState()
   useViewer.getState().setSelection({ selectedIds: [root.id] })
   editor.setPhase('structure')
@@ -259,7 +259,7 @@ function beginGeneratedGeometryPlacement(root: AnyNode) {
   editor.setMovingNode(root as never)
 }
 
-function resolveGeneratedGeometryLevelId() {
+export function resolveGeneratedGeometryLevelId() {
   const nodes = useScene.getState().nodes
   const selectedLevelId = useViewer.getState().selection.levelId
   const isValidLevel = (id: AnyNodeId | null | undefined) => {

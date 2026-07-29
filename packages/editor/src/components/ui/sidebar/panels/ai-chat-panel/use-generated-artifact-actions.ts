@@ -6,11 +6,14 @@ import {
   saveGeneratedAssemblyComponentPack,
 } from '../../../../../lib/generated-assembly-component-pack'
 import {
+  beginGeneratedGeometryPlacement,
   placeGeneratedGeometryArtifact,
   replaceGeneratedGeometryArtifactOnCanvas,
+  resolveGeneratedGeometryLevelId,
   saveGeneratedGeometryArtifactToLocalLibrary,
   type GeneratedGeometryArtifact,
 } from '../../../../../lib/ai-generated-geometry'
+import { prepareGeneratedAssemblyCanvasPlacement } from '../../../../../lib/generated-assembly-placement-actions'
 import type { GeometryAgentRunResponse } from '../../../../../lib/geometry-agent-client-types'
 import useEditor from '../../../../../store/use-editor'
 import { isRecord } from './chat-utils'
@@ -61,22 +64,32 @@ export function useGeneratedArtifactActions({
   }, [setMessages])
 
   const handlePlaceGeneratedAssembly = useCallback((response: GeometryAgentRunResponse) => {
-    const patches = response.generatedAssembly?.patches ?? []
-    const createOps = patches
-      .filter((patch) => patch.op === 'create')
-      .map((patch) => ({
-        node: patch.node,
-        ...(patch.parentId ? { parentId: patch.parentId } : {}),
-      }))
+    const assembly = response.generatedAssembly
+    const levelId = resolveGeneratedGeometryLevelId()
+    if (!levelId) {
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: '无法放置 DSL assembly：当前场景没有可用楼层。' },
+      ])
+      return
+    }
+    const createOps = assembly
+      ? prepareGeneratedAssemblyCanvasPlacement(assembly, levelId, { startPlacement: true }).createOps
+      : []
     if (createOps.length === 0) {
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: 'No generated assembly nodes were available to place.' },
+        { role: 'assistant', content: '没有可放置的 DSL assembly 节点。' },
       ])
       return
     }
     try {
       useScene.getState().createNodes(createOps as never)
+      const rootId = assembly?.rootNode.id
+      const placedRoot = rootId
+        ? createOps.find((op) => op.node.id === rootId)?.node
+        : undefined
+      if (placedRoot) beginGeneratedGeometryPlacement(placedRoot)
       updateGeometryAgentAssemblyStatus(response.sessionId, (current) => ({
         ...current,
         placedAt: new Date().toISOString(),

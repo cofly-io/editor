@@ -6,6 +6,7 @@ import { OrbitControls, useGLTF } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
 import { Suspense, useMemo } from 'react'
 import type * as React from 'react'
+import type { AnyNode, GeneratedMeshNode } from '@pascal-app/core/schema'
 import * as THREE from 'three'
 import {
   clampD,
@@ -420,6 +421,211 @@ function GeneratedGeometryPreview({ artifact }: { artifact: GeneratedGeometryArt
   )
 }
 
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {}
+}
+
+function numberRecordValue(record: Record<string, unknown>, key: string) {
+  const value = record[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function nodeVec3(value: unknown, fallback: [number, number, number]): [number, number, number] {
+  return Array.isArray(value) &&
+    typeof value[0] === 'number' &&
+    typeof value[1] === 'number' &&
+    typeof value[2] === 'number'
+    ? [value[0], value[1], value[2]]
+    : fallback
+}
+
+function generatedMeshToPreviewShape(node: GeneratedMeshNode): ShapeSpec {
+  const params = node.geometry.kind === 'primitive-recipe' ? recordValue(node.geometry.params) : {}
+  const recipeKind =
+    node.geometry.kind === 'primitive-recipe' && node.geometry.recipeId.startsWith('primitive.')
+      ? node.geometry.recipeId.slice('primitive.'.length)
+      : 'box'
+  return {
+    kind: recipeKind,
+    position: [0, 0, 0],
+    rotation: [0, 0, 0],
+    name: node.name,
+    semanticRole: node.semanticRole,
+    material: node.material ?? (node.materialPreset ? { preset: node.materialPreset } : undefined),
+    materialPreset: node.materialPreset,
+    length: numberRecordValue(params, 'length'),
+    width: numberRecordValue(params, 'width'),
+    height: numberRecordValue(params, 'height'),
+    depth: numberRecordValue(params, 'depth'),
+    thickness: numberRecordValue(params, 'thickness'),
+    cornerRadius: numberRecordValue(params, 'cornerRadius'),
+    bevelRadius: numberRecordValue(params, 'bevelRadius'),
+    chamfer: numberRecordValue(params, 'chamfer'),
+    radius: numberRecordValue(params, 'radius'),
+    radiusTop: numberRecordValue(params, 'radiusTop'),
+    radiusBottom: numberRecordValue(params, 'radiusBottom'),
+    majorRadius: numberRecordValue(params, 'majorRadius'),
+    tubeRadius: numberRecordValue(params, 'tubeRadius'),
+    segments: numberRecordValue(params, 'segments'),
+    arc: numberRecordValue(params, 'arc'),
+    bevelSize: numberRecordValue(params, 'bevelSize'),
+    bevelThickness: numberRecordValue(params, 'bevelThickness'),
+    bevelSegments: numberRecordValue(params, 'bevelSegments'),
+    curveSegments: numberRecordValue(params, 'curveSegments'),
+    axis: typeof params.axis === 'string' ? params.axis : undefined,
+    side: typeof params.side === 'string' ? params.side : undefined,
+    surface: typeof params.surface === 'string' ? params.surface : undefined,
+    profile: Array.isArray(params.profile) ? (params.profile as [number, number][]) : undefined,
+    holes: Array.isArray(params.holes) ? (params.holes as [number, number][][]) : undefined,
+    path: Array.isArray(params.path) ? (params.path as Vec3[]) : undefined,
+  }
+}
+
+function GeneratedAssemblyPreviewNode({
+  childrenByParentId,
+  node,
+}: {
+  childrenByParentId: Map<string, AnyNode[]>
+  node: AnyNode
+}) {
+  const children = childrenByParentId.get(node.id) ?? []
+  const position = nodeVec3('position' in node ? node.position : undefined, [0, 0, 0])
+  const rotation = nodeVec3('rotation' in node ? node.rotation : undefined, [0, 0, 0])
+  const scale = nodeVec3('scale' in node ? node.scale : undefined, [1, 1, 1])
+
+  if (node.type !== 'generated-mesh') {
+    return (
+      <group position={position} rotation={rotation} scale={scale}>
+        {children.map((child) => (
+          <GeneratedAssemblyPreviewNode
+            childrenByParentId={childrenByParentId}
+            key={child.id}
+            node={child}
+          />
+        ))}
+      </group>
+    )
+  }
+
+  const shape = generatedMeshToPreviewShape(node as GeneratedMeshNode)
+  const artifact: GeneratedGeometryArtifact = {
+    id: `${node.id}-preview`,
+    title: node.name ?? node.id,
+    sourceTool: 'generator_dsl',
+    sourceArgs: {},
+    userPrompt: '',
+    version: 1,
+    createdAt: '',
+    shapes: [shape],
+    transforms: [],
+    assemblyName: null,
+    assemblyPosition: [0, 0, 0],
+    createdNames: [],
+    shapeDetails: '',
+  }
+
+  return (
+    <group position={position} rotation={rotation} scale={scale}>
+      <GeneratedPreviewShape artifact={artifact} index={0} shape={shape} />
+      {children.map((child) => (
+        <GeneratedAssemblyPreviewNode
+          childrenByParentId={childrenByParentId}
+          key={child.id}
+          node={child}
+        />
+      ))}
+    </group>
+  )
+}
+
+function estimateGeneratedAssemblyPreviewDistance(nodes: AnyNode[]) {
+  let extent = 1
+  for (const node of nodes) {
+    const position = nodeVec3('position' in node ? node.position : undefined, [0, 0, 0])
+    const geometry = node.type === 'generated-mesh' ? (node as GeneratedMeshNode).geometry : undefined
+    const params = geometry?.kind === 'primitive-recipe' ? recordValue(geometry.params) : {}
+    const size = Math.max(
+      numberRecordValue(params, 'length') ?? 0,
+      numberRecordValue(params, 'width') ?? 0,
+      numberRecordValue(params, 'height') ?? 0,
+      (numberRecordValue(params, 'radius') ?? 0) * 2,
+      (numberRecordValue(params, 'majorRadius') ?? 0) * 2,
+      0.2,
+    )
+    extent = Math.max(extent, Math.abs(position[0]) + size, Math.abs(position[1]) + size, Math.abs(position[2]) + size)
+  }
+  return Math.max(3, extent * 1.9)
+}
+
+function GeneratedAssemblyPreview({ response }: { response: GeometryAgentRunResponse }) {
+  const assembly = response.generatedAssembly
+  const previewData = useMemo(() => {
+    if (!assembly) return null
+    const nodes = assembly.patches
+      .filter((patch) => patch.op === 'create')
+      .map((patch) => patch.node)
+    const childrenByParentId = new Map<string, AnyNode[]>()
+    for (const node of nodes) {
+      if (node.id === assembly.rootNode.id) continue
+      const parentId = typeof node.parentId === 'string' ? node.parentId : assembly.rootNode.id
+      const children = childrenByParentId.get(parentId) ?? []
+      children.push(node)
+      childrenByParentId.set(parentId, children)
+    }
+    return {
+      childrenByParentId,
+      cameraDistance: estimateGeneratedAssemblyPreviewDistance(nodes),
+    }
+  }, [assembly])
+
+  if (!assembly || !previewData) {
+    return (
+      <div className="relative h-36 overflow-hidden rounded-lg border border-border/50 bg-[radial-gradient(circle_at_30%_25%,rgba(166,132,255,0.18),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.05),rgba(255,255,255,0))]">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-center">
+          <Icon className="size-8 text-[#a684ff]" icon="mdi:axis-arrow-info" />
+          <div className="max-w-[16rem] px-3 text-[11px] text-muted-foreground">
+            Generator DSL assembly is compiled and ready to place.
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      aria-label={`Generator DSL preview for ${assembly.rootNode.name ?? response.memory.userGoal ?? 'assembly'}. Drag with the right mouse button to rotate.`}
+      className="h-36 overflow-hidden rounded-lg border border-border/60 bg-black/20"
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      <Canvas
+        camera={{
+          position: [
+            previewData.cameraDistance,
+            previewData.cameraDistance * 0.7,
+            previewData.cameraDistance,
+          ],
+          fov: 42,
+        }}
+        dpr={[1, 1.5]}
+      >
+        <ambientLight intensity={0.7} />
+        <directionalLight intensity={1.8} position={[3, 5, 4]} />
+        <GeneratedAssemblyPreviewNode
+          childrenByParentId={previewData.childrenByParentId}
+          node={assembly.rootNode}
+        />
+        <OrbitControls
+          enablePan={false}
+          makeDefault
+          mouseButtons={{ LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }}
+        />
+      </Canvas>
+    </div>
+  )
+}
+
 function getGeometryArtifactStatus(artifact: GeneratedGeometryArtifact) {
   if (artifact.supersededBy) return `Replaced by ${artifact.supersededBy.slice(-6)}`
   if (artifact.replacedAt) return 'Replaced on canvas'
@@ -773,16 +979,7 @@ export function GeneratedAssemblyCard({
       }
       hint="Generated DSL is ready. Place it on the canvas when it looks right; follow-up edits will patch the persisted source."
       meta={`${partCount} parts · generator_dsl · source-backed`}
-      preview={
-        <div className="relative h-36 overflow-hidden rounded-lg border border-border/50 bg-[radial-gradient(circle_at_30%_25%,rgba(166,132,255,0.18),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.05),rgba(255,255,255,0))]">
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-center">
-            <Icon className="size-8 text-[#a684ff]" icon="mdi:axis-arrow-info" />
-            <div className="max-w-[16rem] px-3 text-[11px] text-muted-foreground">
-              Generator DSL assembly is compiled and ready to place.
-            </div>
-          </div>
-        </div>
-      }
+      preview={<GeneratedAssemblyPreview response={response} />}
       status={getGeneratedAssemblyStatus(status)}
       title={rootName}
     />
