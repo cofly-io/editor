@@ -73,10 +73,18 @@ describe('Phase 3 Scene Generation & Routing', () => {
       }
     })
 
+    it('generates the refinery site dressing layer with roads, lawns, and street lights', () => {
+      const site = result.scene.stations.find((s) => s.stationId === 'site_visual_layout')
+      expect(site).toBeDefined()
+      expect(site!.parts.filter((part) => part.semanticRole === 'road_network').length).toBeGreaterThanOrEqual(7)
+      expect(site!.parts.filter((part) => part.semanticRole === 'green_buffer_lawn').length).toBeGreaterThanOrEqual(6)
+      expect(site!.parts.filter((part) => part.semanticRole === 'street_light').length).toBeGreaterThanOrEqual(18)
+    })
+
     it('applies world transforms matching station positions', () => {
       const controlRoom = result.scene.stations.find((s) => s.stationId === 'control_room')
       expect(controlRoom).toBeDefined()
-      expect(controlRoom!.position).toEqual([-34, 0, -22])
+      expect(controlRoom!.position).toEqual([-78, 0, -55])
       // Every part's world position should be near the station position
       for (const part of controlRoom!.parts) {
         const [wx, , wz] = part.worldPosition

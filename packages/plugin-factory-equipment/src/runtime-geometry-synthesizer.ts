@@ -75,6 +75,9 @@ const ROLE_RULES: Array<{ pattern: RegExp; spec: RoleSpec }> = [
   // Stacks / chimneys / flares (tapered)
   { pattern: /flare_stack|boiler_stack|flue_gas_stack|tail_gas_stack|heater_stack_stub|chimney/, spec: { archetype: 'frustum', kind: 'chimney_stack', material: { roughness: 0.52, metalness: 0.22 } } },
   { pattern: /warning_red_band|stripe/, spec: { archetype: 'frustum', kind: 'chimney_stack', sizeHint: { radius: 0.5, height: 0.5 }, material: { roughness: 0.48, metalness: 0.2 } } },
+  { pattern: /flare_flame|flare_glow/, spec: { archetype: 'sphere', kind: 'sphere', sizeHint: { radius: 0.24, height: 0.08 }, material: { roughness: 0.16, metalness: 0 } } },
+  { pattern: /flare_smoke_plume/, spec: { archetype: 'sphere', kind: 'sphere', sizeHint: { radius: 0.36, height: 0.12 }, material: { roughness: 0.9, metalness: 0 } } },
+  { pattern: /street_light|warning_beacon/, spec: { archetype: 'sphere', kind: 'sphere', sizeHint: { radius: 0.06, height: 0.04 }, material: { roughness: 0.12, metalness: 0 } } },
   // Pipes / headers / manifolds
   { pattern: /pipe|header|manifold|riser|nozzle/, spec: { archetype: 'pipe', kind: 'pipe_run', sizeHint: { radius: 0.06 }, material: { roughness: 0.36, metalness: 0.5 } } },
   // Tube bundle
@@ -244,6 +247,10 @@ export function synthesizeGeometryParts(
   params: Record<string, unknown>,
   envelope: GeometryEnvelope,
 ): SynthesizedPart[] {
+  if (isSiteVisualContextProfile(profile)) {
+    return buildSiteVisualContextParts(profile, params, envelope)
+  }
+
   const roles = profile.qualityRequiredRoles ?? []
   const primaryRole = profile.primarySemanticRole
   const parts: SynthesizedPart[] = []
@@ -263,10 +270,49 @@ export function synthesizeGeometryParts(
       }
 
     const dims = deriveDimensions(spec, role, profile, params, envelope, isPrimary)
-    const position = derivePosition(spec, dims, envelope, isPrimary, roleIndex - 1, secondary.length)
+    let position = derivePosition(spec, dims, envelope, isPrimary, roleIndex - 1, secondary.length)
+    if (roleLower === 'flare_flame') position = [0, envelope.height + 0.75, 0]
+    else if (roleLower === 'flare_glow') position = [0, envelope.height + 0.55, 0]
+    else if (roleLower === 'flare_smoke_plume') position = [0.18, envelope.height + 1.8, -0.12]
+    else if (roleLower === 'warning_beacon') position = [0, envelope.height + 0.22, 0]
+    else if (roleLower === 'street_light') position = [0, envelope.height * 0.7, 0]
     const color = isPrimary
       ? pickColor(params, '#d1d5db')
       : pickColor(params, spec.material?.metalness && spec.material.metalness > 0.4 ? '#94a3b8' : '#cbd5e1')
+
+    if (roleLower === 'street_light') {
+      const count = Math.max(2, Math.min(48, Math.round(num(params, 'streetLightCount') ?? 10)))
+      for (let lightIndex = 0; lightIndex < count; lightIndex += 1) {
+        const x = -envelope.length / 2 + 8 + lightIndex * Math.max(4, (envelope.length - 16) / Math.max(1, count - 1))
+        const z = lightIndex % 2 === 0 ? -envelope.width * 0.12 : envelope.width * 0.38
+        parts.push({
+          id: `street_light_${lightIndex + 1}`,
+          kind: spec.kind,
+          semanticRole: role,
+          sourcePartKind: role,
+          position: [x, envelope.height * 0.7, z],
+          length: dims.length,
+          width: dims.width,
+          height: dims.height,
+          radius: dims.radius,
+          axis: dims.axis,
+          primaryColor: '#fff7cc',
+          material: {
+            properties: {
+              color: '#fff7cc',
+              roughness: spec.material?.roughness ?? 0.12,
+              metalness: spec.material?.metalness ?? 0,
+            },
+          },
+          params: {
+            role,
+            profileId: profile.id,
+            synthesized: true,
+          },
+        })
+      }
+      return
+    }
 
     const part: SynthesizedPart = {
       id: isPrimary ? 'shell' : `part_${roleIndex - 1}`,
@@ -304,6 +350,278 @@ export function synthesizeGeometryParts(
 
     parts.push(part)
   })
+
+  return parts
+}
+
+function isSiteVisualContextProfile(profile: Profile) {
+  return (
+    profile.id.endsWith('.site_visual_layout') ||
+    profile.family === 'site_visual_context' ||
+    profile.generatorRef?.generator === 'refinery.visual-layout'
+  )
+}
+
+function bool(params: Record<string, unknown>, key: string, fallback: boolean): boolean {
+  const value = params[key]
+  return typeof value === 'boolean' ? value : fallback
+}
+
+function sitePart(input: {
+  id: string
+  kind?: string
+  semanticRole: string
+  position: Vec3
+  length: number
+  width: number
+  height: number
+  color: string
+  roughness?: number
+  metalness?: number
+  params?: Record<string, unknown>
+}): SynthesizedPart {
+  return {
+    id: input.id,
+    kind: input.kind ?? 'generic_body',
+    semanticRole: input.semanticRole,
+    sourcePartKind: input.semanticRole,
+    position: input.position,
+    length: input.length,
+    width: input.width,
+    height: input.height,
+    radius: Math.min(input.length, input.width) / 2,
+    axis: 'y',
+    primaryColor: input.color,
+    material: {
+      properties: {
+        color: input.color,
+        roughness: input.roughness ?? 0.82,
+        metalness: input.metalness ?? 0.04,
+      },
+    },
+    params: {
+      role: input.semanticRole,
+      synthesized: true,
+      ...(input.params ?? {}),
+    },
+  }
+}
+
+function buildSiteVisualContextParts(
+  profile: Profile,
+  params: Record<string, unknown>,
+  envelope: GeometryEnvelope,
+): SynthesizedPart[] {
+  const length = Math.max(40, num(params, 'length') ?? envelope.length)
+  const width = Math.max(30, num(params, 'width') ?? envelope.width)
+  const parts: SynthesizedPart[] = []
+
+  parts.push(
+    sitePart({
+      id: 'site_ground',
+      semanticRole: 'site_ground',
+      position: [0, -0.03, 0],
+      length: length + 30,
+      width: width + 24,
+      height: 0.06,
+      color: '#a9a49a',
+      roughness: 0.94,
+      params: { profileId: profile.id },
+    }),
+  )
+
+  const pads: Array<[string, number, number, number, number, string]> = [
+    ['crude_tank_farm_pad', -72, 36, 36, 32, '#a89f8d'],
+    ['primary_process_pad', -24, 18, 52, 42, '#b8bcc4'],
+    ['secondary_process_pad', 58, 16, 52, 48, '#b4b8c0'],
+    ['utility_control_pad', -68, -54, 36, 24, '#c7c7cf'],
+    ['product_tank_pad', -8, -52, 36, 24, '#aba191'],
+    ['flare_pad', 88, -48, 18, 18, '#9a938a'],
+    ['wastewater_pad', 88, -68, 18, 12, '#91a2ad'],
+  ]
+  for (const [id, x, z, padLength, padWidth, color] of pads) {
+    parts.push(
+      sitePart({
+        id,
+        semanticRole: 'process_area_pad',
+        position: [x, 0.02, z],
+        length: padLength,
+        width: padWidth,
+        height: 0.08,
+        color,
+        roughness: 0.9,
+      }),
+    )
+  }
+
+  if (bool(params, 'includeRoads', true)) {
+    const roads: Array<[string, number, number, number, number]> = [
+      ['main_east_west_road', 0, -4, length * 0.94, 4.4],
+      ['north_service_road', 0, 56, length * 0.88, 3.4],
+      ['south_service_road', 0, -64, length * 0.88, 3.4],
+      ['west_cross_road', -58, 0, 3.4, width * 0.92],
+      ['center_cross_road', 0, 0, 3.2, width * 0.82],
+      ['east_cross_road', 58, 0, 3.4, width * 0.92],
+      ['front_gate_drive', 34, -76, 5.2, 24],
+    ]
+    for (const [id, x, z, roadLength, roadWidth] of roads) {
+      parts.push(
+        sitePart({
+          id,
+          semanticRole: 'road_network',
+          position: [x, 0.08, z],
+          length: roadLength,
+          width: roadWidth,
+          height: 0.1,
+          color: '#3f3f46',
+          roughness: 0.88,
+        }),
+      )
+    }
+  }
+
+  if (bool(params, 'includeGrass', true)) {
+    const lawns: Array<[string, number, number, number, number]> = [
+      ['northwest_green_buffer', -28, 58, 42, 11],
+      ['northeast_green_buffer', 76, 56, 34, 12],
+      ['southwest_green_buffer', -48, -70, 38, 10],
+      ['central_green_strip', 24, 6, 24, 8],
+      ['east_gate_lawn', 76, -70, 34, 10],
+      ['control_room_lawn', -84, -36, 18, 18],
+    ]
+    for (const [id, x, z, lawnLength, lawnWidth] of lawns) {
+      parts.push(
+        sitePart({
+          id,
+          semanticRole: 'green_buffer_lawn',
+          position: [x, 0.04, z],
+          length: lawnLength,
+          width: lawnWidth,
+          height: 0.08,
+          color: '#4f8f46',
+          roughness: 0.96,
+        }),
+      )
+    }
+  }
+
+  for (const [prefix, cx, cz, dikeLength, dikeWidth] of [
+    ['crude', -72, 36, 42, 36],
+    ['product', -8, -52, 42, 28],
+  ] as Array<[string, number, number, number, number]>) {
+    const walls: Array<[string, number, number, number, number]> = [
+      [`${prefix}_tank_dike_north`, cx, cz + dikeWidth / 2, dikeLength, 0.36],
+      [`${prefix}_tank_dike_south`, cx, cz - dikeWidth / 2, dikeLength, 0.36],
+      [`${prefix}_tank_dike_west`, cx - dikeLength / 2, cz, 0.36, dikeWidth],
+      [`${prefix}_tank_dike_east`, cx + dikeLength / 2, cz, 0.36, dikeWidth],
+    ]
+    for (const [id, x, z, wallLength, wallWidth] of walls) {
+      parts.push(
+        sitePart({
+          id,
+          semanticRole: 'tank_farm_containment',
+          position: [x, 0.45, z],
+          length: wallLength,
+          width: wallWidth,
+          height: 0.9,
+          color: '#8f928c',
+          roughness: 0.86,
+        }),
+      )
+    }
+  }
+
+  parts.push(
+    sitePart({
+      id: 'main_pipe_rack_spine',
+      semanticRole: 'main_pipe_rack_spine',
+      position: [0, 4.2, -8],
+      length: length * 0.78,
+      width: 4.8,
+      height: 8.4,
+      color: '#475569',
+      roughness: 0.55,
+      metalness: 0.28,
+    }),
+  )
+
+  if (bool(params, 'includeFence', true)) {
+    const fences: Array<[string, number, number, number, number]> = [
+      ['perimeter_fence_north', 0, width / 2 + 5, length + 10, 0.22],
+      ['perimeter_fence_south', 0, -width / 2 - 5, length + 10, 0.22],
+      ['perimeter_fence_west', -length / 2 - 5, 0, 0.22, width + 10],
+      ['perimeter_fence_east', length / 2 + 5, 0, 0.22, width + 10],
+    ]
+    for (const [id, x, z, fenceLength, fenceWidth] of fences) {
+      parts.push(
+        sitePart({
+          id,
+          semanticRole: 'perimeter_fence',
+          position: [x, 1.15, z],
+          length: fenceLength,
+          width: fenceWidth,
+          height: 2.3,
+          color: '#c7c3b8',
+          roughness: 0.72,
+          metalness: 0.18,
+        }),
+      )
+    }
+  }
+
+  if (bool(params, 'includeLighting', true)) {
+    const lightCount = Math.max(2, Math.min(48, Math.round(num(params, 'streetLightCount') ?? 18)))
+    for (let index = 0; index < lightCount; index += 1) {
+      const spacing = Math.max(6, (length - 24) / Math.max(1, lightCount - 1))
+      const x = -length / 2 + 12 + index * spacing
+      const z = index % 3 === 0 ? -67 : index % 3 === 1 ? -8.2 : 58
+      parts.push(
+        sitePart({
+          id: `street_light_${index + 1}`,
+          kind: 'generic_body',
+          semanticRole: 'street_light',
+          position: [x, 3.2, z],
+          length: 0.22,
+          width: 0.22,
+          height: 6.4,
+          color: '#64748b',
+          roughness: 0.44,
+          metalness: 0.42,
+        }),
+      )
+    }
+  }
+
+  if (bool(params, 'includeFireSafety', true)) {
+    const hydrants: Array<[number, number]> = [
+      [-88, 20],
+      [-88, 56],
+      [-40, 32],
+      [-6, 34],
+      [36, 32],
+      [76, 30],
+      [88, -38],
+      [54, -60],
+      [-42, -62],
+      [-82, -44],
+    ]
+    hydrants.forEach(([x, z], index) => {
+      parts.push(
+        sitePart({
+          id: `fire_hydrant_${index + 1}`,
+          kind: 'generic_body',
+          semanticRole: 'fire_hydrant',
+          position: [x, 0.42, z],
+          length: 0.36,
+          width: 0.36,
+          height: 0.84,
+          color: '#dc2626',
+          roughness: 0.38,
+          metalness: 0.28,
+        }),
+      )
+    })
+  }
 
   return parts
 }
