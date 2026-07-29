@@ -873,18 +873,26 @@ async function runGeneratorDslRoute(input: {
   // can be debugged from disk (parse errors are otherwise invisible).
   await persistDslAttemptLog(input.runId, dslAttemptLog)
 
+  const dslRunEventData = summarizeDslRunForEvents(result)
+  if (result.kind === 'failed') {
+    const rawDowngrade = dslRunEventData.downgrade
+    dslRunEventData.downgrade =
+      rawDowngrade && typeof rawDowngrade === 'object'
+        ? { ...rawDowngrade, attempts: llmAttempts }
+        : rawDowngrade
+  }
   await appendRunEvent(input.runId, {
     type: 'message',
     message:
       result.kind === 'ok'
         ? `generator_dsl compiled ${result.ir.parts.length} parts (spatial score ${result.spatial.score.toFixed(2)})`
         : `generator_dsl failed: ${result.downgrade.message}`,
-    data: { stage: 'generator-dsl', ...summarizeDslRunForEvents(result) },
+    data: { stage: 'generator-dsl', ...dslRunEventData },
   })
 
   if (result.kind === 'ok') {
-    routeMetrics.dslFirstAttemptSucceeded = result.attempts.length === 1
-    routeMetrics.dslAttemptCount = result.attempts.length
+    routeMetrics.dslFirstAttemptSucceeded = llmAttempts === 1
+    routeMetrics.dslAttemptCount = llmAttempts
     routeMetrics.dslIrHash = result.irHash
     routeMetrics.dslSourceHash = result.ir.generator.sourceHash
     routeMetrics.dslPartCount = result.ir.parts.length
@@ -917,24 +925,28 @@ async function runGeneratorDslRoute(input: {
   }
 
   // Explicit downgrade — recorded, visible, and terminal for this run.
+  const downgrade = {
+    ...result.downgrade,
+    attempts: llmAttempts,
+  }
   routeMetrics.dslFirstAttemptSucceeded = false
-  routeMetrics.dslAttemptCount = result.downgrade.attempts
+  routeMetrics.dslAttemptCount = downgrade.attempts
   routeMetrics.dslDowngrade = {
-    reason: result.downgrade.reason,
-    message: result.downgrade.message,
-    attempts: result.downgrade.attempts,
-    diagnosticCodes: result.downgrade.diagnosticCodes,
+    reason: downgrade.reason,
+    message: downgrade.message,
+    attempts: downgrade.attempts,
+    diagnosticCodes: downgrade.diagnosticCodes,
   }
   const payload = {
-    analysis: `generator_dsl route failed: ${result.downgrade.reason}`,
+    analysis: `generator_dsl route failed: ${downgrade.reason}`,
     results: [
-      `Generation via generator_dsl did not succeed: ${result.downgrade.message} ` +
-        `(attempts: ${result.downgrade.attempts}; codes: ${result.downgrade.diagnosticCodes.join(', ')}). ` +
+      `Generation via generator_dsl did not succeed: ${downgrade.message} ` +
+        `(attempts: ${downgrade.attempts}; codes: ${downgrade.diagnosticCodes.join(', ')}). ` +
         'No scene changes were made.',
     ],
-    lastContent: result.downgrade.message,
+    lastContent: downgrade.message,
     shapeCount: 0,
-    dslDowngrade: result.downgrade,
+    dslDowngrade: downgrade,
     metrics: { primitiveRoute: routeMetrics },
   }
   await appendRunEvent(input.runId, {

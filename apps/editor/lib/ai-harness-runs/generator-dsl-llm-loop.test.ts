@@ -164,6 +164,57 @@ describe('extractDslSource', () => {
 })
 
 describe('runDslSourceLoop', () => {
+  it('author prompt forbids JavaScript-style array mutation for DSL profiles', () => {
+    const prompt = buildDslAuthorSystemPrompt()
+    expect(prompt).toContain('do NOT use .push()')
+    expect(prompt).toContain('arr[i] = value')
+    expect(prompt).toContain('profiles, write a static literal')
+  })
+
+  it('repair message gives concrete hints for unsupported array mutation syntax', () => {
+    const failed: Extract<DslRunResult, { kind: 'failed' }> = {
+      kind: 'failed',
+      downgrade: {
+        reason: 'compile_diagnostics',
+        message: 'DSL compile produced 2 errors.',
+        attempts: 1,
+        diagnosticCodes: ['dsl_unsupported_member', 'dsl_parse_error'],
+        route,
+      },
+      attempts: [
+        {
+          attempt: 1,
+          sandboxMs: 0,
+          diagnostics: [
+            {
+              code: 'dsl_unsupported_member',
+              severity: 'error',
+              message: "array member 'push' is not supported; use index access or .length",
+              span: { start: 0, end: 1, line: 95, column: 10 },
+            },
+            {
+              code: 'dsl_parse_error',
+              severity: 'error',
+              message: "expected ';', got =",
+              span: { start: 0, end: 1, line: 92, column: 20 },
+            },
+          ],
+        },
+      ],
+      budgetUsage: {
+        sandboxAttempts: 1,
+        totalSandboxMs: 0,
+        partCount: 0,
+        wallTimeBudgetMs: 5000,
+      },
+    }
+
+    const repair = buildDslRepairMessage(failed)
+    expect(repair).toContain('array mutation methods are forbidden')
+    expect(repair).toContain('Assignments such as arr[i] = value are not supported')
+    expect(repair).toContain('construct the full array literal')
+  })
+
   it('first-try success: one LLM call, one compile, done', async () => {
     const llmCalls: DslLlmMessage[][] = []
     const result = await runDslSourceLoop({

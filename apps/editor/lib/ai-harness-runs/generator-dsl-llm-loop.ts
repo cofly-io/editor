@@ -26,7 +26,7 @@ import type { DslRunResult } from './generator-dsl-run'
 // ---------------------------------------------------------------------------
 
 /** Prompt version for the DSL author prompt (dashboard joins). */
-export const DSL_AUTHOR_PROMPT_VERSION = '1.2.1'
+export const DSL_AUTHOR_PROMPT_VERSION = '1.2.2'
 
 const DSL_EQUIPMENT_API_SUMMARY = `
   centrifugalFan({ id, diameter?, width?, includeMotor?, includeGuard?, includeBase?, material?, color? }) — centrifugal fan with volute casing, inlet ring/nozzle, outlet duct, impeller cues, bearing pedestal, motor, coupling guard and base
@@ -146,6 +146,11 @@ const DSL_RULES = `
 2. Use ONLY the whitelisted API above. Forbidden: Math (use math.*),
    Date, console, fetch, require, eval, arrow functions, template
    literals, ternary ?:, == / != (use === / !==), spread ...
+   Array mutation is also forbidden: do NOT use .push(), .pop(),
+   .splice(), .map(), .forEach(), or assignments like arr[i] = value.
+   Arrays must be created as complete literals. For extrude/lathe/sweep
+   profiles, write a static literal such as [[x1,y1],[x2,y2],...] with
+   6-16 points; do not build the profile by mutating an array in a loop.
 3. Every part id MUST be deterministic: dotted path with explicit loop
    indices, e.g. 'keyboard.key.r' + r + '.c' + c. Never random.
 4. Declare a params block for every user-tunable dimension, with
@@ -308,6 +313,11 @@ export function buildDslRepairMessage(result: Extract<DslRunResult, { kind: 'fai
       const loc = d.span ? ` (line ${d.span.line})` : ''
       lines.push(`- [${d.code}]${loc} ${d.message}${d.hint ? ` Hint: ${d.hint}` : ''}`)
     }
+    const syntaxHints = dslSyntaxRepairHints(diagnostics)
+    if (syntaxHints.length > 0) {
+      lines.push('', 'DSL syntax repair hints:')
+      for (const hint of syntaxHints.slice(0, 8)) lines.push(`- ${hint}`)
+    }
   }
   const gateIssues = result.attempts.flatMap((a) => a.spatial?.issues ?? [])
   if (gateIssues.length > 0) {
@@ -327,6 +337,34 @@ export function buildDslRepairMessage(result: Extract<DslRunResult, { kind: 'fai
     for (const warning of realismWarnings.slice(0, 8)) lines.push(`- WARNING: ${warning}`)
   }
   return lines.join('\n')
+}
+
+function dslSyntaxRepairHints(
+  diagnostics: readonly Array<{ code: string; message: string }>,
+): string[] {
+  const hints: string[] = []
+  for (const diagnostic of diagnostics) {
+    const message = diagnostic.message.toLowerCase()
+    if (
+      diagnostic.code === 'dsl_unsupported_member' &&
+      /push|pop|splice|map|foreach/.test(message)
+    ) {
+      hints.push(
+        'The DSL is not JavaScript: array mutation methods are forbidden. Replace profile-building loops with a complete static array literal, e.g. profile: [[-1,0],[...],[1,0]].',
+      )
+    }
+    if (diagnostic.code === 'dsl_parse_error' && /expected ';', got =/.test(message)) {
+      hints.push(
+        'Assignments such as arr[i] = value are not supported. Do not initialize arrays and fill them later; construct the full array literal in one expression.',
+      )
+    }
+    if (diagnostic.code === 'dsl_unsupported_syntax' && /ternary/.test(message)) {
+      hints.push(
+        'Ternary ?: is forbidden. Use an if/else statement and assign values through let variables.',
+      )
+    }
+  }
+  return [...new Set(hints)]
 }
 
 function spatialRepairHints(issues: readonly string[]): string[] {
