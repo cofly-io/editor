@@ -26,7 +26,7 @@ import type { DslRunResult } from './generator-dsl-run'
 // ---------------------------------------------------------------------------
 
 /** Prompt version for the DSL author prompt (dashboard joins). */
-export const DSL_AUTHOR_PROMPT_VERSION = '1.2.3'
+export const DSL_AUTHOR_PROMPT_VERSION = '1.3.0'
 
 const DSL_EQUIPMENT_API_SUMMARY = `
   centrifugalFan({ id, diameter?, width?, includeMotor?, includeGuard?, includeBase?, material?, color? }) — centrifugal fan with volute casing, inlet ring/nozzle, outlet duct, impeller cues, bearing pedestal, motor, coupling guard and base
@@ -239,6 +239,102 @@ const DSL_RULES = `
     a constant .atWorld([0, ...]) coordinate inside a loop.
 `.trim()
 
+const DSL_DEFINITION_PATTERNS = `
+===== DSL DEFINITION PATTERNS (adapt these before writing source) =====
+Pattern A: repeated linear parts along one axis.
+Use for rollers, railing posts, windows, bridge spans, flowers, fence pickets, bolts in a row.
+const count = 6
+const totalLength = 6
+const spacing = totalLength / count
+for (let i = 0; i < count; i++) {
+  const x = -totalLength / 2 + spacing * (i + 0.5)
+  part('pattern.item.' + i,
+    box({ length: spacing * 0.5, width: 0.12, height: 0.4, material: 'metal' })
+  ).atWorld([x, 0.2, 0]).withRole('repeated_structural_member')
+}
+
+Pattern B: surface-mounted accessory on a host face.
+Use for nameplates, labels, handles, inspection doors, buttons, ports, covers, brackets.
+const hostLength = 2
+const hostHeight = 1
+const hostWidth = 0.6
+part('panel.host',
+  box({ length: hostLength, width: hostWidth, height: hostHeight, material: 'metal' })
+).atWorld([0, hostHeight / 2, 0]).withRole('host_body')
+part('panel.handle',
+  cylinder({ radius: 0.025, height: 0.28, material: 'metal' })
+).atWorld([0.45, hostHeight * 0.55, -hostWidth / 2 - 0.025])
+  .rotate({ axis: 'x', degrees: 90 })
+  .withRole('surface_handle')
+
+Pattern C: cylindrical body with ports and access details.
+Use for tanks, vessels, hoppers, reactors, columns, pressure shells.
+verticalVessel({ id: 'vessel', diameter: 1.2, height: 3.2, includeLadder: true, includeManway: true, includePorts: true, material: 'painted_steel' });
+flangePort({ id: 'vessel.feed', target: 'vessel.shell', side: 'front', nominalDiameter: 0.18, length: 0.28 });
+nameplate({ id: 'vessel.nameplate', target: 'vessel.shell', side: 'front', width: 0.22, height: 0.08, text: 'VESSEL' });
+
+Pattern D: hinged door with child handle.
+Use for doors, lids, covers, cabinet panels, inspection flaps.
+part('cabinet.body',
+  box({ length: 1.2, width: 0.5, height: 1.6, material: 'metal' })
+).atWorld([0, 0.8, 0]).withRole('cabinet_body')
+part('cabinet.door',
+  box({ length: 0.58, width: 0.04, height: 1.2, material: 'metal' })
+).atWorld([-0.18, 0.85, -0.27])
+  .rotateAround([-0.6, 0.85, -0.27], { axis: 'y', degrees: -18 })
+  .withRole('hinged_door')
+part('cabinet.door.handle',
+  cylinder({ radius: 0.025, height: 0.24, material: 'metal' })
+).childOf('cabinet.door').atLocal([0.2, 0, -0.04]).rotate({ axis: 'x', degrees: 90 }).withRole('door_handle')
+hinge({ part: 'cabinet.door', anchor: 'cabinet.body', axis: [0, 1, 0], pivot: [-0.6, 0.85, -0.27], restAngle: -18 * math.DEG_TO_RAD, limits: [-100 * math.DEG_TO_RAD, 5 * math.DEG_TO_RAD] });
+
+Pattern E: radial bolt circle.
+Use for flanges, covers, bearing plates, wheels, turntables, cannon breech rings.
+const boltCount = 8
+const boltCircleRadius = 0.42
+for (let i = 0; i < boltCount; i++) {
+  const a = math.TAU * i / boltCount
+  part('flange.bolt.' + i,
+    cylinder({ radius: 0.025, height: 0.05, material: 'metal' })
+  ).atWorld([math.cos(a) * boltCircleRadius, 0.04, math.sin(a) * boltCircleRadius])
+    .withRole('bolt_head')
+}
+
+Pattern F: arched bridge or repeated spans.
+Use extrude for a shaped arch plate. Use a distinct X center for every span.
+const bridgeLength = 8
+const archCount = 4
+const spanSpacing = bridgeLength / archCount
+const archProfile = [[-0.8,0],[-0.7,0.45],[-0.45,0.75],[0,0.9],[0.45,0.75],[0.7,0.45],[0.8,0],[0.55,0],[0.4,0.38],[0,0.52],[-0.4,0.38],[-0.55,0]]
+for (let i = 0; i < archCount; i++) {
+  const x = -bridgeLength / 2 + spanSpacing * (i + 0.5)
+  part('bridge.arch.' + i,
+    extrude({ profile: archProfile, depth: 0.35, material: 'metal', color: '#9b9488' })
+  ).atWorld([x, 0.3, 0]).rotate({ axis: 'y', degrees: 90 }).withRole('bridge_arch_span')
+}
+
+Pattern G: skid-mounted equipment package.
+Use for pumps, fans, compressors, blowers, process skids, compact machines.
+skidBase({ id: 'package.skid', length: 2.6, width: 1.0, height: 0.18, material: 'painted_steel' });
+motor({ id: 'package.motor', target: 'package.skid.rail.left', side: 'top', position: 'rear', diameter: 0.32, length: 0.72, material: 'painted_steel' });
+pumpCasing({ id: 'package.pump', target: 'package.skid.rail.left', diameter: 0.45, width: 0.32, material: 'cast_iron' });
+flangePort({ id: 'package.inlet', target: 'package.pump.casing', side: 'front', nominalDiameter: 0.18 });
+flangePort({ id: 'package.outlet', target: 'package.pump.casing', side: 'right', nominalDiameter: 0.16 });
+
+Pattern H: articulated chain.
+Use for robot arms, excavator booms, folding cranes, cannons with elevating barrels.
+const shoulder = [0, 0.45, 0]
+const elbow = [0.5, 1.05, 0]
+part('arm.base', cylinder({ radius: 0.28, height: 0.35, material: 'metal' })).atWorld([0, 0.175, 0]).withRole('rotary_base')
+part('arm.upper',
+  cylinder({ radius: 0.08, height: 0.85, material: 'metal' })
+).atWorld([0.25, 0.75, 0]).rotate({ axis: 'z', degrees: 55 }).withRole('upper_link')
+part('arm.forearm',
+  cylinder({ radius: 0.065, height: 0.75, material: 'metal' })
+).atWorld([0.75, 1.15, 0]).rotateAround(elbow, { axis: 'z', degrees: -35 }).withRole('forearm_link')
+hinge({ part: 'arm.forearm', anchor: 'arm.upper', axis: [0, 0, 1], pivot: elbow, restAngle: -35 * math.DEG_TO_RAD, limits: [-110 * math.DEG_TO_RAD, 45 * math.DEG_TO_RAD] });
+`.trim()
+
 /**
  * System prompt for DSL authoring. The laptop fixture is the canonical
  * few-shot: it exercises params, functions, nested loops, rotateAround,
@@ -253,6 +349,8 @@ export function buildDslAuthorSystemPrompt(): string {
     REALISM_CHECKLIST,
     '',
     DSL_RULES,
+    '',
+    DSL_DEFINITION_PATTERNS,
     '',
     '===== REFERENCE EXAMPLE (laptop) =====',
     LAPTOP_DSL_SOURCE.trim(),
