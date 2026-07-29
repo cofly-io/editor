@@ -38,7 +38,7 @@ export function shouldStartNewGeometryAgentSession(text: string): boolean {
   if (!normalized) return false
   return (
     /^(generate|create|make|build|new|start|regenerate)\b/i.test(normalized) ||
-    /(?:^|[\s，。,.!?！？])(?:生成|创建|建立|新建|新做|另做|重新生成|再生成)(?:一个|一台|一套|1个|1台)?/.test(
+    /(?:^|[\s,，。?.!?！？])(?:生成|创建|建立|新建|新做|另做|重新生成|再生成|做|造|搭建)(?:一个|一台|一套|1个|1台)?/.test(
       normalized,
     )
   )

@@ -9,6 +9,8 @@ import {
   isRecord,
   safeParseJson,
 } from './chat-utils'
+import { createGeometryAgentSessionClient } from '../../../../../lib/geometry-agent-client'
+import type { GeometryAgentRunResponse } from '../../../../../lib/geometry-agent-client-types'
 import {
   buildDeviceProgressSummary,
   buildGeneratorDslResultSummary,
@@ -34,6 +36,45 @@ function diagnosticCodesFromDslDowngrade(dslDowngrade: unknown) {
   return dslDowngrade.diagnosticCodes.map((code) => String(code)).filter(Boolean)
 }
 
+function generatorDslSourceFromResult(data: Record<string, unknown>): string | null {
+  const generatedAssembly = data.generatedAssembly
+  if (!isRecord(generatedAssembly)) return null
+  const source = generatedAssembly.source
+  return typeof source === 'string' && source.trim().length > 0 ? source : null
+}
+
+function lastContentFromResult(data: Record<string, unknown>): string | null {
+  return typeof data.lastContent === 'string' && data.lastContent.trim().length > 0
+    ? data.lastContent
+    : null
+}
+
+function attachActualDslSceneRoot(
+  session: GeometryAgentRunResponse,
+  data: Record<string, unknown>,
+): GeometryAgentRunResponse {
+  if (!session.generatedAssembly) return session
+  const generatedAssembly = data.generatedAssembly
+  if (!isRecord(generatedAssembly) || !isRecord(generatedAssembly.rootNode)) return session
+  const actualRootNode = generatedAssembly.rootNode as NonNullable<
+    GeometryAgentRunResponse['generatedAssembly']
+  >['rootNode']
+  return {
+    ...session,
+    generatedAssembly: {
+      ...session.generatedAssembly,
+      rootNode: actualRootNode,
+      ...(Array.isArray(generatedAssembly.patches)
+        ? {
+            patches: generatedAssembly.patches as NonNullable<
+              GeometryAgentRunResponse['generatedAssembly']
+            >['patches'],
+          }
+        : {}),
+    },
+  }
+}
+
 export function usePrimitiveRuns({
   closeRunEventSource,
   hasRunEventSource,
@@ -55,12 +96,10 @@ export function usePrimitiveRuns({
   const primitiveRunDebugRef = useRef<Map<string, string[]>>(new Map())
 
   const completePrimitiveRun = useCallback(
-    (runId: string, resultData: unknown) => {
+    async (runId: string, resultData: unknown, prompt?: string) => {
       const data = isRecord(resultData) ? resultData : {}
       const runDebugLines = primitiveRunDebugRef.current.get(runId) ?? []
-      const completionDebugDetails = [`runId=${runId}`, '', ...runDebugLines]
-        .filter(Boolean)
-        .join('\n')
+      let bridgedGeometryAgentSession: GeometryAgentRunResponse | undefined
 
       // generator_dsl route: the run result carries a patch plan instead of
       // a GeneratedGeometryArtifact. Apply it to the scene atomically
@@ -91,6 +130,26 @@ export function usePrimitiveRuns({
           }
         }
       }
+      const dslSource = dslApply?.applied ? generatorDslSourceFromResult(data) : null
+      if (dslSource) {
+        try {
+          const session = await createGeometryAgentSessionClient({
+            mode: 'text',
+            prompt: prompt ?? lastContentFromResult(data) ?? 'Generator DSL assembly',
+            initialSource: dslSource,
+          })
+          bridgedGeometryAgentSession = attachActualDslSceneRoot(session, data)
+        } catch (error) {
+          runDebugLines.push(
+            `[geometry-agent-session] failed to persist DSL source for follow-up edits: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          )
+        }
+      }
+      const completionDebugDetails = [`runId=${runId}`, '', ...runDebugLines]
+        .filter(Boolean)
+        .join('\n')
 
       const artifact = isRecord(data.artifact)
         ? (data.artifact as unknown as GeneratedGeometryArtifact)
@@ -201,6 +260,9 @@ export function usePrimitiveRuns({
           generationRun: { id: runId, mode: 'primitive', status: 'succeeded' },
           factoryRunSummary: summary,
           ...(artifact ? { geometryArtifact: artifact } : {}),
+          ...(bridgedGeometryAgentSession
+            ? { geometryAgentSession: bridgedGeometryAgentSession }
+            : {}),
         }
         if (runMessageIndex >= 0) {
           updated[runMessageIndex] = resultMessage
@@ -377,7 +439,7 @@ export function usePrimitiveRuns({
         const debugLines = primitiveRunDebugRef.current.get(run.id)
         debugLines?.push(`[result] ${debugString(parsed.data)}`)
         closeRunEventSource(run.id)
-        completePrimitiveRun(run.id, parsed.data)
+        void completePrimitiveRun(run.id, parsed.data, run.prompt)
       })
 
       source.addEventListener('error', (event) => {
@@ -408,7 +470,7 @@ export function usePrimitiveRuns({
               currentRun && typeof currentRun.status === 'string' ? currentRun.status : undefined
             if (status === 'succeeded' && currentRun) {
               closeRunEventSource(run.id)
-              completePrimitiveRun(run.id, currentRun.result)
+              void completePrimitiveRun(run.id, currentRun.result, run.prompt)
               return
             }
             if (status !== 'failed' && status !== 'cancelled') return
