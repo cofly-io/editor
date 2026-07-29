@@ -26,7 +26,7 @@ import type { DslRunResult } from './generator-dsl-run'
 // ---------------------------------------------------------------------------
 
 /** Prompt version for the DSL author prompt (dashboard joins). */
-export const DSL_AUTHOR_PROMPT_VERSION = '1.2.2'
+export const DSL_AUTHOR_PROMPT_VERSION = '1.2.3'
 
 const DSL_EQUIPMENT_API_SUMMARY = `
   centrifugalFan({ id, diameter?, width?, includeMotor?, includeGuard?, includeBase?, material?, color? }) — centrifugal fan with volute casing, inlet ring/nozzle, outlet duct, impeller cues, bearing pedestal, motor, coupling guard and base
@@ -121,6 +121,14 @@ General:
 - Avoid obviously distorted proportions: motors, doors, covers, ports, and guards must be scaled relative to the equipment they attach to.
 - Surface-mounted details must sit OUTSIDE the target part, never at its center. Nameplates, labels, handles, buttons, inspection doors, hinges, flanges, pipe ports, brackets, feet, motors, gearboxes, bearing blocks, coupling guards, and guards need a small outward offset/clearance along the chosen side normal.
 - When adding details by hand with part(...), compute positions from the host surface: use host half-size + detail half-thickness + 0.01m clearance on the outward axis. If you cannot calculate that safely, use nameplate(), inspectionDoor(), flangePort(), guardCover(), sheetCover(), motor(), gearbox(), platform(), ladder(), or handrail() with target/side.
+- Repeated scene structures such as bridge arches, balusters, railing posts,
+  fence pickets, flowers, trees, windows, bolts, and decorative ornaments must
+  use the loop index in their .atWorld/.atLocal position. Adjacent repeated
+  parts may touch or have clearance, but they must not share one center point
+  or occupy the same span. For bridges specifically: X is the bridge length,
+  Z is the bridge width, Y is up; compute each arch center as
+  x = -totalLength / 2 + spanSpacing * (i + 0.5), and use distinct ids such
+  as 'bridge.arch.' + i.
 
 Conveyors:
 - Use belt(), rollerArray(), boxFrame(), motor(), guardCover()/inspectionDoor()/nameplate() when requested.
@@ -223,6 +231,12 @@ const DSL_RULES = `
     host with a visible outward clearance (typically 0.01m to 0.03m). If a
     previous attempt reports gate_part_overlap, move the smaller/accessory
     part outward along the nearest side normal; do not delete the detail.
+14. Repeated structural spans must be spatially indexed. If part ids differ
+    only by a numeric suffix (for example bridge.arch.0 and bridge.arch.1,
+    rail.post.0 and rail.post.1, flower.0 and flower.1), their positions must
+    differ along the repetition axis by at least their own width/depth plus
+    intended clearance. Never instantiate repeated arches/posts/ornaments at
+    a constant .atWorld([0, ...]) coordinate inside a loop.
 `.trim()
 
 /**
@@ -340,7 +354,7 @@ export function buildDslRepairMessage(result: Extract<DslRunResult, { kind: 'fai
 }
 
 function dslSyntaxRepairHints(
-  diagnostics: readonly Array<{ code: string; message: string }>,
+  diagnostics: ReadonlyArray<{ code: string; message: string }>,
 ): string[] {
   const hints: string[] = []
   for (const diagnostic of diagnostics) {
@@ -417,12 +431,37 @@ function spatialRepairHints(issues: readonly string[]): string[] {
         `Move "${accessory}" to the OUTSIDE surface of "${host}" with 0.01m-0.03m clearance along the chosen side normal. It is likely embedded inside the host; keep the detail but change its position/side/atLocal offset.`,
       )
     } else if (first && second && Number.isFinite(percent) && percent >= 80) {
+      const repeatedSiblingHint = repeatedSiblingOverlapHint(first, second)
+      if (repeatedSiblingHint) hints.push(repeatedSiblingHint)
       hints.push(
         `Separate "${first}" and "${second}" so neither part contains the other. If one is an attachment, place it on the exterior face with a small outward clearance.`,
       )
     }
   }
   return [...new Set(hints)]
+}
+
+function repeatedSiblingOverlapHint(first: string, second: string): string | null {
+  const firstTokens = numericSiblingTokens(first)
+  const secondTokens = numericSiblingTokens(second)
+  if (!firstTokens || !secondTokens) return null
+  if (firstTokens.base !== secondTokens.base || firstTokens.index === secondTokens.index)
+    return null
+  if (/bridge\.arch|arch|span|bay/i.test(firstTokens.base)) {
+    return `Bridge/span repair: "${first}" and "${second}" are repeated sibling spans but occupy the same volume. In the loop, compute each arch center from the loop index along X, e.g. spanSpacing = totalLength / archCount; x = -totalLength / 2 + spanSpacing * (i + 0.5); then place each arch with .atWorld([x, archY, 0]). Do not reuse a constant arch position for every i.`
+  }
+  if (/post|baluster|picket|column|ornament|flower|tree|window|bolt|arch/i.test(firstTokens.base)) {
+    return `Repeated-detail repair: "${first}" and "${second}" differ only by index but overlap. Use the loop index to compute a distinct center position along the repeated axis; do not reuse one constant .atWorld/.atLocal coordinate for all siblings.`
+  }
+  return null
+}
+
+function numericSiblingTokens(id: string): { base: string; index: string } | null {
+  const match = /^(.*?)(?:\.|_|-)(\d+)(?:$|[._-].*)/.exec(id)
+  if (!match) return null
+  const base = match[1]
+  const index = match[2]
+  return base && index ? { base, index } : null
 }
 
 function specializedAttachmentHint(accessory: string, host: string): string | null {

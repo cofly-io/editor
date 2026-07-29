@@ -674,6 +674,8 @@ describe('prompt + repair message content', () => {
     expect(prompt).toContain('Never write part')
     expect(prompt).toContain("nameplate({ id: 'robot_arm.nameplate'")
     expect(prompt).toContain('Do not bury accessories inside larger bodies')
+    expect(prompt).toContain('Repeated scene structures such as bridge arches')
+    expect(prompt).toContain('x = -totalLength / 2 + spanSpacing * (i + 0.5)')
     expect(prompt).toContain('rotateAround')
     expect(prompt).toContain('guardCover')
     expect(prompt).toContain('flangePort')
@@ -804,6 +806,41 @@ describe('prompt + repair message content', () => {
     expect(msg).toContain('Spatial repair hints')
     expect(msg).toContain('Move "robot.nameplate" to the OUTSIDE surface of "robot.arm1"')
     expect(msg).toContain('0.01m-0.03m clearance')
+  })
+
+  it('repair message explains how to separate repeated bridge spans', () => {
+    const failed: Extract<DslRunResult, { kind: 'failed' }> = {
+      kind: 'failed',
+      downgrade: {
+        reason: 'spatial_gate_failed',
+        message:
+          'Spatial quality gate rejected the assembly: gate_part_overlap: parts "bridge.arch.0" and "bridge.arch.1" overlap 100% of the smaller volume.',
+        attempts: 3,
+        diagnosticCodes: ['gate_part_overlap'],
+        route,
+      },
+      attempts: [
+        {
+          attempt: 1,
+          sandboxMs: 0,
+          diagnostics: [],
+          spatial: {
+            passed: false,
+            score: 0.5,
+            issues: [
+              'gate_part_overlap: parts "bridge.arch.0" and "bridge.arch.1" overlap 100% of the smaller volume.',
+            ],
+            warnings: [],
+          },
+        },
+      ],
+      budgetUsage: { sandboxAttempts: 1, totalSandboxMs: 0, partCount: 2, wallTimeBudgetMs: 5000 },
+    }
+    const msg = buildDslRepairMessage(failed)
+    expect(msg).toContain('Bridge/span repair')
+    expect(msg).toContain('spanSpacing = totalLength / archCount')
+    expect(msg).toContain('.atWorld([x, archY, 0])')
+    expect(msg).toContain('Do not reuse a constant arch position')
   })
 
   it('repair message treats gearbox and drive details as exterior attachments', () => {

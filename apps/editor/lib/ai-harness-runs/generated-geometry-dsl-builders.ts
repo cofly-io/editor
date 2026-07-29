@@ -264,9 +264,10 @@ function geometryBuilderSize(g: GeometryBuilder): Vec3 {
       ]
       for (const p of path) {
         for (let i = 0; i < 3; i++) {
-          if (Number.isFinite(p[i])) {
-            min[i] = Math.min(min[i], p[i]!)
-            max[i] = Math.max(max[i], p[i]!)
+          const coord = p[i]
+          if (typeof coord === 'number' && Number.isFinite(coord)) {
+            min[i] = Math.min(min[i]!, coord)
+            max[i] = Math.max(max[i]!, coord)
           }
         }
       }
