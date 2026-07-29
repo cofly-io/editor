@@ -189,6 +189,96 @@ function isGeometryBuilder(value: unknown): value is GeometryBuilder {
   )
 }
 
+function num(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+function geometryBuilderSize(g: GeometryBuilder): Vec3 {
+  switch (g.kind) {
+    case 'box':
+      return [num(g.length, 1), num(g.height, 1), num(g.width, 1)]
+    case 'cylinder':
+    case 'cone': {
+      const radius = num(g.radius, 0.5)
+      return [radius * 2, num(g.height, 1), radius * 2]
+    }
+    case 'frustum': {
+      const radius = Math.max(num(g.radiusTop, 0.25), num(g.radiusBottom, 0.5))
+      return [radius * 2, num(g.height, 1), radius * 2]
+    }
+    case 'sphere': {
+      const radius = num(g.radius, 0.5)
+      return [radius * 2, radius * 2, radius * 2]
+    }
+    case 'torus': {
+      const radius = num(g.majorRadius, 0.5) + num(g.tubeRadius, 0.1)
+      return [radius * 2, num(g.tubeRadius, 0.1) * 2, radius * 2]
+    }
+    case 'lathe': {
+      const profile = Array.isArray(g.profile) ? g.profile : []
+      if (profile.length === 0) return [1, 1, 1]
+      let maxX = 0
+      let minY = Number.POSITIVE_INFINITY
+      let maxY = Number.NEGATIVE_INFINITY
+      for (const [x, y] of profile) {
+        if (Number.isFinite(x)) maxX = Math.max(maxX, Math.abs(x))
+        if (Number.isFinite(y)) {
+          minY = Math.min(minY, y)
+          maxY = Math.max(maxY, y)
+        }
+      }
+      return [maxX * 2 || 1, maxY - minY || 1, maxX * 2 || 1]
+    }
+    case 'extrude': {
+      const profile = Array.isArray(g.profile) ? g.profile : []
+      if (profile.length === 0) return [1, num(g.depth, 0.1), 1]
+      let minX = Number.POSITIVE_INFINITY
+      let maxX = Number.NEGATIVE_INFINITY
+      let minY = Number.POSITIVE_INFINITY
+      let maxY = Number.NEGATIVE_INFINITY
+      for (const [x, y] of profile) {
+        if (Number.isFinite(x)) {
+          minX = Math.min(minX, x)
+          maxX = Math.max(maxX, x)
+        }
+        if (Number.isFinite(y)) {
+          minY = Math.min(minY, y)
+          maxY = Math.max(maxY, y)
+        }
+      }
+      return [maxX - minX || 1, num(g.depth, 0.1), maxY - minY || 1]
+    }
+    case 'sweep': {
+      const path = Array.isArray(g.path) ? g.path : []
+      const radius = num(g.radius, 0.03)
+      if (path.length === 0) return [radius * 2, radius * 2, radius * 2]
+      const min: Vec3 = [
+        Number.POSITIVE_INFINITY,
+        Number.POSITIVE_INFINITY,
+        Number.POSITIVE_INFINITY,
+      ]
+      const max: Vec3 = [
+        Number.NEGATIVE_INFINITY,
+        Number.NEGATIVE_INFINITY,
+        Number.NEGATIVE_INFINITY,
+      ]
+      for (const p of path) {
+        for (let i = 0; i < 3; i++) {
+          if (Number.isFinite(p[i])) {
+            min[i] = Math.min(min[i], p[i]!)
+            max[i] = Math.max(max[i], p[i]!)
+          }
+        }
+      }
+      return [
+        (max[0] - min[0] || 0) + radius * 2,
+        (max[1] - min[1] || 0) + radius * 2,
+        (max[2] - min[2] || 0) + radius * 2,
+      ]
+    }
+  }
+}
+
 /**
  * Parse a CSS hex color ('#rrggbb' or '#rgb') into a linear-ish RGB Vec3
  * in 0..1. Returns undefined for malformed input so a bad color never
@@ -647,6 +737,27 @@ export function createDslApiBuilders(opts: CreateBuildersOptions) {
     equipmentTargets.set(key, bounds)
   }
 
+  const rawPartBounds = (part: PartBuilder): EquipmentBounds | undefined => {
+    if (part.transformSpace !== 'world') return undefined
+    return {
+      id: part.id,
+      center: part.position,
+      size: geometryBuilderSize(part.geometry),
+      ...(part.semanticRole ? { semanticRole: part.semanticRole } : {}),
+    }
+  }
+
+  const resolveTarget = (idOrRole: string | undefined): EquipmentBounds | undefined => {
+    if (!idOrRole) return undefined
+    const known = equipmentTargets.get(idOrRole)
+    if (known) return known
+    const rawPart = acc.parts.find((p) => p.id === idOrRole || p.semanticRole === idOrRole)
+    const bounds = rawPart ? rawPartBounds(rawPart) : undefined
+    if (bounds) rememberTarget(idOrRole, bounds)
+    if (bounds?.semanticRole) rememberTarget(bounds.semanticRole, bounds)
+    return bounds
+  }
+
   const unionBounds = (id: string, bounds: EquipmentBounds[]): EquipmentBounds | undefined => {
     if (bounds.length === 0) return undefined
     const mins: Vec3 = [
@@ -718,7 +829,7 @@ export function createDslApiBuilders(opts: CreateBuildersOptions) {
   }
 
   const equipmentContext: EquipmentBuildContext = {
-    resolveTarget: (idOrRole) => (idOrRole ? equipmentTargets.get(idOrRole) : undefined),
+    resolveTarget,
   }
 
   return {

@@ -97,6 +97,30 @@ describe('compileDsl — equipment semantic constructors', () => {
     expect(pipe?.geometry.params.radialSegments).toBeGreaterThanOrEqual(32)
   })
 
+  test('lets equipment constructors target raw part() assemblies by id', () => {
+    const result = compileDsl(`
+      part('robot_arm.shoulder', cylinder({ radius: 0.16, height: 0.42, material: 'metal' })).atWorld([0, 0.9, 0]).withRole('robot_joint');
+      part('robot_arm.elbow', cylinder({ radius: 0.13, height: 0.34, material: 'metal' })).atWorld([0.7, 1.45, 0]).withRole('robot_joint');
+      part('robot_arm.wrist', cylinder({ radius: 0.1, height: 0.26, material: 'metal' })).atWorld([1.15, 1.75, 0]).withRole('robot_joint');
+      motor({ id: 'robot_arm.shoulder_motor', target: 'robot_arm.shoulder', side: 'right', position: 'center', diameter: 0.18 });
+      motor({ id: 'robot_arm.elbow_motor', target: 'robot_arm.elbow', side: 'right', position: 'center', diameter: 0.18 });
+      motor({ id: 'robot_arm.wrist_motor', target: 'robot_arm.wrist', side: 'right', position: 'center', diameter: 0.18 });
+    `)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const capPositions = [
+      result.ir.parts.find((p) => p.id === 'robot_arm.shoulder_motor.front_end_cap'),
+      result.ir.parts.find((p) => p.id === 'robot_arm.elbow_motor.front_end_cap'),
+      result.ir.parts.find((p) => p.id === 'robot_arm.wrist_motor.front_end_cap'),
+    ].map((part) => {
+      expect(part).toBeDefined()
+      return part?.transform.position.join(',')
+    })
+
+    expect(new Set(capPositions).size).toBe(3)
+  })
+
   test('compiles gearbox and bearing block constructors through the same DSL pipeline', () => {
     const result = compileDsl(`
       belt({ id: 'belt', length: 5.2, width: 0.68 });
