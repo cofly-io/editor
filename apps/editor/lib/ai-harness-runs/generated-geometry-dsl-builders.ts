@@ -167,6 +167,28 @@ function toRecipe(g: GeometryBuilder): GeometryRecipe {
   return { kind: 'primitive-recipe', recipeId: `primitive.${kind}`, params }
 }
 
+const GEOMETRY_BUILDER_KINDS = new Set([
+  'box',
+  'cylinder',
+  'sphere',
+  'cone',
+  'frustum',
+  'torus',
+  'lathe',
+  'extrude',
+  'sweep',
+])
+
+function isGeometryBuilder(value: unknown): value is GeometryBuilder {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'kind' in value &&
+    typeof (value as { kind: unknown }).kind === 'string' &&
+    GEOMETRY_BUILDER_KINDS.has((value as { kind: string }).kind)
+  )
+}
+
 /**
  * Parse a CSS hex color ('#rrggbb' or '#rgb') into a linear-ish RGB Vec3
  * in 0..1. Returns undefined for malformed input so a bad color never
@@ -588,9 +610,23 @@ export function createDslApiBuilders(opts: CreateBuildersOptions) {
   const { acc, onDiagnostic } = opts
   const equipmentTargets = new Map<string, EquipmentBounds>()
 
-  const registerPart = (id: unknown, geometry: GeometryBuilder): PartBuilder | undefined => {
+  const registerPart = (id: unknown, geometry: unknown): PartBuilder | undefined => {
     if (typeof id !== 'string' || id.length === 0) {
       onDiagnostic('part() requires a non-empty string id', 'dsl_invalid_part_id')
+      return undefined
+    }
+    if (Array.isArray(geometry)) {
+      onDiagnostic(
+        `part('${id}', ...) requires a primitive geometry builder such as box() or cylinder(). Equipment semantic constructors such as nameplate(), inspectionDoor(), motor(), guardCover(), belt(), rollerArray(), boxFrame(), verticalVessel(), dustCollector(), heatExchanger(), and agitatorTank() already create parts and must be called as top-level statements, not wrapped in part().`,
+        'dsl_equipment_constructor_wrapped_in_part',
+      )
+      return undefined
+    }
+    if (!isGeometryBuilder(geometry)) {
+      onDiagnostic(
+        `part('${id}', ...) requires a primitive geometry builder such as box(), cylinder(), sphere(), cone(), frustum(), torus(), lathe(), extrude(), or sweep().`,
+        'dsl_invalid_part_geometry',
+      )
       return undefined
     }
     if (acc.parts.some((p) => p.id === id)) {

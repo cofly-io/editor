@@ -26,7 +26,7 @@ import type { DslRunResult } from './generator-dsl-run'
 // ---------------------------------------------------------------------------
 
 /** Prompt version for the DSL author prompt (dashboard joins). */
-export const DSL_AUTHOR_PROMPT_VERSION = '1.2.0'
+export const DSL_AUTHOR_PROMPT_VERSION = '1.2.1'
 
 const DSL_EQUIPMENT_API_SUMMARY = `
   centrifugalFan({ id, diameter?, width?, includeMotor?, includeGuard?, includeBase?, material?, color? }) — centrifugal fan with volute casing, inlet ring/nozzle, outlet duct, impeller cues, bearing pedestal, motor, coupling guard and base
@@ -117,6 +117,7 @@ const REALISM_CHECKLIST = `
 ===== REALISM CHECKLIST (your output must pass these checks) =====
 General:
 - Prefer semantic equipment constructors; they create named parts, material presets, rounded details, and stable IDs.
+- Equipment semantic constructors are top-level assembly statements, not geometry builders. Write nameplate({ id: 'robot_arm.nameplate', target: 'robot_arm.base', side: 'front' }); directly. Never write part('robot_arm.nameplate', nameplate(...)).
 - Avoid obviously distorted proportions: motors, doors, covers, ports, and guards must be scaled relative to the equipment they attach to.
 - Surface-mounted details must sit OUTSIDE the target part, never at its center. Nameplates, labels, handles, buttons, inspection doors, hinges, flanges, pipe ports, brackets, feet, motors, gearboxes, bearing blocks, coupling guards, and guards need a small outward offset/clearance along the chosen side normal.
 - When adding details by hand with part(...), compute positions from the host surface: use host half-size + detail half-thickness + 0.01m clearance on the outward axis. If you cannot calculate that safely, use nameplate(), inspectionDoor(), flangePort(), guardCover(), sheetCover(), motor(), gearbox(), platform(), ladder(), or handrail() with target/side.
@@ -191,7 +192,17 @@ const DSL_RULES = `
     Serviceable equipment should use platform(), ladder(), and handrail()
     for access details. Only add raw part(..., box/cylinder/...) for missing
     details that the semantic constructor does not cover.
-12. Do not bury accessories inside larger bodies. A surface accessory whose
+12. Equipment semantic constructors return complete part sets. Call belt(),
+    rollerArray(), boxFrame(), guardCover(), motor(), gearbox(),
+    bearingBlock(), platform(), ladder(), handrail(), inspectionDoor(),
+    nameplate(), sheetCover(), flangePort(), pipeRun(), controlCabinet(),
+    skidBase(), pumpCasing(), centrifugalFan(), blowerPackage(),
+    verticalVessel(), dustCollector(), heatExchanger(), and agitatorTank()
+    as top-level statements. NEVER wrap them in part(...). Correct:
+    nameplate({ id: 'robot_arm.nameplate', target: 'robot_arm.base',
+    side: 'front' }); Incorrect: part('robot_arm.nameplate',
+    nameplate({ ... })).
+13. Do not bury accessories inside larger bodies. A surface accessory whose
     id or role is a nameplate, label, warning plate, handle, knob, button,
     inspection door, hinge, flange, port, pipe neck, bracket, foot, motor,
     gearbox, bearing block, coupling guard, ladder, platform, guard, or cover
@@ -313,9 +324,8 @@ export function buildDslRepairMessage(result: Extract<DslRunResult, { kind: 'fai
 function spatialRepairHints(issues: readonly string[]): string[] {
   const hints: string[] = []
   for (const issue of issues) {
-    const overlap = /gate_part_overlap:\s*parts\s*"([^"]+)"\s*and\s*"([^"]+)"\s*overlap\s*(\d+)%/i.exec(
-      issue,
-    )
+    const overlap =
+      /gate_part_overlap:\s*parts\s*"([^"]+)"\s*and\s*"([^"]+)"\s*overlap\s*(\d+)%/i.exec(issue)
     if (!overlap) continue
     const [, first, second, percentText] = overlap
     const percent = Number(percentText)
@@ -347,7 +357,11 @@ function specializedAttachmentHint(accessory: string, host: string): string | nu
     }
     return `For fasteners like "${accessory}", model only the visible head on the exterior face of "${host}" unless an exposed shank is requested; do not center the whole bolt inside the host volume.`
   }
-  if (/(gearbox|gear_box|motor|bearing|coupling|drive|transmission|reducer|servo|减速|齿轮箱|电机|轴承|联轴器|驱动)/i.test(accessoryText)) {
+  if (
+    /(gearbox|gear_box|motor|bearing|coupling|drive|transmission|reducer|servo|减速|齿轮箱|电机|轴承|联轴器|驱动)/i.test(
+      accessoryText,
+    )
+  ) {
     return `For drivetrain attachments like "${accessory}", mount the housing beside or above "${host}" with a visible bracket/clearance; do not place the drivetrain center inside the host body.`
   }
   return null
@@ -364,18 +378,32 @@ function accessoryScore(id: string): number {
   const text = id.toLowerCase()
   let score = 0
   if (/(nameplate|label|warning|tag|铭牌|标签|警示)/i.test(text)) score += 6
-  if (/(handle|knob|button|switch|door|hinge|manway|inspection|把手|按钮|门|铰链|检修)/i.test(text)) {
+  if (
+    /(handle|knob|button|switch|door|hinge|manway|inspection|把手|按钮|门|铰链|检修)/i.test(text)
+  ) {
     score += 5
   }
-  if (/(gearbox|gear_box|motor|bearing|coupling|drive|transmission|reducer|servo|减速|齿轮箱|电机|轴承|联轴器|驱动)/i.test(text)) {
+  if (
+    /(gearbox|gear_box|motor|bearing|coupling|drive|transmission|reducer|servo|减速|齿轮箱|电机|轴承|联轴器|驱动)/i.test(
+      text,
+    )
+  ) {
     score += 4
   }
   if (/(flange|port|nozzle|pipe|neck|valve|法兰|接口|管口|喷嘴|阀)/i.test(text)) score += 4
-  if (/(bracket|mount|foot|feet|bolt|fastener|ladder|platform|rail|支架|地脚|螺栓|爬梯|平台)/i.test(text)) {
+  if (
+    /(bracket|mount|foot|feet|bolt|fastener|ladder|platform|rail|支架|地脚|螺栓|爬梯|平台)/i.test(
+      text,
+    )
+  ) {
     score += 3
   }
   if (/(cover|guard|panel|罩|护罩|面板)/i.test(text)) score += 2
-  if (/(body|base|frame|shell|casing|cabinet|arm|link|tank|vessel|housing|主体|底座|框架|壳体|罐|臂)/i.test(text)) {
+  if (
+    /(body|base|frame|shell|casing|cabinet|arm|link|tank|vessel|housing|主体|底座|框架|壳体|罐|臂)/i.test(
+      text,
+    )
+  ) {
     score -= 2
   }
   return Math.max(0, score)

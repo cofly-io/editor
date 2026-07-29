@@ -620,6 +620,8 @@ describe('prompt + repair message content', () => {
     expect(prompt).toContain('REALISM CHECKLIST')
     expect(prompt).toContain('do not make the motor wider than the belt')
     expect(prompt).toContain('Surface-mounted details must sit OUTSIDE')
+    expect(prompt).toContain('Never write part')
+    expect(prompt).toContain("nameplate({ id: 'robot_arm.nameplate'")
     expect(prompt).toContain('Do not bury accessories inside larger bodies')
     expect(prompt).toContain('rotateAround')
     expect(prompt).toContain('guardCover')
@@ -748,7 +750,9 @@ describe('prompt + repair message content', () => {
       budgetUsage: { sandboxAttempts: 1, totalSandboxMs: 0, partCount: 2, wallTimeBudgetMs: 5000 },
     }
     const msg = buildDslRepairMessage(failed)
-    expect(msg).toContain('Move "robot_arm.elbow_gearbox" to the OUTSIDE surface of "robot_arm.base"')
+    expect(msg).toContain(
+      'Move "robot_arm.elbow_gearbox" to the OUTSIDE surface of "robot_arm.base"',
+    )
     expect(msg).toContain('change its position/side/atLocal offset')
   })
 

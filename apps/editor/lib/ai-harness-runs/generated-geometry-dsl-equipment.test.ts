@@ -13,6 +13,21 @@ const GUARDED_CONVEYOR_DSL = `
 `
 
 describe('compileDsl — equipment semantic constructors', () => {
+  test('rejects wrapping equipment semantic constructors inside part()', () => {
+    const result = compileDsl(`
+      part('robot_arm.base', box({ length: 0.8, width: 0.8, height: 0.2 })).atWorld([0, 0.1, 0]);
+      part('robot_arm.nameplate', nameplate({ id: 'robot_arm.nameplate', target: 'robot_arm.base', side: 'front' }));
+    `)
+
+    expect(result.ok).toBe(false)
+    expect(
+      result.diagnostics.some((d) => d.code === 'dsl_equipment_constructor_wrapped_in_part'),
+    ).toBe(true)
+    expect(result.diagnostics.map((d) => d.message).join('\n')).toContain(
+      'must be called as top-level statements',
+    )
+  })
+
   test('compiles a guarded conveyor through the existing DSL pipeline', () => {
     const result = compileDsl(GUARDED_CONVEYOR_DSL)
     if (!result.ok) {
