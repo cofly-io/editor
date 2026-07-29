@@ -33,6 +33,21 @@ describe('geometry agent routing inside primitive mode', () => {
     ).toBe(false)
   })
 
+  test('lets new robot arm prompts use the dedicated robot arm composer', () => {
+    expect(
+      shouldUseGeometryAgentForPrimitivePrompt({
+        text: '\u751f\u6210\u4e00\u4e2a\u5de5\u4e1a\u5e38\u89c1\u7684\u673a\u5668\u81c2',
+        messages: [],
+      }),
+    ).toBe(false)
+    expect(
+      shouldUseGeometryAgentForPrimitivePrompt({
+        text: 'generate a six-axis industrial robot arm',
+        messages: [],
+      }),
+    ).toBe(false)
+  })
+
   test('continues an existing geometry-agent session even for short edits', () => {
     const messages: ChatMessage[] = [
       {

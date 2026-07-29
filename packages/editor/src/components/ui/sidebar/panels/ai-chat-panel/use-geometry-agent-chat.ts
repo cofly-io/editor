@@ -34,6 +34,7 @@ export function shouldUseGeometryAgentForPrimitivePrompt(input: {
   const hasExistingSession = Boolean(latestGeometryAgentResponse(input.messages))
   const isNewCreateRequest = shouldStartNewGeometryAgentSession(text)
   if (hasExistingSession && !isNewCreateRequest) return true
+  if (isRobotArmPrompt(text)) return false
   return isIndustrialEquipmentGeometryPrompt(text)
 }
 
@@ -45,6 +46,12 @@ export function shouldStartNewGeometryAgentSession(text: string): boolean {
     /(?:^|[\s,，。?.!?！？])(?:生成|创建|建立|新建|新做|另做|重新生成|再生成|做|造|搭建)(?:一个|一台|一套|1个|1台)?/.test(
       normalized,
     )
+  )
+}
+
+function isRobotArmPrompt(text: string): boolean {
+  return /(?:robot[_\s-]?arm|industrial[_\s-]?robot|cobot|manipulator|fanuc|kuka|abb|\u673a\u5668\u81c2|\u673a\u68b0\u81c2|\u673a\u5668\u4eba|\u516d\u8f74|\u4e03\u8f74|\u56db\u8f74)/i.test(
+    text,
   )
 }
 
