@@ -17,6 +17,7 @@ import { DataWidgetNode } from './data-widget'
 import { ExtrudeNode } from './extrude'
 import { FenceNode } from './fence'
 import { FrustumNode } from './frustum'
+import { GeneratedAssemblyNode } from './generated-mesh'
 import { GuideNode } from './guide'
 import { HalfCylinderNode } from './half-cylinder'
 import { HemisphereNode } from './hemisphere'
@@ -65,6 +66,7 @@ export const LevelNode = BaseNode.extend({
         DataWidgetNode.shape.id,
         ExtrudeNode.shape.id,
         FrustumNode.shape.id,
+        GeneratedAssemblyNode.shape.id,
         HalfCylinderNode.shape.id,
         HemisphereNode.shape.id,
         PipeFittingNode.shape.id,

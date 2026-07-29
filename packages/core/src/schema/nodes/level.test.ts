@@ -5,6 +5,7 @@ import { CableTrayNode } from './cable-tray'
 import { ConveyorBeltNode } from './conveyor-belt'
 import { DataChartNode } from './data-chart'
 import { DataTableNode } from './data-table'
+import { GeneratedAssemblyNode } from './generated-mesh'
 import { LevelNode } from './level'
 import { SteelBeamNode } from './steel-beam'
 import { SteelFrameNode } from './steel-frame'
@@ -40,12 +41,28 @@ describe('LevelNode', () => {
 
   test('accepts generated primitive and assembly children', () => {
     const box = BoxNode.parse({ id: 'box_generated', parentId: 'level_main' })
+    const generatedAssembly = GeneratedAssemblyNode.parse({
+      id: 'generated-assembly_main',
+      parentId: 'level_main',
+      generator: {
+        sourceHash: 'source',
+        apiVersion: '1.0.0',
+        paramsHash: 'params',
+        irHash: 'ir',
+        source: 'part("body", box({ length: 1, width: 1, height: 1 }));',
+        params: {},
+      },
+    })
     const level = LevelNode.parse({
       id: 'level_main',
-      children: ['assembly_generated', box.id],
+      children: ['assembly_generated', box.id, generatedAssembly.id],
     })
 
-    expect(level.children).toEqual(['assembly_generated', 'box_generated'])
+    expect(level.children).toEqual([
+      'assembly_generated',
+      'box_generated',
+      'generated-assembly_main',
+    ])
     expect(AnyNode.safeParse(level).success).toBe(true)
   })
 
