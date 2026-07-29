@@ -161,6 +161,11 @@ const DSL_RULES = `
    .rotate({axis, degrees}) instead — e.g. to lay a vertical cylinder
    handle flat against a door: .childOf(door).atLocal([...])
    .rotate({axis: 'x', degrees: 90}).
+   Any part that declares hinge({ part: ... }) must have a visible non-zero
+   world rotation in the default pose. Use non-zero default joint angles
+   such as 25/-35/20 degrees for robot shoulder/elbow/wrist joints, and use
+   the same angle in rotateAround(...) and hinge().restAngle. If a part should
+   remain perfectly straight/static, do not declare a hinge for it.
 7. Child parts that move with a parent (screen in a lid, handle on a
    door) use .childOf(parentId).atLocal([...]). Once a part is a child,
    never call .atWorld or .rotateAround on it — use .rotate to reorient.
@@ -324,6 +329,16 @@ export function buildDslRepairMessage(result: Extract<DslRunResult, { kind: 'fai
 function spatialRepairHints(issues: readonly string[]): string[] {
   const hints: string[] = []
   for (const issue of issues) {
+    const hingeZero =
+      /gate_hinge_zero_angle:\s*part\s*"([^"]+)"\s*declares a hinge on\s*"([^"]+)"/i.exec(issue)
+    if (hingeZero) {
+      const [, partId, anchorId] = hingeZero
+      hints.push(
+        `Give hinged part "${partId}" a visible non-zero default world rotation relative to "${anchorId}". If it is a robot joint, set the controlling param default away from 0 (for example shoulder 25°, elbow -35°, wrist 20°), call rotateAround(pivot, { axis, degrees: P.jointAngleDeg }) on "${partId}", and set hinge().restAngle to the same non-zero angle in radians. If "${partId}" should stay straight/static, remove its hinge() declaration.`,
+      )
+      continue
+    }
+
     const overlap =
       /gate_part_overlap:\s*parts\s*"([^"]+)"\s*and\s*"([^"]+)"\s*overlap\s*(\d+)%/i.exec(issue)
     if (!overlap) continue

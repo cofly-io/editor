@@ -788,4 +788,38 @@ describe('prompt + repair message content', () => {
     expect(msg).toContain('place bolt HEADS on the +Y/top face of "robot_arm.base"')
     expect(msg).toContain('away from central columns, shoulders, arms, or housings')
   })
+
+  it('repair message explains how to fix zero-angle hinge declarations', () => {
+    const failed: Extract<DslRunResult, { kind: 'failed' }> = {
+      kind: 'failed',
+      downgrade: {
+        reason: 'spatial_gate_failed',
+        message:
+          'Spatial quality gate rejected the assembly: gate_hinge_zero_angle: part "robot_arm.wrist" declares a hinge on "robot_arm.forearm" but its world rotation is identity (0.00°).',
+        attempts: 1,
+        diagnosticCodes: ['gate_hinge_zero_angle'],
+        route,
+      },
+      attempts: [
+        {
+          attempt: 1,
+          sandboxMs: 0,
+          diagnostics: [],
+          spatial: {
+            passed: false,
+            score: 0.5,
+            issues: [
+              'gate_hinge_zero_angle: part "robot_arm.wrist" declares a hinge on "robot_arm.forearm" but its world rotation is identity (0.00°).',
+            ],
+            warnings: [],
+          },
+        },
+      ],
+      budgetUsage: { sandboxAttempts: 1, totalSandboxMs: 0, partCount: 2, wallTimeBudgetMs: 5000 },
+    }
+    const msg = buildDslRepairMessage(failed)
+    expect(msg).toContain('Give hinged part "robot_arm.wrist"')
+    expect(msg).toContain('visible non-zero default world rotation')
+    expect(msg).toContain('hinge().restAngle to the same non-zero angle')
+  })
 })
