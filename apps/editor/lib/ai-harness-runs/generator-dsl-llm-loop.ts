@@ -118,7 +118,7 @@ const REALISM_CHECKLIST = `
 General:
 - Prefer semantic equipment constructors; they create named parts, material presets, rounded details, and stable IDs.
 - Avoid obviously distorted proportions: motors, doors, covers, ports, and guards must be scaled relative to the equipment they attach to.
-- Surface-mounted details must sit OUTSIDE the target part, never at its center. Nameplates, labels, handles, buttons, inspection doors, hinges, flanges, pipe ports, brackets, feet, and guards need a small outward offset/clearance along the chosen side normal.
+- Surface-mounted details must sit OUTSIDE the target part, never at its center. Nameplates, labels, handles, buttons, inspection doors, hinges, flanges, pipe ports, brackets, feet, motors, gearboxes, bearing blocks, coupling guards, and guards need a small outward offset/clearance along the chosen side normal.
 - When adding details by hand with part(...), compute positions from the host surface: use host half-size + detail half-thickness + 0.01m clearance on the outward axis. If you cannot calculate that safely, use nameplate(), inspectionDoor(), flangePort(), guardCover(), sheetCover(), motor(), gearbox(), platform(), ladder(), or handrail() with target/side.
 
 Conveyors:
@@ -193,8 +193,9 @@ const DSL_RULES = `
     details that the semantic constructor does not cover.
 12. Do not bury accessories inside larger bodies. A surface accessory whose
     id or role is a nameplate, label, warning plate, handle, knob, button,
-    inspection door, hinge, flange, port, pipe neck, bracket, foot, ladder,
-    platform, guard, or cover must be placed on the exterior face of its
+    inspection door, hinge, flange, port, pipe neck, bracket, foot, motor,
+    gearbox, bearing block, coupling guard, ladder, platform, guard, or cover
+    must be placed on the exterior face of its
     host with a visible outward clearance (typically 0.01m to 0.03m). If a
     previous attempt reports gate_part_overlap, move the smaller/accessory
     part outward along the nearest side normal; do not delete the detail.
@@ -346,6 +347,9 @@ function accessoryScore(id: string): number {
   if (/(nameplate|label|warning|tag|铭牌|标签|警示)/i.test(text)) score += 6
   if (/(handle|knob|button|switch|door|hinge|manway|inspection|把手|按钮|门|铰链|检修)/i.test(text)) {
     score += 5
+  }
+  if (/(gearbox|gear_box|motor|bearing|coupling|drive|transmission|reducer|servo|减速|齿轮箱|电机|轴承|联轴器|驱动)/i.test(text)) {
+    score += 4
   }
   if (/(flange|port|nozzle|pipe|neck|valve|法兰|接口|管口|喷嘴|阀)/i.test(text)) score += 4
   if (/(bracket|mount|foot|feet|bolt|fastener|ladder|platform|rail|支架|地脚|螺栓|爬梯|平台)/i.test(text)) {

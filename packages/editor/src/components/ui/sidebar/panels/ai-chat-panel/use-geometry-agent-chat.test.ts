@@ -48,6 +48,26 @@ describe('geometry agent routing inside primitive mode', () => {
     ).toBe(false)
   })
 
+  test('explicit DSL create prompts start a new geometry-agent session even with prior context', () => {
+    const messages: ChatMessage[] = [
+      {
+        role: 'assistant',
+        content: 'done',
+        generationRun: { id: 'geo_agent_1', mode: 'geometry-agent', status: 'succeeded' },
+        geometryAgentSession: { sessionId: 'geo_agent_1' } as never,
+      },
+    ]
+
+    const prompt = '\u91c7\u7528dsl\u65b9\u5f0f\u6765\u751f\u6210\u4e00\u4e2a\u5de5\u4e1a\u5e38\u89c1\u7684\u673a\u5668\u81c2'
+    expect(shouldStartNewGeometryAgentSession(prompt)).toBe(true)
+    expect(
+      shouldUseGeometryAgentForPrimitivePrompt({
+        text: prompt,
+        messages,
+      }),
+    ).toBe(true)
+  })
+
   test('continues an existing geometry-agent session even for short edits', () => {
     const messages: ChatMessage[] = [
       {

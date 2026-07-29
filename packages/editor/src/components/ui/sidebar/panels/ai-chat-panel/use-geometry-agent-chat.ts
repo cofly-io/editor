@@ -34,6 +34,7 @@ export function shouldUseGeometryAgentForPrimitivePrompt(input: {
   const hasExistingSession = Boolean(latestGeometryAgentResponse(input.messages))
   const isNewCreateRequest = shouldStartNewGeometryAgentSession(text)
   if (hasExistingSession && !isNewCreateRequest) return true
+  if (isExplicitDslPrompt(text)) return true
   if (isRobotArmPrompt(text)) return false
   return isIndustrialEquipmentGeometryPrompt(text)
 }
@@ -41,6 +42,7 @@ export function shouldUseGeometryAgentForPrimitivePrompt(input: {
 export function shouldStartNewGeometryAgentSession(text: string): boolean {
   const normalized = text.trim().toLowerCase()
   if (!normalized) return false
+  if (isExplicitDslPrompt(normalized) && hasCreateVerb(normalized)) return true
   return (
     /^(generate|create|make|build|new|start|regenerate)\b/i.test(normalized) ||
     /(?:^|[\s,，。?.!?！？])(?:生成|创建|建立|新建|新做|另做|重新生成|再生成|做|造|搭建)(?:一个|一台|一套|1个|1台)?/.test(
@@ -51,6 +53,18 @@ export function shouldStartNewGeometryAgentSession(text: string): boolean {
 
 function isRobotArmPrompt(text: string): boolean {
   return /(?:robot[_\s-]?arm|industrial[_\s-]?robot|cobot|manipulator|fanuc|kuka|abb|\u673a\u5668\u81c2|\u673a\u68b0\u81c2|\u673a\u5668\u4eba|\u516d\u8f74|\u4e03\u8f74|\u56db\u8f74)/i.test(
+    text,
+  )
+}
+
+function hasCreateVerb(text: string): boolean {
+  return /(?:generate|create|make|build|regenerate|生成|创建|建立|新建|新做|另做|重新生成|再生成|做|造|搭建)/i.test(
+    text,
+  )
+}
+
+function isExplicitDslPrompt(text: string): boolean {
+  return /(?:\bdsl\b|generator[_\s-]?dsl|采用dsl|使用dsl|走dsl|dsl方式|dsl路线)/i.test(
     text,
   )
 }
