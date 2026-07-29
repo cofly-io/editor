@@ -1116,8 +1116,27 @@ function normalizeFamilyPartPlan(
   return { family, parts: normalizedParts, warnings }
 }
 
-export function getPartDefinitions(family: string): readonly PartDefinition[] {
-  return partDefinitionsByFamily.get(family) ?? []
+export function getPartDefinitions(family?: string): readonly PartDefinition[] {
+  if (family == null) return Array.from(partDefinitionsByFamily.values()).flat()
+  return partDefinitionsByFamily.get(normalizeKey(family)) ?? []
+}
+
+export function registeredPartKinds(): string[] {
+  return Array.from(new Set(getPartDefinitions().map((definition) => definition.kind))).sort()
+}
+
+export function resolveRegisteredPartKind(kind: unknown): PartDefinition | undefined {
+  const normalized = normalizeKey(kind)
+  if (!normalized) return undefined
+  for (const aliasMap of partAliasMapByFamily.values()) {
+    const definition = aliasMap.get(normalized)
+    if (definition) return definition
+  }
+  return undefined
+}
+
+export function isRegisteredPartKind(kind: unknown): boolean {
+  return resolveRegisteredPartKind(kind) !== undefined
 }
 
 const DIMENSION_PARAMETER_NAMES = new Set([

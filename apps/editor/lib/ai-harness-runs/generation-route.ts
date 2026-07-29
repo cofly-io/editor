@@ -39,6 +39,10 @@ export type GenerationRouteSignals = {
   appearancePrimary: boolean
   /** User explicitly wants an editable structure (params/overrides). */
   requiresEditability: boolean
+  /** Request is clearly a non-equipment scene/organic object, outside device profile routing. */
+  nonEquipmentScene?: boolean
+  /** Stage-1 asked compose_parts to use kinds that are not registered executable parts. */
+  unsupportedPartKinds?: string[]
   /**
    * A built-in legacy compose_parts / compose_assembly family already
    * covers the request. In the primitive runner this still resolves to
@@ -192,6 +196,29 @@ export function resolveGenerationMode(
     return {
       mode: 'recipe',
       reasons: ['supported_legacy_parts_family'],
+      signals,
+      flag,
+    }
+  }
+
+  if (signals.nonEquipmentScene || (signals.unsupportedPartKinds?.length ?? 0) > 0) {
+    const reasons = [
+      ...(signals.nonEquipmentScene ? ['non_equipment_scene'] : []),
+      ...(signals.unsupportedPartKinds?.length
+        ? [`unsupported_compose_parts:${signals.unsupportedPartKinds.join('|')}`]
+        : []),
+    ]
+    if (flag.enabled || (!flag.killSwitch && flag.disabledReason !== 'explicitly_off')) {
+      return {
+        mode: 'generator_dsl',
+        reasons: flag.enabled ? reasons : [...reasons, 'dsl_required_for_capability_gap'],
+        signals,
+        flag,
+      }
+    }
+    return {
+      mode: 'recipe',
+      reasons: [...reasons, `dsl_disabled:${flag.disabledReason ?? 'unknown'}`],
       signals,
       flag,
     }

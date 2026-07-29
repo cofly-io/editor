@@ -282,6 +282,52 @@ describe('resolveGenerationMode', () => {
     expect(d.reasons).toEqual(['default_legacy_route'])
   })
 
+  it('non-equipment scene prompts route to generator_dsl instead of legacy compose_parts fallback', () => {
+    const routeSignals = signalsFromBlueprint(
+      {
+        route: 'compose_parts',
+        generationMode: 'recipe',
+        category: 'landscape lawn',
+        constraints: { primaryColor: '#22c55e' },
+        parts: [
+          { id: 'grass_patch', kind: 'grass-patch', semanticRole: 'uneven_grass' },
+          { id: 'flowers', kind: 'small-flower-cluster', semanticRole: 'wildflowers' },
+        ],
+        requiredRoles: ['uneven_grass', 'wildflowers'],
+      },
+      '生成一个草坪，草高低不平，点缀一些小花',
+      { recipeAvailable: false, recipeParamsInRange: false },
+    )
+
+    expect(routeSignals.nonEquipmentScene).toBe(true)
+    expect(routeSignals.unsupportedPartKinds).toEqual(['grass-patch', 'small-flower-cluster'])
+    const d = resolveGenerationMode(routeSignals, { env: {} })
+    expect(d.mode).toBe('generator_dsl')
+    expect(d.reasons).toContain('non_equipment_scene')
+    expect(d.reasons).toContain('unsupported_compose_parts:grass-patch|small-flower-cluster')
+    expect(d.reasons).toContain('dsl_required_for_capability_gap')
+  })
+
+  it('unsupported compose_parts kinds route to generator_dsl even when Stage1 declared recipe', () => {
+    const routeSignals = signalsFromBlueprint(
+      {
+        route: 'compose_parts',
+        generationMode: 'recipe',
+        category: 'custom object',
+        constraints: {},
+        parts: [{ id: 'made_up', kind: 'custom-door-hinge', semanticRole: 'complex_hinge' }],
+        requiredRoles: ['complex_hinge'],
+      },
+      '生成一个带复杂门铰链的设备',
+      { recipeAvailable: false, recipeParamsInRange: false },
+    )
+
+    expect(routeSignals.unsupportedPartKinds).toEqual(['custom-door-hinge'])
+    const d = resolveGenerationMode(routeSignals, { env: {} })
+    expect(d.mode).toBe('generator_dsl')
+    expect(d.reasons).toContain('unsupported_compose_parts:custom-door-hinge')
+  })
+
   it('recipe available but params out of range does not short-circuit DSL', () => {
     const d = resolveGenerationMode(
       signals({ recipeAvailable: true, recipeParamsInRange: false, needsGrid: true }),

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   getPartCapabilityMetadata,
+  isRegisteredPartKind,
   normalizeAircraftPartPlan,
   normalizeCompressorPartPlan,
   normalizeConveyorPartPlan,
@@ -18,9 +19,18 @@ import {
   normalizeTankPartPlan,
   normalizeVehiclePartPlan,
   partCapabilitySummary,
+  registeredPartKinds,
+  resolveRegisteredPartKind,
 } from './part-registry'
 
 describe('part registry', () => {
+  test('reports registered executable part kinds', () => {
+    expect(registeredPartKinds()).toContain('wheel_set')
+    expect(isRegisteredPartKind('wheel_set')).toBe(true)
+    expect(isRegisteredPartKind('grass-patch')).toBe(false)
+    expect(resolveRegisteredPartKind('wheel_set')?.kind).toBe('wheel_set')
+  })
+
   test('exposes LLM-safe part parameters', () => {
     const summary = partCapabilitySummary('vehicle')
 

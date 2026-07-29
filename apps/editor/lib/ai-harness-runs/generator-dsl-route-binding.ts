@@ -8,6 +8,7 @@
  * patch plan via the scene store.
  */
 
+import { isRegisteredPartKind } from '@pascal-app/core/lib/part-registry'
 import {
   type GenerationRouteDecision,
   type GenerationRouteSignals,
@@ -15,6 +16,7 @@ import {
   resolveGenerationMode,
 } from './generation-route'
 import { GENERATION_VERSIONS } from './generation-versions'
+import { isClearlyNonEquipmentProfilePrompt } from './primitive-profile-routing'
 import type { PrimitiveRouteMetrics } from './primitive-run-metrics'
 import type { PartBlueprint } from './primitive-tool-execution'
 
@@ -100,6 +102,17 @@ export function signalsFromBlueprint(
     declared === 'generator_dsl' || declared === 'recipe' || declared === 'ai_3d'
       ? declared
       : undefined
+  const unsupportedPartKinds =
+    blueprint?.route === 'compose_parts'
+      ? Array.from(
+          new Set(
+            parts
+              .map((part) => part.kind)
+              .filter((kind): kind is string => typeof kind === 'string' && kind.length > 0)
+              .filter((kind) => !isRegisteredPartKind(kind)),
+          ),
+        ).sort()
+      : []
   const legacyPartsAvailable =
     blueprint?.route === 'compose_recipe' ||
     ((blueprint?.route === 'compose_parts' || blueprint?.route === 'compose_assembly') &&
@@ -115,6 +128,8 @@ export function signalsFromBlueprint(
     recipeAvailable: opts.recipeAvailable,
     recipeParamsInRange: opts.recipeParamsInRange,
     legacyPartsAvailable,
+    nonEquipmentScene: isClearlyNonEquipmentProfilePrompt(userPrompt),
+    ...(unsupportedPartKinds.length > 0 ? { unsupportedPartKinds } : {}),
     needsHierarchy,
     needsHinge,
     needsGrid,
