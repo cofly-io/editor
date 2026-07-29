@@ -1,5 +1,4 @@
 import { useCallback, useRef, type Dispatch, type SetStateAction } from 'react'
-import { type AnyNode, useScene } from '@pascal-app/core'
 import { t } from '../../../../../i18n'
 import type { GeneratedGeometryArtifact } from '../../../../../lib/ai-generated-geometry'
 import {
@@ -109,28 +108,15 @@ export function usePrimitiveRuns({
       if (isRecord(data.generatedAssembly) && Array.isArray(data.generatedAssembly.patches)) {
         const patches = data.generatedAssembly.patches as Array<{
           op: 'create'
-          node: AnyNode
+          node: unknown
           parentId?: string
         }>
-        const createOps = patches
-          .filter((p) => p && p.op === 'create' && isRecord(p.node))
-          .map((p) => ({ node: p.node, ...(p.parentId ? { parentId: p.parentId } : {}) }))
-        dslApply = { applied: false, patchCount: createOps.length }
-        if (createOps.length > 0) {
-          try {
-            useScene.getState().createNodes(createOps as never)
-            dslApply = { applied: true, patchCount: createOps.length }
-          } catch (applyError) {
-            dslApply = {
-              applied: false,
-              patchCount: createOps.length,
-              applyError: applyError instanceof Error ? applyError.message : String(applyError),
-            }
-            console.error('[generator_dsl] failed to apply scene patches', applyError)
-          }
+        dslApply = {
+          applied: false,
+          patchCount: patches.filter((p) => p && p.op === 'create' && isRecord(p.node)).length,
         }
       }
-      const dslSource = dslApply?.applied ? generatorDslSourceFromResult(data) : null
+      const dslSource = dslApply ? generatorDslSourceFromResult(data) : null
       if (dslSource) {
         try {
           const session = await createGeometryAgentSessionClient({
@@ -231,6 +217,18 @@ export function usePrimitiveRuns({
               applied: dslApply.applied,
               ...(dslApply.applyError ? { applyError: dslApply.applyError } : {}),
             }),
+            title: dslApply.applyError ? '设备几何需要检查' : '设备几何已生成',
+            status: dslApply.applyError ? ('failed' as const) : ('succeeded' as const),
+            description: dslApply.applyError
+              ? `Generator DSL generated ${dslPartCount} parts, but placement preparation failed: ${dslApply.applyError}`
+              : `Generator DSL generated ${dslPartCount} parts. Click Place on canvas when you want to apply it.`,
+            steps: [
+              { label: '理解设备需求', status: 'done' as const },
+              { label: 'DSL 源码生成', status: 'done' as const },
+              { label: 'Sandbox 编译 / IR', status: 'done' as const },
+              { label: '真实感/空间质量检查', status: 'done' as const },
+              { label: '应用到画布', status: dslApply.applied ? ('done' as const) : ('pending' as const) },
+            ],
             ...(completionDebugDetails ? { details: completionDebugDetails } : {}),
           }
         : undefined

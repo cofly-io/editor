@@ -5,10 +5,12 @@ import { cn } from '../../../../../lib/utils'
 import {
   articraftResultToModelArtifact,
   FactoryRunSummaryCard,
+  GeneratedAssemblyCard,
   GeneratedGeometryCard,
   GeneratedModelCard,
   GeneratedModelPreview,
 } from './artifact-cards'
+import type { GeometryAgentRunResponse } from '../../../../../lib/geometry-agent-client-types'
 import type {
   ArticraftResult,
   ChatImageAttachment,
@@ -21,10 +23,12 @@ export function ChatMessageList({
   disabled,
   handleApplyArticraftPose,
   handleImportArticraftResult,
+  handlePlaceGeneratedAssembly,
   handlePlaceGeometryArtifact,
   handlePlaceModelArtifact,
   handleReplaceGeometryArtifact,
   handleSaveArticraftAsset,
+  handleSaveGeneratedAssembly,
   handleSaveGeometryArtifact,
   handleSaveModelArtifact,
   handleSelectImageTo3DAsset,
@@ -39,10 +43,12 @@ export function ChatMessageList({
   disabled: boolean
   handleApplyArticraftPose: (result: ArticraftResult) => void
   handleImportArticraftResult: (result: ArticraftResult) => void
+  handlePlaceGeneratedAssembly: (response: GeometryAgentRunResponse) => void
   handlePlaceGeometryArtifact: (artifact: GeneratedGeometryArtifact) => void
   handlePlaceModelArtifact: (artifact: GeneratedModelArtifact) => void
   handleReplaceGeometryArtifact: (artifact: GeneratedGeometryArtifact) => void
   handleSaveArticraftAsset: (result: ArticraftResult) => void
+  handleSaveGeneratedAssembly: (response: GeometryAgentRunResponse) => void
   handleSaveGeometryArtifact: (artifact: GeneratedGeometryArtifact) => void
   handleSaveModelArtifact: (artifact: GeneratedModelArtifact) => void
   handleSelectImageTo3DAsset: (asset: ImageTo3DResult['asset']) => void
@@ -80,6 +86,7 @@ export function ChatMessageList({
               <div className="whitespace-pre-wrap">{msg.content}</div>
             </div>
           ) : msg.factoryRunSummary &&
+            !msg.geometryAgentSession?.generatedAssembly &&
             !msg.modelArtifact &&
             !msg.geometryArtifact &&
             !msg.imageTo3dResult &&
@@ -98,6 +105,17 @@ export function ChatMessageList({
               }}
               summary={msg.factoryRunSummary}
             />
+          ) : msg.geometryAgentSession?.generatedAssembly ? (
+            <div className="space-y-2">
+              {msg.factoryRunSummary ? <FactoryRunSummaryCard summary={msg.factoryRunSummary} /> : null}
+              <GeneratedAssemblyCard
+                disabled={disabled}
+                onPlace={handlePlaceGeneratedAssembly}
+                onSave={handleSaveGeneratedAssembly}
+                response={msg.geometryAgentSession}
+                status={msg.geometryAgentAssemblyStatus}
+              />
+            </div>
           ) : msg.modelArtifact ? (
             <div className="space-y-2">
               {msg.factoryRunSummary ? <FactoryRunSummaryCard summary={msg.factoryRunSummary} /> : null}

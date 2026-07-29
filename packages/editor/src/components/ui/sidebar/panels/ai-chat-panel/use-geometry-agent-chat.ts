@@ -13,12 +13,16 @@ import { isAbortError } from './chat-utils'
 import { buildGeometryAgentResultSummary } from './run-summaries'
 import type { ChatImageAttachment, ChatMessage } from './types'
 
-function latestGeometryAgentResponse(messages: readonly ChatMessage[]): GeometryAgentRunResponse | null {
+function latestGeometryAgentMessage(messages: readonly ChatMessage[]): ChatMessage | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const response = messages[index]?.geometryAgentSession
-    if (response?.sessionId) return response
+    const message = messages[index]
+    if (message?.geometryAgentSession?.sessionId) return message
   }
   return null
+}
+
+function latestGeometryAgentResponse(messages: readonly ChatMessage[]): GeometryAgentRunResponse | null {
+  return latestGeometryAgentMessage(messages)?.geometryAgentSession ?? null
 }
 
 export function shouldUseGeometryAgentForPrimitivePrompt(input: {
@@ -56,28 +60,6 @@ function isIndustrialEquipmentGeometryPrompt(text: string): boolean {
       text,
     )
   )
-}
-
-function applyGeneratedAssembly(response: GeometryAgentRunResponse): {
-  applied: boolean
-  patchCount: number
-  applyError?: string
-} {
-  const patches = response.generatedAssembly?.patches ?? []
-  const createOps = patches
-    .filter((patch) => patch.op === 'create')
-    .map((patch) => ({ node: patch.node as AnyNode, ...(patch.parentId ? { parentId: patch.parentId } : {}) }))
-  if (createOps.length === 0) return { applied: false, patchCount: 0 }
-  try {
-    useScene.getState().createNodes(createOps as never)
-    return { applied: true, patchCount: createOps.length }
-  } catch (error) {
-    return {
-      applied: false,
-      patchCount: createOps.length,
-      applyError: error instanceof Error ? error.message : String(error),
-    }
-  }
 }
 
 function generatedAssemblyPartNodesFromRoot(
@@ -186,7 +168,8 @@ export function useGeometryAgentChat({
     setLoading(true)
 
     const startsNewSession = shouldStartNewGeometryAgentSession(text)
-    const previousResponse = startsNewSession ? null : latestGeometryAgentResponse(messages)
+    const previousMessage = startsNewSession ? null : latestGeometryAgentMessage(messages)
+    const previousResponse = previousMessage?.geometryAgentSession ?? null
     const existingSessionId = previousResponse?.sessionId ?? null
     const runId = existingSessionId ?? `geo_agent_pending_${Date.now()}`
     const userMsg: ChatMessage = { role: 'user', content: text }
@@ -219,11 +202,14 @@ export function useGeometryAgentChat({
             { signal: controller.signal },
           )
 
-      const applyResult = existingSessionId ? applyRerunPlan(response) : applyGeneratedAssembly(response)
-      const summary = buildGeometryAgentResultSummary({
+      const applyResult = existingSessionId
+        ? applyRerunPlan(response)
+        : { applied: false, patchCount: response.generatedAssembly?.patches.length ?? 0 }
+      const summaryBase = buildGeometryAgentResultSummary({
         prompt: text,
         status:
-          response.result.kind === 'ok' && (applyResult.applied || existingSessionId)
+          response.result.kind === 'ok' &&
+          (!existingSessionId || applyResult.applied || !response.rerunPlan)
             ? 'succeeded'
             : 'failed',
         response,
@@ -232,6 +218,19 @@ export function useGeometryAgentChat({
         patchCount: applyResult.patchCount,
         applyError: applyResult.applyError,
       })
+      const summary =
+        !existingSessionId && response.result.kind === 'ok'
+          ? {
+              ...summaryBase,
+              description:
+                'Generator DSL generated a source-backed assembly. Click Place on canvas when you want to apply it.',
+              steps: summaryBase.steps.map((step) =>
+                step.label.includes('画布') || step.label.includes('canvas')
+                  ? { ...step, status: 'pending' as const }
+                  : step,
+              ),
+            }
+          : summaryBase
 
       setMessages((prev) =>
         prev.map((message) =>
@@ -249,6 +248,9 @@ export function useGeometryAgentChat({
                 },
                 factoryRunSummary: summary,
                 geometryAgentSession: response,
+                ...(previousMessage?.geometryAgentAssemblyStatus
+                  ? { geometryAgentAssemblyStatus: previousMessage.geometryAgentAssemblyStatus }
+                  : {}),
               }
             : message,
         ),

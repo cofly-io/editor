@@ -165,9 +165,11 @@ export function AiChatPanel({ sceneId }: { sceneId?: string } = {}) {
   })
 
   const {
+    handlePlaceGeneratedAssembly,
     handlePlaceGeometryArtifact,
     handlePlaceModelArtifact,
     handleReplaceGeometryArtifact,
+    handleSaveGeneratedAssembly,
     handleSaveGeometryArtifact,
     handleSaveModelArtifact,
   } = useGeneratedArtifactActions({ latestGeometryArtifactRef, setMessages })
@@ -411,10 +413,12 @@ export function AiChatPanel({ sceneId }: { sceneId?: string } = {}) {
           disabled={loading}
           handleApplyArticraftPose={handleApplyArticraftPose}
           handleImportArticraftResult={handleImportArticraftResult}
+          handlePlaceGeneratedAssembly={handlePlaceGeneratedAssembly}
           handlePlaceGeometryArtifact={handlePlaceGeometryArtifact}
           handlePlaceModelArtifact={handlePlaceModelArtifact}
           handleReplaceGeometryArtifact={handleReplaceGeometryArtifact}
           handleSaveArticraftAsset={handleSaveArticraftAsset}
+          handleSaveGeneratedAssembly={handleSaveGeneratedAssembly}
           handleSaveGeometryArtifact={handleSaveGeometryArtifact}
           handleSaveModelArtifact={handleSaveModelArtifact}
           handleSelectImageTo3DAsset={handleSelectImageTo3DAsset}

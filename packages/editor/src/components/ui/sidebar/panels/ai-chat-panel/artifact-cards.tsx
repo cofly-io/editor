@@ -15,7 +15,13 @@ import {
   type GeneratedGeometryShapeSpec as ShapeSpec,
 } from '../../../../../lib/ai-generated-geometry'
 import { cn } from '../../../../../lib/utils'
-import type { ArticraftResult, FactoryRunSummary, GeneratedModelArtifact } from './types'
+import type { GeometryAgentRunResponse } from '../../../../../lib/geometry-agent-client-types'
+import type {
+  ArticraftResult,
+  ChatMessage,
+  FactoryRunSummary,
+  GeneratedModelArtifact,
+} from './types'
 
 function getShapeColor(shape: ShapeSpec) {
   const material = shape.material
@@ -695,6 +701,90 @@ export function GeneratedGeometryCard({
       }
       status={getGeometryArtifactStatus(artifact)}
       title={artifact.title}
+    />
+  )
+}
+
+function getGeneratedAssemblyStatus(status: ChatMessage['geometryAgentAssemblyStatus']) {
+  if (status?.placedAt && status.savedAt) return 'Placed and saved'
+  if (status?.savedAt) return 'Saved'
+  if (status?.placedAt) return 'Placed'
+  return 'Ready'
+}
+
+export function GeneratedAssemblyCard({
+  disabled,
+  response,
+  status,
+  onPlace,
+  onSave,
+}: {
+  disabled: boolean
+  response: GeometryAgentRunResponse
+  status?: ChatMessage['geometryAgentAssemblyStatus']
+  onPlace: (response: GeometryAgentRunResponse) => void
+  onSave: (response: GeometryAgentRunResponse) => void
+}) {
+  const assembly = response.generatedAssembly
+  const partCount = response.lastRun?.partCount ?? assembly?.ir.parts.length ?? 0
+  const rootName = assembly?.rootNode.name ?? response.memory.userGoal ?? 'generated assembly'
+  const canPlace = Boolean(assembly?.patches.length) && !status?.placedAt
+  const canSave = Boolean(assembly?.ir && assembly.rootNode) && !status?.savedAt
+
+  return (
+    <GeneratedArtifactCardShell
+      actions={
+        <div className="grid grid-cols-2 gap-1.5">
+          <button
+            className="inline-flex items-center justify-center gap-1 rounded-lg border border-[#a684ff]/50 bg-[#a684ff]/15 px-2 py-1.5 text-[11px] text-foreground transition-colors hover:bg-[#a684ff]/25 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={disabled || !canPlace}
+            onClick={() => onPlace(response)}
+            type="button"
+          >
+            <Icon className="size-3.5" icon="mdi:arrow-decision-outline" />
+            {status?.placedAt ? 'Placed on canvas' : 'Place on canvas'}
+          </button>
+          <button
+            className="inline-flex items-center justify-center gap-1 rounded-lg border border-border/60 px-2 py-1.5 text-[11px] text-muted-foreground transition-colors hover:border-amber-400/50 hover:text-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={disabled || !canSave}
+            onClick={() => onSave(response)}
+            type="button"
+          >
+            <Icon className="size-3.5" icon="mdi:archive-plus-outline" />
+            {status?.savedAt ? 'Saved' : 'Save to library'}
+          </button>
+        </div>
+      }
+      details={
+        <div className="grid grid-cols-3 gap-1 text-[10px]">
+          <div className="rounded border border-border/50 bg-accent/20 px-2 py-1">
+            <div className="text-muted-foreground">Parts</div>
+            <div className="font-medium">{partCount}</div>
+          </div>
+          <div className="rounded border border-border/50 bg-accent/20 px-2 py-1">
+            <div className="text-muted-foreground">Route</div>
+            <div className="font-medium">generator_dsl</div>
+          </div>
+          <div className="rounded border border-border/50 bg-accent/20 px-2 py-1">
+            <div className="text-muted-foreground">Session</div>
+            <div className="truncate font-medium">{response.sessionId.slice(-6)}</div>
+          </div>
+        </div>
+      }
+      hint="Generated DSL is ready. Place it on the canvas when it looks right; follow-up edits will patch the persisted source."
+      meta={`${partCount} parts · generator_dsl · source-backed`}
+      preview={
+        <div className="relative h-36 overflow-hidden rounded-lg border border-border/50 bg-[radial-gradient(circle_at_30%_25%,rgba(166,132,255,0.18),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.05),rgba(255,255,255,0))]">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-center">
+            <Icon className="size-8 text-[#a684ff]" icon="mdi:axis-arrow-info" />
+            <div className="max-w-[16rem] px-3 text-[11px] text-muted-foreground">
+              Generator DSL assembly is compiled and ready to place.
+            </div>
+          </div>
+        </div>
+      }
+      status={getGeneratedAssemblyStatus(status)}
+      title={rootName}
     />
   )
 }

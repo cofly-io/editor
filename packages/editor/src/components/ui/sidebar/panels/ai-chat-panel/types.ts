@@ -39,6 +39,12 @@ export interface ChatMessage {
   factoryRunSummary?: FactoryRunSummary
   factoryRunDraft?: unknown
   geometryArtifact?: GeneratedGeometryArtifact
+  geometryAgentAssemblyStatus?: {
+    placedAt?: string
+    savedAt?: string
+    placedNodeIds?: string[]
+    saveAssetUrl?: string
+  }
   modelArtifact?: GeneratedModelArtifact
   toolCalls?: Array<{
     id: string

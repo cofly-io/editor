@@ -2,11 +2,16 @@ import { ItemNode, useScene } from '@pascal-app/core'
 import useViewer from '@pascal-app/viewer/store'
 import { useCallback, type Dispatch, type SetStateAction } from 'react'
 import {
+  createGeneratedAssemblyComponentPack,
+  saveGeneratedAssemblyComponentPack,
+} from '../../../../../lib/generated-assembly-component-pack'
+import {
   placeGeneratedGeometryArtifact,
   replaceGeneratedGeometryArtifactOnCanvas,
   saveGeneratedGeometryArtifactToLocalLibrary,
   type GeneratedGeometryArtifact,
 } from '../../../../../lib/ai-generated-geometry'
+import type { GeometryAgentRunResponse } from '../../../../../lib/geometry-agent-client-types'
 import useEditor from '../../../../../store/use-editor'
 import { isRecord } from './chat-utils'
 import type { ChatMessage, GeneratedModelArtifact } from './types'
@@ -39,6 +44,88 @@ export function useGeneratedArtifactActions({
       return { ...message, modelArtifact: updater(message.modelArtifact) }
     }))
   }, [setMessages])
+
+  const updateGeometryAgentAssemblyStatus = useCallback((
+    sessionId: string,
+    updater: (status: NonNullable<ChatMessage['geometryAgentAssemblyStatus']>) => NonNullable<
+      ChatMessage['geometryAgentAssemblyStatus']
+    >,
+  ) => {
+    setMessages((prev) => prev.map((message) => {
+      if (message.geometryAgentSession?.sessionId !== sessionId) return message
+      return {
+        ...message,
+        geometryAgentAssemblyStatus: updater(message.geometryAgentAssemblyStatus ?? {}),
+      }
+    }))
+  }, [setMessages])
+
+  const handlePlaceGeneratedAssembly = useCallback((response: GeometryAgentRunResponse) => {
+    const patches = response.generatedAssembly?.patches ?? []
+    const createOps = patches
+      .filter((patch) => patch.op === 'create')
+      .map((patch) => ({
+        node: patch.node,
+        ...(patch.parentId ? { parentId: patch.parentId } : {}),
+      }))
+    if (createOps.length === 0) {
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: 'No generated assembly nodes were available to place.' },
+      ])
+      return
+    }
+    try {
+      useScene.getState().createNodes(createOps as never)
+      updateGeometryAgentAssemblyStatus(response.sessionId, (current) => ({
+        ...current,
+        placedAt: new Date().toISOString(),
+        placedNodeIds: createOps.map((op) => op.node.id),
+      }))
+    } catch (error) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: `Could not place generated assembly: ${error instanceof Error ? error.message : String(error)}`,
+        },
+      ])
+    }
+  }, [setMessages, updateGeometryAgentAssemblyStatus])
+
+  const handleSaveGeneratedAssembly = useCallback(async (response: GeometryAgentRunResponse) => {
+    const assembly = response.generatedAssembly
+    if (!assembly) {
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: 'No generated assembly was available to save.' },
+      ])
+      return
+    }
+    try {
+      const pack = createGeneratedAssemblyComponentPack({
+        id: `geometry-agent-${response.sessionId}`,
+        name: assembly.rootNode.name ?? response.memory.userGoal ?? 'Geometry Agent assembly',
+        root: assembly.rootNode,
+        ir: assembly.ir,
+      })
+      const assetUrl = await saveGeneratedAssemblyComponentPack(pack)
+      updateGeometryAgentAssemblyStatus(response.sessionId, (current) => ({
+        ...current,
+        savedAt: new Date().toISOString(),
+        saveAssetUrl: assetUrl,
+      }))
+      window.dispatchEvent(new Event('generated-assets:updated'))
+    } catch (error) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: `Save to library failed: ${error instanceof Error ? error.message : String(error)}`,
+        },
+      ])
+    }
+  }, [setMessages, updateGeometryAgentAssemblyStatus])
 
   const handlePlaceGeometryArtifact = useCallback((artifact: GeneratedGeometryArtifact) => {
     const result = placeGeneratedGeometryArtifact(artifact, { startPlacement: true })
@@ -160,9 +247,11 @@ export function useGeneratedArtifactActions({
   }, [setMessages, updateModelArtifact])
 
   return {
+    handlePlaceGeneratedAssembly,
     handlePlaceGeometryArtifact,
     handlePlaceModelArtifact,
     handleReplaceGeometryArtifact,
+    handleSaveGeneratedAssembly,
     handleSaveGeometryArtifact,
     handleSaveModelArtifact,
   }
