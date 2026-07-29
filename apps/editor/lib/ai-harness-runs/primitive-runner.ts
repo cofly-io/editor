@@ -45,6 +45,7 @@ import { precisionPartDeterministicRoute } from './primitive-precision-routes'
 import {
   artifactShapesForProfileQuality,
   buildProfileRouteArgs,
+  isClearlyNonEquipmentProfilePrompt,
   isSafeDeterministicProfileMatch,
   profileForArtifact,
   profileForEditableRevision,
@@ -92,7 +93,10 @@ import { appendRunEvent, isTerminalStatus, loadRun, runDir, updateRun } from './
 
 export { basicPrimitiveDeterministicRoute } from './primitive-basic-routes'
 export { precisionPartDeterministicRoute } from './primitive-precision-routes'
-export { isSafeDeterministicProfileMatch } from './primitive-profile-routing'
+export {
+  isClearlyNonEquipmentProfilePrompt,
+  isSafeDeterministicProfileMatch,
+} from './primitive-profile-routing'
 export {
   ensurePromptInPrimitiveContext,
   stripNegatedTargetClauses,
@@ -1101,11 +1105,25 @@ async function runPrimitiveRun(runId: string) {
       })
     }
 
-    const editableRevisionProfile = profileForEditableRevision(
-      userPrompt,
-      latestArtifactCandidate,
-      loadedDeviceProfiles.profiles,
-    )
+    const allowDeviceProfileRouting = !isClearlyNonEquipmentProfilePrompt(userPrompt)
+    if (!allowDeviceProfileRouting) {
+      await appendRunEvent(runId, {
+        type: 'message',
+        message: 'Skipped device profile routing for a non-equipment scene prompt.',
+        data: {
+          stage: 'profile-router',
+          reason: 'non_equipment_scene_prompt',
+        },
+      })
+    }
+
+    const editableRevisionProfile = allowDeviceProfileRouting
+      ? profileForEditableRevision(
+          userPrompt,
+          latestArtifactCandidate,
+          loadedDeviceProfiles.profiles,
+        )
+      : undefined
     const editablePatch = resolveProfileEditablePatch(
       userPrompt,
       latestArtifactCandidate,
@@ -1222,10 +1240,9 @@ async function runPrimitiveRun(runId: string) {
       }
     }
 
-    const resourceResolution = resolveProfileResourceCandidates(
-      userPrompt,
-      loadedDeviceProfiles.profiles,
-    )
+    const resourceResolution = allowDeviceProfileRouting
+      ? resolveProfileResourceCandidates(userPrompt, loadedDeviceProfiles.profiles)
+      : { candidates: [] }
     if (resourceResolution.candidates.length > 0) {
       const resourceCandidates = resourceCandidateOptions(resourceResolution.candidates)
       const recommendedCandidateId = recommendedResourceCandidateId(resourceCandidates)
@@ -1256,10 +1273,12 @@ async function runPrimitiveRun(runId: string) {
       }
     }
 
-    const inferredProfile = inferDeviceProfileDefinition(
-      { prompt: userPrompt, name: userPrompt, object: userPrompt },
-      loadedDeviceProfiles.profiles,
-    )
+    const inferredProfile = allowDeviceProfileRouting
+      ? inferDeviceProfileDefinition(
+          { prompt: userPrompt, name: userPrompt, object: userPrompt },
+          loadedDeviceProfiles.profiles,
+        )
+      : undefined
     const selectedProfile = resourceResolution.selectedProfile ?? inferredProfile
     const safeSelectedProfile =
       resourceResolution.selectedProfile ??

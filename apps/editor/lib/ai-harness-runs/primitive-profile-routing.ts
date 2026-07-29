@@ -26,6 +26,27 @@ function normalizeProfileMatchText(value: unknown): string {
     : ''
 }
 
+const NON_EQUIPMENT_SCENE_PROMPT_PATTERN =
+  /\b(?:lawn|grass|meadow|garden|flower|flowers|wildflower|bush|shrub|tree|terrain|landscape|pond|arch\s+bridge|footbridge|small\s+bridge)\b|草坪|草地|草丛|小草|花园|庭院|景观|地形|山坡|灌木|树木|小花|花朵|花丛|池塘|拱桥|小桥|木桥/
+
+const EQUIPMENT_PROMPT_PATTERN =
+  /\b(?:factory|industrial|equipment|machine|machinery|conveyor|pump|tank|vessel|reactor|agitator|motor|cabinet|robot|robotic|arm|valve|pipe|flange|workcell|production\s+line|assembly\s+line)\b|工厂|工业|设备|机器|机械|输送机|传送带|泵|储罐|罐体|反应釜|搅拌罐|电机|控制柜|机器臂|机械臂|机器人|阀|管道|法兰|产线|生产线/
+
+export function isClearlyNonEquipmentProfilePrompt(userPrompt: string): boolean {
+  const normalizedPrompt = normalizeProfileMatchText(userPrompt)
+  if (!normalizedPrompt) return false
+  if (
+    EQUIPMENT_PROMPT_PATTERN.test(userPrompt) ||
+    EQUIPMENT_PROMPT_PATTERN.test(normalizedPrompt)
+  ) {
+    return false
+  }
+  return (
+    NON_EQUIPMENT_SCENE_PROMPT_PATTERN.test(userPrompt) ||
+    NON_EQUIPMENT_SCENE_PROMPT_PATTERN.test(normalizedPrompt)
+  )
+}
+
 function profileMatchLabels(profile: DeviceProfileDefinition): string[] {
   const labels = [profile.id, profile.name, ...profile.aliases]
     .map(normalizeProfileMatchText)

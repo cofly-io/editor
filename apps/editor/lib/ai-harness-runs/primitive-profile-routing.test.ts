@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import type { DeviceProfileDefinition } from '@pascal-app/core/lib/device-profile-registry'
-import { isSafeDeterministicProfileMatch } from './primitive-profile-routing'
+import {
+  isClearlyNonEquipmentProfilePrompt,
+  isSafeDeterministicProfileMatch,
+} from './primitive-profile-routing'
 
 function profile(input: Partial<DeviceProfileDefinition> = {}): DeviceProfileDefinition {
   return {
@@ -19,6 +22,19 @@ function profile(input: Partial<DeviceProfileDefinition> = {}): DeviceProfileDef
 }
 
 describe('primitive profile routing', () => {
+  test('detects landscape prompts as non-equipment profile prompts', () => {
+    expect(isClearlyNonEquipmentProfilePrompt('生成一个草坪，草高低不平，点缀一些小花')).toBe(true)
+    expect(isClearlyNonEquipmentProfilePrompt('生成一个小拱桥')).toBe(true)
+    expect(isClearlyNonEquipmentProfilePrompt('Generate a garden lawn with small flowers')).toBe(
+      true,
+    )
+  })
+
+  test('keeps industrial equipment prompts eligible for profile routing', () => {
+    expect(isClearlyNonEquipmentProfilePrompt('生成一个工业储罐，旁边有一小片草坪')).toBe(false)
+    expect(isClearlyNonEquipmentProfilePrompt('Generate an industrial bridge crane')).toBe(false)
+  })
+
   test('rejects profile matches that only appear in negated prompt spans', () => {
     expect(
       isSafeDeterministicProfileMatch(
