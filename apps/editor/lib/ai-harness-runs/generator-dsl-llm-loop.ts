@@ -319,9 +319,13 @@ function spatialRepairHints(issues: readonly string[]): string[] {
     if (!overlap) continue
     const [, first, second, percentText] = overlap
     const percent = Number(percentText)
-    const accessory = chooseLikelyAccessory(first ?? '', second ?? '')
+    const firstId = first ?? ''
+    const secondId = second ?? ''
+    const accessory = chooseLikelyAccessory(firstId, secondId)
     const host = accessory === first ? second : first
     if (accessory && host && Number.isFinite(percent) && percent >= 80) {
+      const specialized = specializedAttachmentHint(accessory, host)
+      if (specialized) hints.push(specialized)
       hints.push(
         `Move "${accessory}" to the OUTSIDE surface of "${host}" with 0.01m-0.03m clearance along the chosen side normal. It is likely embedded inside the host; keep the detail but change its position/side/atLocal offset.`,
       )
@@ -332,6 +336,21 @@ function spatialRepairHints(issues: readonly string[]): string[] {
     }
   }
   return [...new Set(hints)]
+}
+
+function specializedAttachmentHint(accessory: string, host: string): string | null {
+  const accessoryText = accessory.toLowerCase()
+  const hostText = host.toLowerCase()
+  if (/(bolt|fastener|screw|washer|螺栓|螺钉|垫片)/i.test(accessoryText)) {
+    if (/(base|plate|skid|foot|底座|基座|底板)/i.test(hostText)) {
+      return `For base fasteners like "${accessory}", place bolt HEADS on the +Y/top face of "${host}": y = hostCenterY + hostHeight/2 + boltHeadHeight/2 + 0.01. Keep x/z inside the base footprint and away from central columns, shoulders, arms, or housings.`
+    }
+    return `For fasteners like "${accessory}", model only the visible head on the exterior face of "${host}" unless an exposed shank is requested; do not center the whole bolt inside the host volume.`
+  }
+  if (/(gearbox|gear_box|motor|bearing|coupling|drive|transmission|reducer|servo|减速|齿轮箱|电机|轴承|联轴器|驱动)/i.test(accessoryText)) {
+    return `For drivetrain attachments like "${accessory}", mount the housing beside or above "${host}" with a visible bracket/clearance; do not place the drivetrain center inside the host body.`
+  }
+  return null
 }
 
 function chooseLikelyAccessory(first: string, second: string): string | null {

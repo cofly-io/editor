@@ -326,6 +326,9 @@ motor({ id: 'drive_motor', target: 'belt', side: 'left', position: 'front' });
           'realism_missing_required_role: belt_conveyor must include semantic role "belt".',
         ],
       })
+      expect(await readGeometryAgentSource(workspace)).toBe(
+        "part('conveyor.box', box({ length: 1, width: 1, height: 1 }));",
+      )
     })
   })
 

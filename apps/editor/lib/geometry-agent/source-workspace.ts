@@ -118,6 +118,7 @@ export async function writeGeometryAgentSource(
     origin: GeometryAgentSourceOrigin
     eventType?: 'source.saved' | 'source.patched'
     now?: string
+    runKind?: 'ok' | 'failed'
   },
 ): Promise<void> {
   const at = opts.now ?? new Date().toISOString()
@@ -126,7 +127,11 @@ export async function writeGeometryAgentSource(
   await appendGeometryAgentEvent(workspace, {
     type: opts.eventType ?? 'source.saved',
     at,
-    payload: { sourceOrigin: opts.origin, byteLength: Buffer.byteLength(source, 'utf8') },
+    payload: {
+      sourceOrigin: opts.origin,
+      byteLength: Buffer.byteLength(source, 'utf8'),
+      ...(opts.runKind ? { runKind: opts.runKind } : {}),
+    },
   })
 }
 

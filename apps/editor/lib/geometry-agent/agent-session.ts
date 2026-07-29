@@ -184,11 +184,12 @@ async function persistLoopResult(
   rerunSummary?: GeometryAgentRerunSummary,
   changeFeedback?: GeometryAgentChangeFeedback,
 ): Promise<void> {
-  if (result.source !== null && result.kind === 'ok') {
+  if (result.source !== null) {
     await writeGeometryAgentSource(workspace, result.source, {
       origin: sourceOrigin,
       eventType: sourceOrigin === 'workspace' ? 'source.patched' : 'source.saved',
       now: at,
+      runKind: result.kind,
     })
   }
 

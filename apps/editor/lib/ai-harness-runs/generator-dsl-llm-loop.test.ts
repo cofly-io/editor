@@ -751,4 +751,37 @@ describe('prompt + repair message content', () => {
     expect(msg).toContain('Move "robot_arm.elbow_gearbox" to the OUTSIDE surface of "robot_arm.base"')
     expect(msg).toContain('change its position/side/atLocal offset')
   })
+
+  it('repair message gives top-face placement guidance for buried base bolts', () => {
+    const failed: Extract<DslRunResult, { kind: 'failed' }> = {
+      kind: 'failed',
+      downgrade: {
+        reason: 'spatial_gate_failed',
+        message:
+          'Spatial quality gate rejected the assembly: gate_part_overlap: parts "robot_arm.base" and "robot_arm.base_bolt_1" overlap 100% of the smaller volume.',
+        attempts: 1,
+        diagnosticCodes: ['gate_part_overlap'],
+        route,
+      },
+      attempts: [
+        {
+          attempt: 1,
+          sandboxMs: 0,
+          diagnostics: [],
+          spatial: {
+            passed: false,
+            score: 0.5,
+            issues: [
+              'gate_part_overlap: parts "robot_arm.base" and "robot_arm.base_bolt_1" overlap 100% of the smaller volume.',
+            ],
+            warnings: [],
+          },
+        },
+      ],
+      budgetUsage: { sandboxAttempts: 1, totalSandboxMs: 0, partCount: 2, wallTimeBudgetMs: 5000 },
+    }
+    const msg = buildDslRepairMessage(failed)
+    expect(msg).toContain('place bolt HEADS on the +Y/top face of "robot_arm.base"')
+    expect(msg).toContain('away from central columns, shoulders, arms, or housings')
+  })
 })
