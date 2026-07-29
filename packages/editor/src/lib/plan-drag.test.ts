@@ -5,6 +5,7 @@ import {
   DataChartNode,
   DataTableNode,
   DataWidgetNode,
+  GeneratedAssemblyNode,
   RoofNode,
 } from '@pascal-app/core'
 import {
@@ -24,6 +25,23 @@ describe('plan drag movement', () => {
     expect(getPlanDrag3DKinds()).toContain('assembly')
     expect(isPlanDragMovableNode(assembly)).toBe(true)
     expect(shouldUseGenericPlanDrag3DMoveTool(assembly)).toBe(true)
+  })
+
+  test('treats generated assembly roots like regular assembly roots', () => {
+    const generatedAssembly = GeneratedAssemblyNode.parse({
+      id: 'generated-assembly_robot',
+      generator: {
+        sourceHash: 'source',
+        apiVersion: 'v1',
+        paramsHash: 'params',
+        irHash: 'ir',
+        source: 'part("robot.base", box({ length: 1, width: 1, height: 1 }))',
+      },
+    })
+
+    expect(getPlanDrag3DKinds()).toContain('generated-assembly')
+    expect(isPlanDragMovableNode(generatedAssembly)).toBe(true)
+    expect(shouldUseGenericPlanDrag3DMoveTool(generatedAssembly)).toBe(true)
   })
 
   test('keeps bespoke movers out of the generic 3D move dispatcher', () => {

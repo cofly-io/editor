@@ -50,6 +50,10 @@ import {
   Raycaster,
   Vector2,
 } from 'three'
+import {
+  findContainingAssemblyNodeInMap,
+  isAssemblyContainerNode,
+} from '../../lib/assembly-selection'
 import { floorItemDragSuppressClickRef } from '../../lib/floor-item-drag'
 import {
   type ActivePaintMaterial,
@@ -102,6 +106,7 @@ function useNodeRegistryVersion() {
 
 type SelectableNodeType =
   | 'assembly'
+  | 'generated-assembly'
   | 'wall'
   | 'fence'
   | 'item'
@@ -704,19 +709,7 @@ function isCameraNavigationGestureActive() {
 }
 
 function findContainingAssemblyNode(node: AnyNode): AnyNode | null {
-  const nodes = useScene.getState().nodes
-  let parentId = node.parentId as AnyNodeId | null
-  const visited = new Set<string>()
-
-  while (parentId && !visited.has(parentId)) {
-    visited.add(parentId)
-    const parent = nodes[parentId]
-    if (!parent) break
-    if (parent.type === 'assembly') return parent
-    parentId = parent.parentId as AnyNodeId | null
-  }
-
-  return null
+  return findContainingAssemblyNodeInMap(node, useScene.getState().nodes)
 }
 
 function isNodeInsideAssembly(node: AnyNode, assemblyId: AnyNodeId | string | null): boolean {
@@ -726,7 +719,7 @@ function isNodeInsideAssembly(node: AnyNode, assemblyId: AnyNodeId | string | nu
 }
 
 function resolveAssemblySelectionNode(node: AnyNode, nativeEvent?: any): AnyNode {
-  if (node.type === 'assembly') return node
+  if (isAssemblyContainerNode(node)) return node
 
   const assemblyNode = findContainingAssemblyNode(node)
   if (!assemblyNode) return node
@@ -779,6 +772,7 @@ const SELECTION_STRATEGIES: Record<string, SelectionStrategy> = {
   structure: {
     types: [
       'assembly',
+      'generated-assembly',
       'wall',
       'fence',
       'item',
@@ -843,7 +837,7 @@ const SELECTION_STRATEGIES: Record<string, SelectionStrategy> = {
       }
       if (
         node.type === 'wall' ||
-        node.type === 'assembly' ||
+        isAssemblyContainerNode(node) ||
         node.type === 'fence' ||
         node.type === 'column' ||
         node.type === 'elevator' ||
@@ -963,7 +957,7 @@ const getSelectionTarget = (node: AnyNode): SelectionTarget | null => {
 
   if (
     node.type === 'wall' ||
-    node.type === 'assembly' ||
+    isAssemblyContainerNode(node) ||
     node.type === 'fence' ||
     node.type === 'column' ||
     node.type === 'elevator' ||
@@ -1782,7 +1776,7 @@ export const SelectionManager = () => {
 
       const node = resolveAssemblySelectionNode(rawNode, event.nativeEvent)
 
-      if (node.type === 'assembly') {
+      if (isAssemblyContainerNode(node)) {
         event.stopPropagation()
         if (currentPhase !== 'structure') {
           useEditor.getState().setPhase('structure')
@@ -2022,7 +2016,7 @@ const SelectionStateSync = () => {
       const editingAssemblyId = useEditor.getState().editingAssemblyId
       if (editingAssemblyId) {
         const editingAssembly = state.nodes[editingAssemblyId]
-        if (!editingAssembly || editingAssembly.type !== 'assembly') {
+        if (!isAssemblyContainerNode(editingAssembly)) {
           useEditor.getState().setEditingAssemblyId(null)
         }
       }
@@ -2039,7 +2033,7 @@ const SelectionStateSync = () => {
   useEffect(() => {
     if (!editingAssemblyId) return
     const editingNode = useScene.getState().nodes[editingAssemblyId]
-    if (!editingNode || editingNode.type !== 'assembly') {
+    if (!isAssemblyContainerNode(editingNode)) {
       setEditingAssemblyId(null)
     }
   }, [editingAssemblyId, setEditingAssemblyId])

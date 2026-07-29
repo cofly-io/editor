@@ -5,9 +5,11 @@ import {
   nodeRegistry,
   resolveMovable,
 } from '@pascal-app/core'
+import { isAssemblyContainerNode } from './assembly-selection'
 
 const BESPOKE_PLAN_DRAG_3D_KINDS = [
   'assembly',
+  'generated-assembly',
   'data-widget',
   'data-chart',
   'data-table',
@@ -63,6 +65,6 @@ export function isPlanDragMovableNode(node: AnyNode): boolean {
 }
 
 export function shouldUseGenericPlanDrag3DMoveTool(node: AnyNode): boolean {
-  if (node.type === 'assembly') return true
+  if (isAssemblyContainerNode(node)) return true
   return hasPlanAxes(resolveMovable(node)?.axes)
 }
