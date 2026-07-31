@@ -26,11 +26,16 @@ import {
 } from './instancing-planner'
 import { LayoutRealism, type SpacingViolation } from './layout-realism'
 import {
+  attachIndustrialRenderContracts,
+  type IndustrialRenderRule,
+} from './industrial-render-contract'
+import {
   type PbrMaterialPlan,
   type RenderContractLike,
   resolvePbrMaterial,
   type TextureSpec,
 } from './pbr-material-library'
+import { RenderContractRulesLoader } from './render-contract-rules-loader'
 import { type GeneratedTexture, generateTextureSet } from './procedural-textures'
 import { type GeneratedScene, SceneGenerator, type SceneGeneratorOptions } from './scene-generator'
 
@@ -125,6 +130,22 @@ function resolveSceneMaterials(instancing: InstancingPlan): SceneMaterialPlan {
   return { byBatch, families: [...families].sort() }
 }
 
+function attachSceneRenderContracts(scene: GeneratedScene, rules: IndustrialRenderRule[]): GeneratedScene {
+  const customRules = rules.length > 0 ? rules : undefined
+  return {
+    ...scene,
+    stations: scene.stations.map((station) => ({
+      ...station,
+      parts: attachIndustrialRenderContracts(station.parts, customRules).map((part) => ({
+        ...part,
+        stationId: station.stationId,
+        profileId: station.profileId,
+        worldPosition: part.worldPosition,
+      })),
+    })),
+  }
+}
+
 /**
  * Build the render-ready payload: instance matrices for every batch plus
  * pre-generated procedural textures for batches whose material plan carries
@@ -170,6 +191,9 @@ export async function generateIndustryScene(
   const packRoot = options.packRoot ?? `${options.loader.industryPacksRoot}/${packId}`
   const realism = new LayoutRealism()
   await realism.loadFromIndustryPack(packRoot)
+  const renderRulesLoader = new RenderContractRulesLoader()
+  await renderRulesLoader.loadFromIndustryPack(packRoot)
+  const renderRules = renderRulesLoader.getRules()
 
   // 4. Generate scene (auto-place stations)
   const generator = new SceneGenerator({
@@ -177,7 +201,7 @@ export async function generateIndustryScene(
     registry: options.registry,
     layoutRealism: realism,
   })
-  const scene = generator.generateScene(pack)
+  const scene = attachSceneRenderContracts(generator.generateScene(pack), renderRules)
 
   // 5. Route connections (auto-routing)
   const routing = new ConnectionRouter(options.routing).routeConnections(pack, scene)

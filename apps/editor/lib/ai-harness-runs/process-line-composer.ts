@@ -106,6 +106,10 @@ function processLineOmitCeiling(plan: ProcessLinePlan) {
   return plan.architecture?.omitCeiling ?? (isCementProcessLine(plan) ? true : undefined)
 }
 
+function processLineOmitFloor(plan: ProcessLinePlan) {
+  return plan.architecture?.omitFloor
+}
+
 function processLineOmitRoof(plan: ProcessLinePlan) {
   return plan.architecture?.omitRoof ?? (isCementProcessLine(plan) ? true : undefined)
 }
@@ -1398,6 +1402,7 @@ export function composeProcessLine(input: {
   const resolvedBoundary = resolvedLayout.boundary
   const omitPerimeterWalls = processLineOmitPerimeterWalls(plan)
   const omitCeiling = processLineOmitCeiling(plan)
+  const omitFloor = processLineOmitFloor(plan)
   const omitRoof = processLineOmitRoof(plan)
   const { layoutDiagnostics, layoutStrategy, stationPlacements } = resolvedLayout
   const focusBounds = focusBoundsFromPlacements({ plan, stationPlacements })
@@ -1426,6 +1431,7 @@ export function composeProcessLine(input: {
           width: resolvedBoundary.width,
           ...(omitPerimeterWalls != null ? { omitPerimeterWalls } : {}),
           ...(omitCeiling != null ? { omitCeiling } : {}),
+          ...(omitFloor != null ? { omitFloor } : {}),
           ...(omitRoof != null ? { omitRoof } : {}),
         },
       })

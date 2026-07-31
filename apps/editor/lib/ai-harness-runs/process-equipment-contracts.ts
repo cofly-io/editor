@@ -13,7 +13,6 @@ import {
 } from '@pascal-app/plugin-factory-equipment'
 import { loadAssetIndustryPackResourcesSync } from '../asset-industry-packs'
 import { installedAssetIndustryPackDirsSync } from '../asset-packs'
-import { enabledProfilePackDirsSync } from '../profile-packs'
 import type {
   ProcessEquipmentContract,
   ProcessEquipmentPort,
@@ -176,7 +175,7 @@ function findRepoRootSync(start = process.cwd()) {
 
 function runtimeProfilePackDirs() {
   findRepoRootSync()
-  return [...installedAssetIndustryPackDirsSync(), ...enabledProfilePackDirsSync()]
+  return installedAssetIndustryPackDirsSync()
 }
 
 function safeRelativePath(value: string) {

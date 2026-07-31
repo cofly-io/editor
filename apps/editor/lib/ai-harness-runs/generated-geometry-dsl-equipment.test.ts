@@ -37,7 +37,7 @@ describe('compileDsl — equipment semantic constructors', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
 
-    expect(result.ir.parts.length).toBeGreaterThanOrEqual(40)
+    expect(result.ir.parts.length).toBeGreaterThanOrEqual(65)
     const roles = new Set(result.ir.parts.map((p) => p.semanticRole))
     expect(roles.has('belt')).toBe(true)
     expect(roles.has('roller')).toBe(true)
@@ -46,6 +46,8 @@ describe('compileDsl — equipment semantic constructors', () => {
     expect(roles.has('drive_motor')).toBe(true)
     expect(roles.has('inspection_door')).toBe(true)
     expect(roles.has('equipment_nameplate')).toBe(true)
+    expect(roles.has('coupling_joint')).toBe(true)
+    expect(roles.has('bolt_head')).toBe(true)
   })
 
   test('preserves realism parameters in primitive recipe params and material fields', () => {
@@ -225,6 +227,10 @@ describe('compileDsl — equipment semantic constructors', () => {
     const hopper = result.ir.parts.find((p) => p.semanticRole === 'bottom_discharge_hopper')
     expect(vesselShell?.geometry.params.radialSegments).toBeGreaterThanOrEqual(64)
     expect(hopper?.geometry.recipeId).toBe('primitive.frustum')
+
+    // Industrial detail parts: weld seams and surface stains
+    expect(roles.has('weld_seam')).toBe(true)
+    expect(roles.has('surface_stain')).toBe(true)
   })
 
   test('compiles heat exchanger constructor through the same DSL pipeline', () => {
@@ -241,6 +247,7 @@ describe('compileDsl — equipment semantic constructors', () => {
     expect(roles.has('tube_bundle')).toBe(true)
     expect(roles.has('saddle_support')).toBe(true)
     expect(roles.has('flange_port')).toBe(true)
+    expect(roles.has('bolt_head')).toBe(true)
   })
 
   test('compiles agitator tank constructor through the same DSL pipeline', () => {
@@ -258,5 +265,6 @@ describe('compileDsl — equipment semantic constructors', () => {
     expect(roles.has('agitator_shaft')).toBe(true)
     expect(roles.has('agitator_impeller_blade')).toBe(true)
     expect(roles.has('flange_port')).toBe(true)
+    expect(roles.has('weld_seam')).toBe(true)
   })
 })

@@ -94,6 +94,12 @@ const HEIGHT_FNS: Record<string, HeightFn> = {
     const wave = Math.sin((u + fbm(u, v, 6, seed) * 0.4) * Math.PI * 8) * 0.5 + 0.5
     return wave * 0.6 + fbm(u, v, 10, seed + 11) * 0.4
   },
+  'glow-noise': (u, v, seed) => {
+    // Soft non-uniform brightness for emissive lamps/flames.
+    const vertical = 1 - Math.abs(v - 0.45) * 1.25
+    const flicker = fbm(u, v, 7, seed) * 0.55 + valueNoise(u, v, 19, seed + 13) * 0.45
+    return Math.max(0, Math.min(1, vertical * 0.58 + flicker * 0.42))
+  },
   'brushed-lines': () => 0.5, // handled separately (needs anisotropy angle)
 }
 

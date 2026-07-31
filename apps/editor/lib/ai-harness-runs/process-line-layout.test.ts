@@ -64,6 +64,86 @@ describe('process line layout diagnostics', () => {
     )
   })
 
+  test('does not report clearance overlap for site visual context stations', () => {
+    const plan: ProcessLinePlan = {
+      processLabel: 'Refinery',
+      domain: 'chemical',
+      layoutStyle: 'linear',
+      stations: [
+        {
+          id: 'site_visual_layout',
+          label: 'Site visual layout',
+          role: 'site_ground',
+          equipmentHint: 'site visual context',
+        },
+        {
+          id: 'wastewater_treatment_unit',
+          label: 'Wastewater treatment',
+          role: 'wastewater_treatment',
+          equipmentHint: 'wastewater treatment unit',
+        },
+      ],
+      connections: [],
+    }
+    const stationPlacements = plan.stations.map((station) =>
+      buildStationPlacement({
+        station,
+        plan,
+        position: [0, 0, 0],
+      }),
+    )
+
+    const diagnostics = validateProcessLineLayout({
+      plan,
+      stationPlacements,
+      boundary: { length: 20, width: 20 },
+    })
+
+    expect(diagnostics.diagnostics.map((item) => item.code)).not.toContain(
+      'station_clearance_overlap',
+    )
+  })
+
+  test('still reports clearance overlap for real equipment stations', () => {
+    const plan: ProcessLinePlan = {
+      processLabel: 'Refinery',
+      domain: 'chemical',
+      layoutStyle: 'linear',
+      stations: [
+        {
+          id: 'vacuum_distillation_unit',
+          label: 'Vacuum distillation',
+          role: 'distillation',
+          equipmentHint: 'vacuum distillation unit',
+        },
+        {
+          id: 'fluid_catalytic_cracking_unit',
+          label: 'Fluid catalytic cracking',
+          role: 'cracking',
+          equipmentHint: 'fluid catalytic cracking unit',
+        },
+      ],
+      connections: [],
+    }
+    const stationPlacements = plan.stations.map((station) =>
+      buildStationPlacement({
+        station,
+        plan,
+        position: [0, 0, 0],
+      }),
+    )
+
+    const diagnostics = validateProcessLineLayout({
+      plan,
+      stationPlacements,
+      boundary: { length: 20, width: 20 },
+    })
+
+    expect(diagnostics.diagnostics.map((item) => item.code)).toContain(
+      'station_clearance_overlap',
+    )
+  })
+
   test('repairs a compressed linear layout by switching to parallel bays', () => {
     const result = composeProcessLine({
       prompt: 'create a hydrogen electrolysis workshop',

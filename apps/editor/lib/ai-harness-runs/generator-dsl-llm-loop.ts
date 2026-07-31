@@ -53,6 +53,16 @@ const DSL_EQUIPMENT_API_SUMMARY = `
   dustCollector({ id, width?, depth?, height?, bagCount?, includeLadder?, material?, color? }) — baghouse dust collector with filter body, hopper, ducts, support legs, pulse valves and access
   heatExchanger({ id, length?, diameter?, tubeCount?, includeSaddles?, includePorts?, material?, color? }) — shell-and-tube heat exchanger with shell, tube sheets, channel heads, tube bundle, saddles and flanged ports
   agitatorTank({ id, diameter?, height?, includeLadder?, includePorts?, includeManway?, bladeCount?, material?, color? }) — reactor/stirred tank with vessel shell, heads, top motor, gearbox, visible agitator shaft/impeller cues, ports, manway, legs and nameplate
+  firedHeater({ id, length?, width?, height?, tubeCount?, includeStack?, material?, color? }) — box-type fired process heater with firebox, convection section, radiant tubes, burners, door and stack
+  chimney({ id, height?, baseDiameter?, topDiameter?, material?, color? }) — tapered industrial chimney with foundation, warning bands and access ladder
+  coolingTower({ id, height?, baseDiameter?, throatDiameter?, includeLouvers?, material?, color? }) — hyperbolic cooling tower with shell, support columns and louvers
+  flareTower({ id, height?, baseWidth?, material?, color? }) — lattice flare tower with riser, flare tip, knockout drum, warning bands and platform
+  screwConveyor({ id, length?, diameter?, includeMotor?, material?, color? }) — horizontal screw conveyor with trough, flights, shaft, legs and motor
+  silo({ id, diameter?, cylinderHeight?, coneHeight?, includeLegs?, includeLadder?, material?, color? }) — storage silo with cylinder body, bottom cone, outlet, legs and ladder
+  bucketElevator({ id, height?, width?, depth?, bucketCount?, includeMotor?, material?, color? }) — vertical bucket elevator with casing, head, boot, buckets and motor
+  rotaryValve({ id, diameter?, vaneCount?, material?, color? }) — rotary star valve with housing, vanes and drive adapter
+  cycloneSeparator({ id, bodyDiameter?, cylinderHeight?, coneHeight?, includeInlet?, includeOutlet?, material?, color? }) — cyclone separator with cylinder, cone, dust outlet, inlet and gas outlet
+  airCooler({ id, length?, width?, height?, fanCount?, material?, color? }) — air-cooled exchanger with tube bundle, fans, headers, legs and platform
 `.trimEnd()
 
 const DSL_API_SUMMARY = `
@@ -388,7 +398,7 @@ export function extractDslSource(reply: string): string | null {
     // No fence: drop leading prose lines until the first DSL-looking line.
     const lines = text.split('\n')
     const start = lines.findIndex((l) =>
-      /^\s*(const|function|part\(|equipment\(|belt\(|rollerArray\(|boxFrame\(|guardCover\(|motor\(|gearbox\(|bearingBlock\(|platform\(|ladder\(|handrail\(|inspectionDoor\(|nameplate\(|sheetCover\(|flangePort\(|pipeRun\(|controlCabinet\(|skidBase\(|pumpCasing\(|centrifugalFan\(|blowerPackage\(|verticalVessel\(|dustCollector\(|heatExchanger\(|agitatorTank\(|for\s*\(|if\s*\(|hinge\(|grid\(|connect\(|let\b)/.test(
+      /^\s*(const|function|part\(|equipment\(|belt\(|rollerArray\(|boxFrame\(|guardCover\(|motor\(|gearbox\(|bearingBlock\(|platform\(|ladder\(|handrail\(|inspectionDoor\(|nameplate\(|sheetCover\(|flangePort\(|pipeRun\(|controlCabinet\(|skidBase\(|pumpCasing\(|centrifugalFan\(|blowerPackage\(|verticalVessel\(|dustCollector\(|heatExchanger\(|agitatorTank\(|firedHeater\(|chimney\(|coolingTower\(|flareTower\(|screwConveyor\(|silo\(|bucketElevator\(|rotaryValve\(|cycloneSeparator\(|airCooler\(|for\s*\(|if\s*\(|hinge\(|grid\(|connect\(|let\b)/.test(
         l,
       ),
     )
@@ -397,7 +407,7 @@ export function extractDslSource(reply: string): string | null {
   }
   // Sanity: must reference at least one whitelisted global.
   if (
-    !/\b(part|params|box|cylinder|sphere|cone|frustum|torus|lathe|extrude|sweep|equipment|belt|rollerArray|boxFrame|guardCover|motor|gearbox|bearingBlock|platform|ladder|handrail|inspectionDoor|nameplate|sheetCover|flangePort|pipeRun|controlCabinet|skidBase|pumpCasing|centrifugalFan|blowerPackage|verticalVessel|dustCollector|heatExchanger|agitatorTank)\s*\(/.test(
+    !/\b(part|params|box|cylinder|sphere|cone|frustum|torus|lathe|extrude|sweep|equipment|belt|rollerArray|boxFrame|guardCover|motor|gearbox|bearingBlock|platform|ladder|handrail|inspectionDoor|nameplate|sheetCover|flangePort|pipeRun|controlCabinet|skidBase|pumpCasing|centrifugalFan|blowerPackage|verticalVessel|dustCollector|heatExchanger|agitatorTank|firedHeater|chimney|coolingTower|flareTower|screwConveyor|silo|bucketElevator|rotaryValve|cycloneSeparator|airCooler)\s*\(/.test(
       text,
     )
   ) {

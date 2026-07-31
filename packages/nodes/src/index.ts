@@ -156,6 +156,7 @@ export { halfCylinderDefinition } from './half-cylinder'
 export { hemisphereDefinition } from './hemisphere'
 export {
   IndustrySceneBatches,
+  IndustryRuntimeEffects,
   type IndustrySceneRendererProps,
 } from './industry-scene/renderer'
 export { itemDefinition } from './item'

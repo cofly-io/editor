@@ -2,7 +2,6 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { loadAssetIndustryPackResourcesSync } from '../asset-industry-packs'
 import { installedAssetIndustryPackDirsSync } from '../asset-packs'
-import { enabledProfilePackDirsSync, simulatedProfilePackCloudRoot } from '../profile-packs'
 import type {
   ProcessConnectionPlan,
   ProcessConnectionVisualKind,
@@ -70,6 +69,7 @@ type FactoryArchitectureLayoutHints = {
   sideBranchStationIds?: string[]
   omitPerimeterWalls?: boolean
   omitCeiling?: boolean
+  omitFloor?: boolean
   omitRoof?: boolean
   stationPositionHints?: NonNullable<ProcessLinePlan['architecture']>['stationPositionHints']
 }
@@ -250,11 +250,13 @@ function findRepoRootSync(start = process.cwd()) {
 }
 
 function runtimeProfilePackDirs() {
-  return [...installedAssetIndustryPackDirsSync(), ...enabledProfilePackDirsSync()]
+  return installedAssetIndustryPackDirsSync()
 }
 
-function profilePackCloudRoot() {
-  return simulatedProfilePackCloudRoot(findRepoRootSync())
+function preferredIndustryManifestPath(dir: string) {
+  const assetManifestPath = path.join(dir, 'industry-pack.json')
+  if (fs.existsSync(assetManifestPath)) return assetManifestPath
+  return path.join(dir, 'pack.json')
 }
 
 function fileSignature(file: string) {
@@ -273,9 +275,7 @@ function resourceCacheSignature(
   if (dirs.length === 0) return 'no-enabled-packs'
   const parts: string[] = []
   for (const dir of dirs) {
-    const manifestPath = fs.existsSync(path.join(dir, 'pack.json'))
-      ? path.join(dir, 'pack.json')
-      : path.join(dir, 'industry-pack.json')
+    const manifestPath = preferredIndustryManifestPath(dir)
     parts.push(fileSignature(manifestPath))
     if (!fs.existsSync(manifestPath)) continue
     let manifest: IndustryFactoryManifest | null = null
@@ -426,6 +426,9 @@ function normalizeArchitecture(raw: unknown, manifest: IndustryFactoryManifest) 
         : {}),
       ...(booleanValue(layoutHints.omitCeiling) != null
         ? { omitCeiling: booleanValue(layoutHints.omitCeiling) }
+        : {}),
+      ...(booleanValue(layoutHints.omitFloor) != null
+        ? { omitFloor: booleanValue(layoutHints.omitFloor) }
         : {}),
       ...(booleanValue(layoutHints.omitRoof) != null
         ? { omitRoof: booleanValue(layoutHints.omitRoof) }
@@ -905,8 +908,11 @@ function loadAssetArchitecturesFromPackDir(dir: string) {
 }
 
 function loadTemplatesFromPackDir(dir: string) {
+  if (fs.existsSync(path.join(dir, 'industry-pack.json'))) {
+    return loadAssetTemplatesFromPackDir(dir)
+  }
   const manifestPath = path.join(dir, 'pack.json')
-  if (!fs.existsSync(manifestPath)) return loadAssetTemplatesFromPackDir(dir)
+  if (!fs.existsSync(manifestPath)) return []
   const manifest = normalizeManifest(readJson(manifestPath))
   if (!manifest?.processTemplates?.length) return []
   const resolvedDir = path.resolve(dir)
@@ -928,8 +934,11 @@ function loadTemplatesFromPackDir(dir: string) {
 }
 
 function loadArchitecturesFromPackDir(dir: string) {
+  if (fs.existsSync(path.join(dir, 'industry-pack.json'))) {
+    return loadAssetArchitecturesFromPackDir(dir)
+  }
   const manifestPath = path.join(dir, 'pack.json')
-  if (!fs.existsSync(manifestPath)) return loadAssetArchitecturesFromPackDir(dir)
+  if (!fs.existsSync(manifestPath)) return []
   const manifest = normalizeManifest(readJson(manifestPath))
   if (!manifest?.factoryArchitectures?.length) return []
   const resolvedDir = path.resolve(dir)
@@ -973,21 +982,7 @@ export function loadIndustryProcessTemplates() {
 }
 
 export function loadCloudIndustryProcessTemplates() {
-  const root = profilePackCloudRoot()
-  if (!fs.existsSync(root)) return []
-  return keepLatestByPackAndResource(
-    fs
-      .readdirSync(root, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .flatMap((entry) => {
-        try {
-          return loadTemplatesFromPackDir(path.join(root, entry.name))
-        } catch {
-          return []
-        }
-      }),
-    (template) => template.processId,
-  )
+  return []
 }
 
 export function loadIndustryFactoryArchitectures() {
@@ -1172,9 +1167,7 @@ export function applyFactoryArchitectureToPlan(input: {
 
 export function resolveIndustryPackDir(ref: IndustryPackRef): string | undefined {
   for (const dir of runtimeProfilePackDirs()) {
-    const manifestPath = fs.existsSync(path.join(dir, 'pack.json'))
-      ? path.join(dir, 'pack.json')
-      : path.join(dir, 'industry-pack.json')
+    const manifestPath = preferredIndustryManifestPath(dir)
     if (!fs.existsSync(manifestPath)) continue
     try {
       const manifest = normalizeManifest(readJson(manifestPath))

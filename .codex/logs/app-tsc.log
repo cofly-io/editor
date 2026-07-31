@@ -1,0 +1,17 @@
+apps/editor/lib/ai-harness-runs/asset-component-generator-runner.ts(282,28): error TS18048: 'output' is possibly 'undefined'.
+apps/editor/lib/ai-harness-runs/asset-component-generator-runner.ts(321,30): error TS18048: 'output' is possibly 'undefined'.
+apps/editor/lib/ai-harness-runs/asset-component-generator-runner.ts(325,26): error TS18048: 'output' is possibly 'undefined'.
+apps/editor/lib/ai-harness-runs/asset-component-generator-runner.ts(326,25): error TS18048: 'output' is possibly 'undefined'.
+apps/editor/lib/ai-harness-runs/primitive-runner.ts(212,21): error TS2304: Cannot find name 'ApiResponseMessage'.
+apps/editor/lib/ai-harness-runs/process-line-composer.ts(807,9): error TS2532: Object is possibly 'undefined'.
+apps/editor/lib/ai-harness-runs/process-line-composer.ts(853,15): error TS2532: Object is possibly 'undefined'.
+apps/editor/lib/ai-harness-runs/process-line-composer.ts(855,15): error TS2532: Object is possibly 'undefined'.
+apps/editor/lib/ai-harness-runs/resource-candidate-presentation.ts(51,3): error TS2322: Type '{ usageHint: string; recommended: boolean; profileId: string; name: string; aliases: readonly string[]; score: number; matchedLabel: string; matchKind: "name" | "description" | "id" | "part" | "alias"; ... 6 more ...; description: string; }[]' is not assignable to type 'ResourceCandidateOption[]'.
+  Type '{ usageHint: string; recommended: boolean; profileId: string; name: string; aliases: readonly string[]; score: number; matchedLabel: string; matchKind: "name" | "description" | "id" | "part" | "alias"; ... 6 more ...; description: string; }' is not assignable to type 'ResourceCandidateOption'.
+    Types of property 'industry' are incompatible.
+      Type 'string | undefined' is not assignable to type 'string'.
+        Type 'undefined' is not assignable to type 'string'.
+apps/editor/lib/ai-harness-runs/resource-candidate-presentation.ts(59,45): error TS2345: Argument of type '{ usageHint: string; recommended: boolean; profileId: string; name: string; aliases: readonly string[]; score: number; matchedLabel: string; matchKind: "name" | "description" | "id" | "part" | "alias"; ... 6 more ...; description: string; }' is not assignable to parameter of type 'ResourceCandidateOption'.
+  Types of property 'industry' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.

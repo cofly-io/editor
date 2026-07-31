@@ -9,6 +9,7 @@ import {
   routeSegmentIntersectsClearanceBox,
 } from './process-line-routing'
 import type { ProcessConnectionPlan, ProcessStationPlan } from './process-line-types'
+import { isFactoryVisualContextRouteObstacle } from './factory-route-obstacle-policy'
 
 export type FactoryQualitySeverity = 'error' | 'warning' | 'info'
 
@@ -210,6 +211,7 @@ function routeObstacleFromMetadata(
 ): ProcessRouteObstacle | undefined {
   const value = metadata.factoryRouteObstacle ?? metadata.factoryPrimitiveRouteObstacle
   if (!isRecord(value) || !isRecord(value.box)) return undefined
+  if (isFactoryVisualContextRouteObstacle({ metadata, routeObstacle: value })) return undefined
   const stationId = stringValue(value.stationId)
   const minX = numberValue(value.box.minX)
   const maxX = numberValue(value.box.maxX)

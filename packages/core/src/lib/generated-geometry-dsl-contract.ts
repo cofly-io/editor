@@ -238,6 +238,22 @@ export type DSLGlobalEnv = {
   controlCabinet: unknown
   skidBase: unknown
   pumpCasing: unknown
+  centrifugalFan: unknown
+  blowerPackage: unknown
+  verticalVessel: unknown
+  dustCollector: unknown
+  heatExchanger: unknown
+  agitatorTank: unknown
+  firedHeater: unknown
+  chimney: unknown
+  coolingTower: unknown
+  flareTower: unknown
+  screwConveyor: unknown
+  silo: unknown
+  bucketElevator: unknown
+  rotaryValve: unknown
+  cycloneSeparator: unknown
+  airCooler: unknown
   // Assembly
   part: unknown
   hinge: unknown
@@ -278,6 +294,22 @@ export const DSL_ALLOWED_GLOBALS: ReadonlyArray<keyof DSLGlobalEnv> = [
   'controlCabinet',
   'skidBase',
   'pumpCasing',
+  'centrifugalFan',
+  'blowerPackage',
+  'verticalVessel',
+  'dustCollector',
+  'heatExchanger',
+  'agitatorTank',
+  'firedHeater',
+  'chimney',
+  'coolingTower',
+  'flareTower',
+  'screwConveyor',
+  'silo',
+  'bucketElevator',
+  'rotaryValve',
+  'cycloneSeparator',
+  'airCooler',
   'part',
   'hinge',
   'grid',

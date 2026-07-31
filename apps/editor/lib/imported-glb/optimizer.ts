@@ -1,6 +1,5 @@
 import { NodeIO } from '@gltf-transform/core'
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions'
-import { dedup, draco, prune, simplify, weld } from '@gltf-transform/functions'
 import draco3d from 'draco3d'
 import { MeshoptDecoder, MeshoptSimplifier } from 'meshoptimizer'
 
@@ -20,6 +19,16 @@ export type GlbOptimizationResult = {
 type OptimizeGlbOptions = {
   triangles: number
   targetTriangles?: number
+}
+
+async function loadOptimizationTransforms() {
+  // Keep @gltf-transform/functions out of the app-route compile path. Its Node
+  // bundle imports optional texture tooling (`ndarray-pixels` -> `sharp`) from
+  // the package barrel even when we only use mesh transforms, and Turbopack
+  // otherwise fails page compilation when `sharp` is not installed.
+  const functionsPackage: string = '@gltf-transform/functions'
+  const { dedup, draco, prune, simplify, weld } = await import(functionsPackage)
+  return { dedup, draco, prune, simplify, weld }
 }
 
 async function createOptimizationIO() {
@@ -54,6 +63,7 @@ export async function optimizeImportedGlb(
 
   try {
     await Promise.all([MeshoptDecoder.ready, MeshoptSimplifier.ready])
+    const { dedup, draco, prune, simplify, weld } = await loadOptimizationTransforms()
 
     const io = await createOptimizationIO()
     const document = await io.readBinary(new Uint8Array(input))

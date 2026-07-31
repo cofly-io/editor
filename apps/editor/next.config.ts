@@ -22,6 +22,7 @@ const nextConfig: NextConfig = {
     resolveAlias: {
       react: './node_modules/react',
       three: './node_modules/three',
+      sharp: './lib/shims/sharp-unavailable.ts',
       '@react-three/fiber': './node_modules/@react-three/fiber',
       '@react-three/drei': './node_modules/@react-three/drei',
     },

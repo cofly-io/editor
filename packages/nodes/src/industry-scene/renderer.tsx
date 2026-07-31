@@ -25,9 +25,11 @@ import type {
   GeneratedTexture,
   InstanceBatch,
   PbrMaterialPlan,
+  PlacedPart,
   SceneMaterialPlan,
   SceneRenderPayload,
 } from '@pascal-app/plugin-factory-equipment'
+import { useFrame } from '@react-three/fiber'
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import {
@@ -209,8 +211,194 @@ function IndustryBatchMesh({ batch, instanceData, plan, textures }: BatchMeshPro
   )
 }
 
+function roleOf(value: { semanticRole?: string }): string {
+  return (value.semanticRole ?? '').toLowerCase()
+}
+
+function kindOf(value: { kind?: unknown }): string {
+  return typeof value.kind === 'string' ? value.kind.toLowerCase() : ''
+}
+
+function partPosition(part: PlacedPart): [number, number, number] {
+  return part.worldPosition ?? ((part as unknown as { position?: [number, number, number] }).position ?? [0, 0, 0])
+}
+
+function RefineryFlareFire({ position }: { position: [number, number, number] }) {
+  const flameRef = useRef<THREE.Group>(null)
+  const lightRef = useRef<THREE.PointLight>(null)
+
+  useFrame(({ clock }) => {
+    const time = clock.elapsedTime
+    const pulse = 1 + Math.sin(time * 8.7) * 0.08 + Math.sin(time * 13.1) * 0.035
+    if (flameRef.current) {
+      flameRef.current.scale.set(1 + Math.sin(time * 5.2) * 0.05, pulse, 1)
+      flameRef.current.rotation.y = Math.sin(time * 2.1) * 0.08
+    }
+    if (lightRef.current) lightRef.current.intensity = 18 + pulse * 8
+  })
+
+  return (
+    <group position={position}>
+      <group ref={flameRef}>
+        <mesh position={[0, 0.15, 0]}>
+          <coneGeometry args={[0.58, 1.55, 24, 1, true]} />
+          <meshStandardMaterial
+            color="#f97316"
+            emissive="#fb923c"
+            emissiveIntensity={2.6}
+            transparent
+            opacity={0.78}
+            depthWrite={false}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+        <mesh position={[0, 0.36, 0]}>
+          <coneGeometry args={[0.28, 1.05, 20, 1, true]} />
+          <meshStandardMaterial
+            color="#fef3c7"
+            emissive="#fde68a"
+            emissiveIntensity={3.4}
+            transparent
+            opacity={0.64}
+            depthWrite={false}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      </group>
+      <mesh>
+        <sphereGeometry args={[1.05, 24, 16]} />
+        <meshBasicMaterial color="#fb923c" transparent opacity={0.18} depthWrite={false} />
+      </mesh>
+      <pointLight ref={lightRef} color="#fb923c" intensity={24} distance={18} decay={2} />
+    </group>
+  )
+}
+
+function RefinerySmokePlume({ position }: { position: [number, number, number] }) {
+  const ref = useRef<THREE.Group>(null)
+  useFrame(({ clock }) => {
+    if (!ref.current) return
+    ref.current.position.x = position[0] + Math.sin(clock.elapsedTime * 0.9) * 0.12
+    ref.current.rotation.y = clock.elapsedTime * 0.08
+  })
+  return (
+    <group ref={ref} position={position}>
+      {[0, 1, 2].map((index) => (
+        <mesh key={index} position={[index * 0.28, index * 0.45, -index * 0.16]}>
+          <sphereGeometry args={[0.72 + index * 0.22, 20, 12]} />
+          <meshStandardMaterial
+            color="#64748b"
+            transparent
+            opacity={0.13 - index * 0.025}
+            depthWrite={false}
+            roughness={0.9}
+          />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
+function SiteStreetLightEffect({ position }: { position: [number, number, number] }) {
+  return (
+    <group position={[position[0], position[1] + 2.8, position[2]]}>
+      <mesh>
+        <sphereGeometry args={[0.28, 16, 8]} />
+        <meshBasicMaterial color="#fff3b0" transparent opacity={0.86} />
+      </mesh>
+      <pointLight color="#fde68a" intensity={3.2} distance={9} decay={2} />
+    </group>
+  )
+}
+
+function WarningBeaconEffect({ position }: { position: [number, number, number] }) {
+  const lightRef = useRef<THREE.PointLight>(null)
+  const materialRef = useRef<THREE.MeshBasicMaterial>(null)
+  useFrame(({ clock }) => {
+    const blink = Math.sin(clock.elapsedTime * 5.4) > 0.35 ? 1 : 0.18
+    if (lightRef.current) lightRef.current.intensity = 6 * blink
+    if (materialRef.current) materialRef.current.opacity = 0.28 + blink * 0.62
+  })
+  return (
+    <group position={position}>
+      <mesh>
+        <sphereGeometry args={[0.22, 16, 8]} />
+        <meshBasicMaterial ref={materialRef} color="#ef4444" transparent opacity={0.9} />
+      </mesh>
+      <pointLight ref={lightRef} color="#ef4444" intensity={6} distance={8} decay={2} />
+    </group>
+  )
+}
+
+type RuntimeEffectsProps = {
+  batches: readonly InstanceBatch[]
+  singletons?: readonly PlacedPart[]
+}
+
+export function IndustryRuntimeEffects({ batches, singletons = [] }: RuntimeEffectsProps) {
+  const streetLightPositions = useMemo(() => {
+    const positions: [number, number, number][] = []
+    for (const batch of batches) {
+      const role = roleOf(batch)
+      const kind = kindOf(batch)
+      const contract = batch.renderContract as { runtimeEffects?: string[] } | undefined
+      const isStreetLight =
+        role === 'street_light' ||
+        kind === 'lamp-post' ||
+        contract?.runtimeEffects?.includes('site-light-glow')
+      if (!isStreetLight) continue
+      for (const instance of batch.instances) positions.push(instance.position)
+    }
+    for (const part of singletons) {
+      if (roleOf(part) === 'street_light' || kindOf(part) === 'lamp-post') {
+        positions.push(partPosition(part))
+      }
+    }
+    return positions.slice(0, 24)
+  }, [batches, singletons])
+
+  const flareFirePositions = useMemo(
+    () =>
+      singletons
+        .filter((part) => roleOf(part) === 'flare_flame' || roleOf(part) === 'flare_glow')
+        .map(partPosition)
+        .slice(0, 4),
+    [singletons],
+  )
+  const smokePositions = useMemo(
+    () => singletons.filter((part) => roleOf(part) === 'flare_smoke_plume').map(partPosition).slice(0, 4),
+    [singletons],
+  )
+  const beaconPositions = useMemo(
+    () =>
+      singletons
+        .filter((part) => roleOf(part) === 'warning_beacon')
+        .map(partPosition)
+        .slice(0, 12),
+    [singletons],
+  )
+
+  return (
+    <group name="industry-runtime-effects">
+      {streetLightPositions.map((position, index) => (
+        <SiteStreetLightEffect key={`street-light-${index}`} position={position} />
+      ))}
+      {flareFirePositions.map((position, index) => (
+        <RefineryFlareFire key={`flare-fire-${index}`} position={position} />
+      ))}
+      {smokePositions.map((position, index) => (
+        <RefinerySmokePlume key={`flare-smoke-${index}`} position={position} />
+      ))}
+      {beaconPositions.map((position, index) => (
+        <WarningBeaconEffect key={`warning-beacon-${index}`} position={position} />
+      ))}
+    </group>
+  )
+}
+
 export type IndustrySceneRendererProps = {
   batches: readonly InstanceBatch[]
+  singletons?: readonly PlacedPart[]
   materialPlan: SceneMaterialPlan
   renderPayload: SceneRenderPayload
 }
@@ -222,6 +410,7 @@ export type IndustrySceneRendererProps = {
  */
 export function IndustrySceneBatches({
   batches,
+  singletons,
   materialPlan,
   renderPayload,
 }: IndustrySceneRendererProps) {
@@ -246,6 +435,7 @@ export function IndustrySceneBatches({
           />
         )
       })}
+      <IndustryRuntimeEffects batches={batches} singletons={singletons} />
     </group>
   )
 }

@@ -16,6 +16,8 @@ export const INDUSTRIAL_RENDER_KERNELS = [
   'shell-and-tube-exchanger',
   'fired-heater-body',
   'lattice-or-stack-emission',
+  'fire-flare',
+  'site-lighting',
   'support-frame',
   'generic-industrial-part',
 ] as const
@@ -31,6 +33,8 @@ export const INDUSTRIAL_RENDER_MATERIALS = [
   'low-opacity-gas',
   'hot-refractory',
   'dark-machinery',
+  'emissive-flame',
+  'warm-lamp',
 ] as const
 
 export type IndustrialRenderMaterial = (typeof INDUSTRIAL_RENDER_MATERIALS)[number]
@@ -134,6 +138,27 @@ export const INDUSTRIAL_MATERIAL_PBR_PROFILES: Record<
     roughness: 0.68,
     envMapIntensity: 0.45,
     recommendedMaps: ['baseColor', 'normal', 'roughness'],
+  },
+  'emissive-flame': {
+    id: 'emissive-flame',
+    label: 'Emissive flame volume',
+    metalness: 0,
+    roughness: 0.18,
+    envMapIntensity: 0.2,
+    opacity: 0.78,
+    transparent: true,
+    depthWrite: false,
+    recommendedMaps: ['baseColor'],
+  },
+  'warm-lamp': {
+    id: 'warm-lamp',
+    label: 'Warm industrial lamp glass',
+    metalness: 0,
+    roughness: 0.12,
+    envMapIntensity: 0.35,
+    opacity: 0.92,
+    transparent: true,
+    recommendedMaps: ['baseColor'],
   },
 }
 

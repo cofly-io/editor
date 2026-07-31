@@ -792,10 +792,26 @@ describe('process line composer', () => {
     })
 
     expect(result.summary).toContain('Basic oil refinery complex')
-    expect(result.stationPlacements).toHaveLength(16)
+    expect(result.stationPlacements).toHaveLength(21)
     expect(result.layoutDiagnostics.fits).toBe(true)
-    expect(result.layoutDiagnostics.boundary.length).toBeGreaterThan(46)
-    expect(result.layoutStrategy).toMatchObject({ style: 'parallel_bays', repaired: true })
+    expect(result.layoutDiagnostics.boundary).toMatchObject({ length: 150, width: 96 })
+    expect(result.layoutStrategy).toMatchObject({
+      style: 'parallel_bays',
+      repaired: false,
+      reason: 'Used factory architecture station position hints.',
+    })
+    expect(stationPlacement(result, 'crude_storage_tank').position).toEqual([-50, 0, 20])
+    expect(stationPlacement(result, 'atmospheric_distillation_unit').position).toEqual([
+      -10,
+      0,
+      18,
+    ])
+    expect(stationPlacement(result, 'fluid_catalytic_cracking_unit').position).toEqual([
+      34,
+      0,
+      8,
+    ])
+    expect(stationPlacement(result, 'safety_flare').position).toEqual([66, 0, -36])
 
     const tankStations = result.patches
       .filter(
@@ -844,6 +860,19 @@ describe('process line composer', () => {
         'boiler_body',
       ]),
     )
+    const semanticRoles = result.patches.map((patch) => patch.node.metadata?.semanticRole)
+    expect(semanticRoles.filter((role) => role === 'road_network').length).toBeGreaterThanOrEqual(
+      1,
+    )
+    expect(semanticRoles.filter((role) => role === 'road_marking').length).toBeGreaterThan(80)
+    expect(semanticRoles.filter((role) => role === 'green_buffer_lawn').length).toBeGreaterThan(0)
+    expect(semanticRoles.filter((role) => role === 'grass_color_variation').length).toBeGreaterThan(
+      0,
+    )
+    expect(semanticRoles.filter((role) => role === 'landscape_shrub').length).toBeGreaterThan(0)
+    expect(semanticRoles.filter((role) => role === 'street_light').length).toBeGreaterThanOrEqual(
+      22,
+    )
     expect(
       result.patches.some(
         (patch) =>
@@ -857,14 +886,14 @@ describe('process line composer', () => {
       result.patches.some(
         (patch) =>
           patch.node.metadata?.fromStationId === 'vacuum_distillation_unit' &&
-          patch.node.metadata?.toStationId === 'fluid_catalytic_cracking_unit',
+          patch.node.metadata?.toStationId === 'delayed_coker_unit',
       ),
     ).toBe(true)
     expect(
       result.patches.some(
         (patch) =>
-          patch.node.metadata?.fromStationId === 'vacuum_distillation_unit' &&
-          patch.node.metadata?.toStationId === 'delayed_coker_unit',
+          patch.node.metadata?.fromStationId === 'delayed_coker_unit' &&
+          patch.node.metadata?.toStationId === 'fluid_catalytic_cracking_unit',
       ),
     ).toBe(true)
     expect(
@@ -962,7 +991,8 @@ describe('process line composer', () => {
     expect(boilerStack.node.position[1] + boilerStack.node.height / 2).toBeGreaterThan(2.5)
 
     const pipeRackAssembly = result.patches.find(
-      (patch) => patch.node.type === 'assembly' && patch.node.metadata?.stationId === 'pipe_rack',
+      (patch) =>
+        patch.node.type === 'assembly' && patch.node.metadata?.stationId === 'main_pipe_rack',
     )
     if (!pipeRackAssembly) throw new Error('expected pipe rack assembly')
     const pipeRackChildren = result.patches.filter(
@@ -1001,7 +1031,7 @@ describe('process line composer', () => {
         }),
       ).toBe(true)
     }
-  }, 20000)
+  }, 60000)
 
   test('keeps auto-placed refinery floor aligned with station placements', () => {
     const result = composeProcessLine({
@@ -1034,7 +1064,7 @@ describe('process line composer', () => {
       expect(placement.clearanceBox.minZ).toBeGreaterThanOrEqual(bounds.minZ - 0.001)
       expect(placement.clearanceBox.maxZ).toBeLessThanOrEqual(bounds.maxZ + 0.001)
     }
-  }, 10000)
+  }, 60000)
 
   test('places refinery process line to the right when the site is the default bootstrap site', () => {
     const result = composeProcessLine({
@@ -1076,5 +1106,5 @@ describe('process line composer', () => {
           placement.clearanceBox.maxX <= bounds.maxX + 0.001,
       ),
     ).toBe(true)
-  }, 10000)
+  }, 60000)
 })

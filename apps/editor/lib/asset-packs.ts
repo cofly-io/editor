@@ -315,7 +315,11 @@ function relativeArtifactPath(root: string, url: string) {
 
 export async function loadAssetCloudRegistry() {
   const root = await assetCloudRoot()
-  const registry = normalizeRegistry(await readJsonFile(path.join(root, 'registry.json')))
+  const registryPath = path.join(root, 'registry.json')
+  if (!fsSync.existsSync(registryPath)) {
+    return { root, registry: { componentPacks: [], industryPacks: [] } satisfies AssetPackRegistry }
+  }
+  const registry = normalizeRegistry(await readJsonFile(registryPath))
   return { root, registry }
 }
 
@@ -332,6 +336,13 @@ function installedAssetPackDir(storeRoot: string, pack: InstalledAssetPack) {
   return resolved
 }
 
+function isAssetIndustryPackDir(dir: string) {
+  return (
+    fsSync.existsSync(path.join(dir, 'industry-pack.json')) ||
+    fsSync.existsSync(path.join(dir, 'pack.json'))
+  )
+}
+
 export async function installedAssetIndustryPackDirs() {
   const storeRoot = await assetPackStoreRoot()
   const index = await readInstalledIndex()
@@ -339,7 +350,7 @@ export async function installedAssetIndustryPackDirs() {
     .filter((pack) => pack.kind === 'industry' && pack.id && pack.version && pack.path)
     .flatMap((pack) => {
       const dir = installedAssetPackDir(storeRoot, pack)
-      return dir && fsSync.existsSync(path.join(dir, 'industry-pack.json')) ? [dir] : []
+      return dir && isAssetIndustryPackDir(dir) ? [dir] : []
     })
 }
 
@@ -350,7 +361,7 @@ export function installedAssetIndustryPackDirsSync() {
     .filter((pack) => pack.kind === 'industry' && pack.id && pack.version && pack.path)
     .flatMap((pack) => {
       const dir = installedAssetPackDir(storeRoot, pack)
-      return dir && fsSync.existsSync(path.join(dir, 'industry-pack.json')) ? [dir] : []
+      return dir && isAssetIndustryPackDir(dir) ? [dir] : []
     })
 }
 

@@ -19,6 +19,7 @@ import {
   factoryDslStationResult,
   stationGenerationPatches,
 } from './factory-station-generation'
+import { isFactoryVisualContextRouteObstacle } from './factory-route-obstacle-policy'
 import { NO_SIGNALS, resolveGenerationMode } from './generation-route'
 import { type DslRunResult, executeGeneratorDslRun } from './generator-dsl-run'
 import type {
@@ -908,7 +909,17 @@ export async function buildFactoryRunResultFromProcessLine(input: {
         primitiveCreated.push(stationResult.rootNode.name ?? stationDisplayLabel(request.station))
         primitiveNodeIds.push(stationResult.rootNode.id)
         addPortOverrides(portOverrides, request.station.id, stationResult.portOverrides)
-        routeObstacles.push(stationResult.routeObstacle)
+        if (
+          !isFactoryVisualContextRouteObstacle({
+            metadata: request.metadata,
+            routeObstacle: stationResult.routeObstacle,
+            stationId: request.station.id,
+            stationRole: request.station.role,
+            equipmentContract: request.equipmentContract,
+          })
+        ) {
+          routeObstacles.push(stationResult.routeObstacle)
+        }
         unresolved.delete(request.station.id)
         continue
       }
@@ -1013,7 +1024,18 @@ export async function buildFactoryRunResultFromProcessLine(input: {
     primitiveCreated.push(...patchPlan.created)
     primitiveNodeIds.push(...patchPlan.nodeIds)
     addPortOverrides(portOverrides, request.station.id, stationResult.portOverrides)
-    if (stationResult.routeObstacle) routeObstacles.push(stationResult.routeObstacle)
+    if (
+      stationResult.routeObstacle &&
+      !isFactoryVisualContextRouteObstacle({
+        metadata: request.metadata,
+        routeObstacle: stationResult.routeObstacle,
+        stationId: request.station.id,
+        stationRole: request.station.role,
+        equipmentContract: request.equipmentContract,
+      })
+    ) {
+      routeObstacles.push(stationResult.routeObstacle)
+    }
     unresolved.delete(request.station.id)
   }
 

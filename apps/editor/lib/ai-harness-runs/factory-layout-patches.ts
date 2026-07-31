@@ -424,6 +424,7 @@ function createStoryShellPatches(input: {
   includeDoor: boolean
   omitPerimeterWalls: boolean
   omitCeiling: boolean
+  omitFloor: boolean
 }) {
   const roomName = storyRoomName(input.labels.roomName, input.storyIndex, input.storyCount)
   const storyMetadata = {
@@ -439,7 +440,7 @@ function createStoryShellPatches(input: {
     metadata: { ...storyMetadata, mcpTool: 'create_room', role: 'layout-zone' },
   })
   const includeIndependentSurfaces = input.plan.layoutType !== 'house'
-  const slab = includeIndependentSurfaces
+  const slab = includeIndependentSurfaces && !input.omitFloor
     ? SlabNode.parse({
         name: input.storyCount <= 1 ? input.labels.floorName : `${roomName}\u5730\u9762`,
         polygon: input.polygon,
@@ -613,6 +614,7 @@ export function buildFactoryLayoutCreatePatches(input: {
   const roomName = labels.roomName
   const omitPerimeterWalls = booleanParam(input.params?.omitPerimeterWalls) ?? false
   const omitCeiling = booleanParam(input.params?.omitCeiling) ?? false
+  const omitFloor = booleanParam(input.params?.omitFloor) ?? false
   const omitRoof = booleanParam(input.params?.omitRoof) ?? false
 
   const shouldCreateBuildingForStories = spec.stories > 1 && !buildingId
@@ -683,6 +685,7 @@ export function buildFactoryLayoutCreatePatches(input: {
         includeDoor: storyIndex === 0,
         omitPerimeterWalls,
         omitCeiling,
+        omitFloor,
       }),
     )
   }

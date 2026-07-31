@@ -1,0 +1,12 @@
+▲ Next.js 16.2.1 (webpack)
+- Local:         http://localhost:3002
+- Network:       http://172.25.128.1:3002
+- Environments: .env.local
+✓ Ready in 17.4s
+- Experiments (use with caution):
+  · serverActions
+
+○ Compiling /api/scenes/[id] ...
+ GET /api/scenes/d844f278b975 200 in 18.3s (next.js: 18.2s, application-code: 82ms)
+ PATCH /api/scenes/d844f278b975 200 in 52ms (next.js: 15ms, application-code: 37ms)
+ GET /api/scenes/d844f278b975 200 in 8ms (next.js: 3ms, application-code: 5ms)

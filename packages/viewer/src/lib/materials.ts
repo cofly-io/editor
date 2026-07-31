@@ -11,7 +11,7 @@ import {
   type SurfaceRole,
 } from '@pascal-app/core'
 import * as THREE from 'three'
-import { float, mix, positionViewDirection, transformedNormalView } from 'three/tsl'
+import { float, mix, normalView, positionViewDirection } from 'three/tsl'
 import { MeshLambertNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu'
 
 import { resolveCdnUrl } from './asset-url'
@@ -463,7 +463,7 @@ const GLASS_OPACITY_THRESHOLD = 0.6
  * This is what makes glass read as a surface instead of a flat blue tint.
  */
 function applyGlassFresnel(material: MeshStandardNodeMaterial) {
-  const facing = transformedNormalView.dot(positionViewDirection).clamp(0, 1)
+  const facing = normalView.dot(positionViewDirection).clamp(0, 1)
   const fresnel = facing.oneMinus().pow(3)
   material.opacityNode = mix(float(material.opacity), float(0.92), fresnel)
   material.envMapIntensity = 1.4

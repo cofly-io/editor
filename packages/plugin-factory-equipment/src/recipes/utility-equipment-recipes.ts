@@ -540,6 +540,11 @@ export const FLARE_STACK_EDITABLE_PART_ROLES = [
   'chimney_base',
   'chimney_top_rim',
   'chimney_warning_red_band',
+  'flare_tip',
+  'flare_flame',
+  'flare_glow',
+  'flare_smoke_plume',
+  'warning_beacon',
 ] as const
 
 export const FLARE_STACK_CORE_PART_ROLES = ['flare_stack'] as const
@@ -561,8 +566,11 @@ export function buildFlareStackProfileParts(input: {
   const topRadius = Math.max(0.1, numberParam(input.params, 'topRadius', baseRadius * 0.5))
   const stripeHeight = Math.max(0.8, numberParam(input.params, 'stripeHeight', input.height * 0.5))
   const stackHeight = input.height * 0.94
+  const hasFlame = input.params?.hasFlame !== false
+  const includeSmokePlume = input.params?.includeSmokePlume !== false
+  const includeWarningBeacon = input.params?.includeWarningBeacon !== false
 
-  return [
+  const parts: FactorySemanticRecipePart[] = [
     cylinderPart({
       id: 'stack',
       role: 'flare_stack',
@@ -615,9 +623,109 @@ export function buildFlareStackProfileParts(input: {
       roughness: 0.44,
       metalness: 0.4,
     }),
+    cylinderPart({
+      id: 'flare_tip',
+      role: 'flare_tip',
+      kind: 'chimney_stack',
+      x: 0,
+      y: stackHeight + topRadius * 0.62,
+      z: 0,
+      length: topRadius * 0.42,
+      radius: topRadius * 1.05,
+      color: '#111827',
+      roughness: 0.32,
+      metalness: 0.55,
+    }),
+  ]
+
+  if (hasFlame) {
+    parts.push(
+      {
+        id: 'flare_flame',
+        kind: 'sphere',
+        semanticRole: 'flare_flame',
+        position: vec3(0, stackHeight + topRadius * 2.9, 0),
+        radius: topRadius * 1.35,
+        height: topRadius * 4.8,
+        primaryColor: '#f97316',
+        runtimeEffect: 'refinery-flare-fire',
+        material: {
+          properties: {
+            color: '#f97316',
+            opacity: 0.78,
+            roughness: 0.16,
+            metalness: 0,
+            transparent: true,
+          },
+        },
+      },
+      {
+        id: 'flare_glow',
+        kind: 'sphere',
+        semanticRole: 'flare_glow',
+        position: vec3(0, stackHeight + topRadius * 2.2, 0),
+        radius: topRadius * 2.4,
+        height: topRadius * 6,
+        primaryColor: '#fb923c',
+        runtimeEffect: 'refinery-flare-fire',
+        material: {
+          properties: {
+            color: '#fb923c',
+            opacity: 0.28,
+            roughness: 0.12,
+            metalness: 0,
+            transparent: true,
+          },
+        },
+      },
+    )
+  }
+  if (includeSmokePlume) {
+    parts.push({
+      id: 'flare_smoke_plume',
+      kind: 'sphere',
+      semanticRole: 'flare_smoke_plume',
+      position: vec3(topRadius * 0.7, stackHeight + topRadius * 7.4, -topRadius * 0.45),
+      radius: topRadius * 2.7,
+      height: topRadius * 6.6,
+      primaryColor: '#64748b',
+      runtimeEffect: 'flare-smoke-plume',
+      material: {
+        properties: {
+          color: '#64748b',
+          opacity: 0.2,
+          roughness: 0.9,
+          metalness: 0,
+          transparent: true,
+        },
+      },
+    })
+  }
+  if (includeWarningBeacon) {
+    parts.push({
+      id: 'warning_beacon_top',
+      kind: 'sphere',
+      semanticRole: 'warning_beacon',
+      position: vec3(0, stackHeight + topRadius * 1.12, 0),
+      radius: Math.max(0.08, topRadius * 0.42),
+      height: Math.max(0.08, topRadius * 0.42),
+      primaryColor: '#ef4444',
+      runtimeEffect: 'aviation-warning-beacon',
+      material: {
+        properties: {
+          color: '#ef4444',
+          roughness: 0.12,
+          metalness: 0,
+        },
+      },
+    })
+  }
+
+  parts.push(
     { id: 'relief_gas_inlet', kind: 'inlet_port', semanticRole: 'relief_gas_inlet', side: 'bottom' },
     { id: 'exhaust_outlet', kind: 'outlet_port', semanticRole: 'exhaust_outlet', side: 'top' },
-  ]
+  )
+  return parts
 }
 
 export function buildFlareStackPorts(input: { height?: number } = {}): SemanticRecipePort[] {

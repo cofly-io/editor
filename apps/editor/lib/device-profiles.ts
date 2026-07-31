@@ -583,9 +583,10 @@ export async function loadDeviceProfiles(
   ]
   const loaded = await Promise.all(sourceDirs.map(loadProfilesFromDir))
   const assetIndustryExtraPackDirs = extraPackDirs.filter(isAssetIndustryPackDir)
+  const enabledProfilePackOnlyDirs = enabledPackDirs.filter((dir) => !isAssetIndustryPackDir(dir))
   const profilePackExtraDirs = extraPackDirs.filter((dir) => !isAssetIndustryPackDir(dir))
   const enabledPacks = await Promise.all(
-    [...enabledPackDirs, ...profilePackExtraDirs].map(loadProfilesFromPackDir),
+    [...enabledProfilePackOnlyDirs, ...profilePackExtraDirs].map(loadProfilesFromPackDir),
   )
   const assetIndustryPacks = await Promise.all(
     [...assetIndustryPackDirs, ...assetIndustryExtraPackDirs].map(

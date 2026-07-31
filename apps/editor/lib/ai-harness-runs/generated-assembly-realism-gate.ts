@@ -9,6 +9,9 @@ export type IndustrialEquipmentFamily =
   | 'dust_collector'
   | 'heat_exchanger'
   | 'agitated_vessel'
+  | 'fired_heater'
+  | 'silo_hopper'
+  | 'cooling_tower'
 
 export type RealismGateReview = {
   applicable: boolean
@@ -76,6 +79,21 @@ const FAMILY_SPECS: Record<IndustrialEquipmentFamily, FamilySpec> = {
       'equipment_nameplate',
     ],
     maxAnonymousPrimitiveRatio: 0.18,
+  },
+  fired_heater: {
+    required: ['fired_heater_firebox', 'fired_heater_burner', 'radiant_tube'],
+    recommended: ['convection_section', 'heater_stack', 'inspection_door', 'equipment_nameplate'],
+    maxAnonymousPrimitiveRatio: 0.2,
+  },
+  silo_hopper: {
+    required: ['silo_body', 'silo_hopper'],
+    recommended: ['silo_outlet', 'support_leg', 'weld_seam', 'equipment_nameplate'],
+    maxAnonymousPrimitiveRatio: 0.18,
+  },
+  cooling_tower: {
+    required: ['cooling_tower_shell', 'cooling_tower_support'],
+    recommended: ['cooling_tower_rim', 'cooling_tower_louver'],
+    maxAnonymousPrimitiveRatio: 0.15,
   },
 }
 
@@ -152,6 +170,9 @@ export function reviewAssemblyRealism(
   checkDustCollectorDetails(ir, roles, issues, warnings)
   checkHeatExchangerDetails(ir, roles, issues, warnings)
   checkAgitatedVesselDetails(ir, roles, issues, warnings)
+  checkFiredHeaterDetails(ir, roles, issues, warnings)
+  checkSiloDetails(ir, roles, issues, warnings)
+  checkCoolingTowerDetails(ir, roles, issues, warnings)
   checkAccessDetails(ir, roles, opts.source, issues, warnings)
 
   const score = Math.max(0, Math.min(1, 1 - issues.length * 0.25 - warnings.length * 0.06))
@@ -248,6 +269,30 @@ function inferIndustrialFamily(
     /\b(conveyor|belt|roller)\b/.test(idText)
   ) {
     return 'belt_conveyor'
+  }
+  if (
+    hasRoleLike(roles, 'fired_heater_firebox') ||
+    hasRoleLike(roles, 'fired_heater_burner') ||
+    /\b(fired[_\s-]?heater|furnace|process[_\s-]?heater)\b/.test(sourceText) ||
+    /fired|burner/.test(idText)
+  ) {
+    return 'fired_heater'
+  }
+  if (
+    hasRoleLike(roles, 'silo_body') ||
+    hasRoleLike(roles, 'silo_hopper') ||
+    /\b(silo|hopper|storage[_\s-]?bin)\b/.test(sourceText) ||
+    /silo|hopper/.test(idText)
+  ) {
+    return 'silo_hopper'
+  }
+  if (
+    hasRoleLike(roles, 'cooling_tower_shell') ||
+    hasRoleLike(roles, 'cooling_tower_support') ||
+    /\b(cooling[_\s-]?tower|hyperbolic[_\s-]?tower)\b/.test(sourceText) ||
+    /cooling|tower/.test(idText)
+  ) {
+    return 'cooling_tower'
   }
   return undefined
 }
@@ -1091,4 +1136,67 @@ function sourceRequestsLadder(source: string | undefined): boolean {
 
 function sourceRequestsHandrail(source: string | undefined): boolean {
   return /\b(handrail|guardrail|safety\s+rail)\b|栏杆|扶手|护栏/i.test(source?.toLowerCase() ?? '')
+}
+
+function checkFiredHeaterDetails(
+  ir: AssemblyIR,
+  roles: Set<string>,
+  issues: string[],
+  warnings: string[],
+): void {
+  if (!hasRoleLike(roles, 'fired_heater_firebox')) return
+
+  const burners = ir.parts.filter((p) => p.semanticRole === 'fired_heater_burner')
+  if (burners.length < 2) {
+    issues.push(`realism_heater_burners: fired heater needs at least 2 burner inlets; found ${burners.length}.`)
+  }
+
+  const tubes = ir.parts.filter((p) => p.semanticRole === 'radiant_tube')
+  if (tubes.length < 6) {
+    issues.push(`realism_heater_tubes: fired heater should have radiant tubes along the firebox walls; found ${tubes.length}.`)
+  }
+
+  if (!hasRoleLike(roles, 'inspection_door')) {
+    warnings.push('realism_heater_door: fired heater should include an inspection access door.')
+  }
+}
+
+function checkSiloDetails(
+  ir: AssemblyIR,
+  roles: Set<string>,
+  issues: string[],
+  warnings: string[],
+): void {
+  if (!hasRoleLike(roles, 'silo_body')) return
+
+  if (!hasRoleLike(roles, 'silo_hopper')) {
+    issues.push('realism_silo_hopper: silo must include a bottom cone hopper for material discharge.')
+  }
+
+  const legs = ir.parts.filter((p) => p.semanticRole === 'support_leg')
+  if (legs.length < 3) {
+    issues.push(`realism_silo_legs: silo needs at least 3 support legs; found ${legs.length}.`)
+  }
+
+  if (!hasRoleLike(roles, 'silo_outlet')) {
+    warnings.push('realism_silo_outlet: silo should include a discharge outlet at the hopper bottom.')
+  }
+}
+
+function checkCoolingTowerDetails(
+  ir: AssemblyIR,
+  roles: Set<string>,
+  issues: string[],
+  warnings: string[],
+): void {
+  if (!hasRoleLike(roles, 'cooling_tower_shell')) return
+
+  const supports = ir.parts.filter((p) => p.semanticRole === 'cooling_tower_support')
+  if (supports.length < 8) {
+    issues.push(`realism_ct_supports: cooling tower needs visible support columns; found ${supports.length}.`)
+  }
+
+  if (!hasRoleLike(roles, 'cooling_tower_rim')) {
+    warnings.push('realism_ct_rim: cooling tower should include a reinforced top rim ring.')
+  }
 }

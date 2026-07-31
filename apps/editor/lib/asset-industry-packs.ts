@@ -63,11 +63,16 @@ function readJsonRecords(file: string, warnings: string[]) {
 }
 
 export function isAssetIndustryPackDir(dir: string) {
-  return fs.existsSync(path.join(dir, 'industry-pack.json'))
+  return (
+    fs.existsSync(path.join(dir, 'industry-pack.json')) || fs.existsSync(path.join(dir, 'pack.json'))
+  )
 }
 
 export function readAssetIndustryPackManifestSync(dir: string): AssetIndustryPackManifest | null {
-  const manifestPath = path.join(dir, 'industry-pack.json')
+  // Prefer legacy generator-based manifest, fall back to recipe-based v2 (pack.json).
+  const assetManifestPath = path.join(dir, 'industry-pack.json')
+  const v2ManifestPath = path.join(dir, 'pack.json')
+  const manifestPath = fs.existsSync(assetManifestPath) ? assetManifestPath : v2ManifestPath
   if (!fs.existsSync(manifestPath)) return null
   const raw = readJson(manifestPath)
   if (!isRecord(raw)) return null

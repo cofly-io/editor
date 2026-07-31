@@ -51,7 +51,7 @@ const ROOF_TARGETS: MaterialTarget[] = [
 
 const CEILING_TARGETS: MaterialTarget[] = [MaterialTargetSchema.enum.ceiling]
 
-export const MATERIAL_CATEGORIES = ['wood', 'flooring', 'roof', 'other'] as const
+export const MATERIAL_CATEGORIES = ['wood', 'flooring', 'roof', 'wallpaper', 'plastic', 'carpet', 'other'] as const
 export type MaterialCategory = (typeof MATERIAL_CATEGORIES)[number]
 
 export const MATERIAL_CATALOG: MaterialCatalogItem[] = [

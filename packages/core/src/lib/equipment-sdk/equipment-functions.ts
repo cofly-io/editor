@@ -1,4 +1,12 @@
 import type { Vec3 } from '../primitive-compose'
+import {
+  addBoltCircle,
+  addCouplingRing,
+  addFlangeBolts,
+  addHorizontalSeams,
+  addRustStains,
+  addSaddleBolts,
+} from './equipment-details'
 
 export type EquipmentMaterialPreset =
   | 'painted_steel'
@@ -267,6 +275,81 @@ export type BlowerPackageParams = CommonParams & {
   includeCabinet?: boolean
 }
 
+export type FiredHeaterParams = CommonParams & {
+  length?: number
+  width?: number
+  height?: number
+  tubeCount?: number
+  includeStack?: boolean
+}
+
+export type ChimneyParams = CommonParams & {
+  height?: number
+  baseDiameter?: number
+  topDiameter?: number
+  target?: string
+  side?: 'left' | 'right' | 'front' | 'back'
+}
+
+export type CoolingTowerParams = CommonParams & {
+  height?: number
+  baseDiameter?: number
+  throatDiameter?: number
+  includeLouvers?: boolean
+}
+
+export type FlareTowerParams = CommonParams & {
+  height?: number
+  baseWidth?: number
+  includeFlame?: boolean
+}
+
+export type ScrewConveyorParams = CommonParams & {
+  length?: number
+  diameter?: number
+  includeMotor?: boolean
+  incline?: number
+}
+
+export type SiloParams = CommonParams & {
+  diameter?: number
+  cylinderHeight?: number
+  coneHeight?: number
+  includeLegs?: boolean
+  includeLadder?: boolean
+}
+
+export type BucketElevatorParams = CommonParams & {
+  height?: number
+  width?: number
+  depth?: number
+  bucketCount?: number
+  includeMotor?: boolean
+}
+
+export type RotaryValveParams = CommonParams & {
+  diameter?: number
+  vaneCount?: number
+  target?: string
+  side?: 'top' | 'bottom'
+}
+
+export type CycloneSeparatorParams = CommonParams & {
+  bodyDiameter?: number
+  cylinderHeight?: number
+  coneHeight?: number
+  includeInlet?: boolean
+  includeOutlet?: boolean
+}
+
+export type AirCoolerParams = CommonParams & {
+  length?: number
+  width?: number
+  height?: number
+  fanCount?: number
+  tubeRowCount?: number
+}
+
 const round = (value: number) => Number(value.toFixed(4))
 
 const clamp = (value: unknown, fallback: number, min: number, max: number): number => {
@@ -435,6 +518,23 @@ export function buildBoxFrame(params: BoxFrameParams): EquipmentPartSpec[] {
         params: { length: rail, width, height: rail, cornerRadius: rail * 0.18, cornerSegments: 4 },
       }),
     )
+  }
+  // Industrial details: bolt heads at leg-to-rail connections
+  for (let i = 0; i < legCount; i += 1) {
+    const x = -length / 2 + spacing * i
+    for (const z of [-width / 2, width / 2]) {
+      parts.push(
+        ...addBoltCircle(
+          `${params.id}.rail_joint.${i}`,
+          [round(x), height - rail * 0.3, z],
+          2,
+          rail * 0.7,
+          rail * 0.15,
+          0.015,
+          'dark_fastener',
+        ),
+      )
+    }
   }
   return parts
 }
@@ -660,6 +760,15 @@ export function buildMotor(
       }),
     )
   }
+  // Industrial details: coupling ring at the drive end face (where motor meets pump/gearbox)
+  parts.push(
+    addCouplingRing(
+      `${params.id}`,
+      [x + length / 2 + diameter * 0.05, y, z],
+      diameter * 0.88,
+      'z',
+    ),
+  )
   return parts
 }
 
@@ -1701,6 +1810,14 @@ export function buildVerticalVessel(params: VerticalVesselParams): EquipmentPart
       )
     }
   }
+  // Industrial details: weld seams around the shell body
+  parts.push(
+    ...addHorizontalSeams(`${params.id}`, [0, shellY, 0], diameter, shellHeight),
+  )
+  // Surface weathering: random rust/patina stains
+  parts.push(
+    ...addRustStains(`${params.id}`, [0, shellY, 0], radius, shellHeight, undefined, shellBottom, shellHeight),
+  )
   return parts
 }
 
@@ -2043,6 +2160,39 @@ export function buildHeatExchanger(params: HeatExchangerParams): EquipmentPartSp
     }
   }
 
+  // Industrial details: bolt patterns on flange faces
+  if (includePorts) {
+    const portRadius = diameter * 0.11
+    const portHeight = diameter * 0.32
+    for (const [label, x, z, axis] of [
+      ['shell_inlet', -length * 0.24, radius + portHeight / 2 + 0.04, 'y'],
+      ['shell_outlet', length * 0.24, radius + portHeight / 2 + 0.04, 'y'],
+      ['tube_inlet', length / 2 + diameter * 0.34, radius * 0.48, 'z'],
+      ['tube_outlet', -length / 2 - diameter * 0.34, -radius * 0.48, 'z'],
+    ] as const) {
+      const isTop = axis === 'y'
+      const flangeCenter: Vec3 = isTop
+        ? [x, y + z + portHeight * 0.52, 0]
+        : [x, y, z]
+      parts.push(
+        ...addFlangeBolts(`${params.id}.${label}`, flangeCenter, portRadius * 2.84),
+      )
+    }
+  }
+  // Saddle bolt details
+  if (includeSaddles) {
+    for (const x of [-length * 0.3, length * 0.3]) {
+      parts.push(
+        ...addSaddleBolts(
+          `${params.id}.saddle.${x < 0 ? 'rear' : 'front'}`,
+          [x, 0.04, 0],
+          diameter * 0.72,
+          diameter * 0.34,
+        ),
+      )
+    }
+  }
+
   return parts
 }
 
@@ -2303,6 +2453,15 @@ export function buildAgitatorTank(params: AgitatorTankParams): EquipmentPartSpec
       )
     }
   }
+
+  // Industrial details: weld seams on the vessel body
+  parts.push(
+    ...addHorizontalSeams(`${params.id}`, [0, shellY, 0], diameter, shellHeight),
+  )
+  // Surface weathering
+  parts.push(
+    ...addRustStains(`${params.id}`, [0, shellY, 0], radius, shellHeight, 2),
+  )
 
   return parts
 }
@@ -2750,5 +2909,760 @@ export function buildBlowerPackage(params: BlowerPackageParams): EquipmentPartSp
     )
   }
 
+  return parts
+}
+
+// ---------------------------------------------------------------------------
+// P0: 管式加热炉 (Fired Heater)
+// ---------------------------------------------------------------------------
+
+export function buildFiredHeater(params: FiredHeaterParams): EquipmentPartSpec[] {
+  const length = clamp(params.length, 4.8, 1.5, 14)
+  const width = clamp(params.width, 2.2, 0.8, 6)
+  const height = clamp(params.height, 3.8, 1.8, 12)
+  const tubeCount = Math.round(clamp(params.tubeCount, Math.max(8, Math.ceil(height * 3)), 6, 48))
+  const includeStack = params.includeStack ?? true
+  const material = params.material ?? 'painted_steel'
+  const parts: EquipmentPartSpec[] = [
+    spec({
+      id: `${params.id}.firebox`,
+      kind: 'box',
+      semanticRole: 'fired_heater_firebox',
+      position: [0, height / 2, 0],
+      size: [length, height, width],
+      material,
+      color: params.color,
+      params: { length, width, height, cornerRadius: 0.035, cornerSegments: 8 },
+    }),
+    spec({
+      id: `${params.id}.convection_section`,
+      kind: 'box',
+      semanticRole: 'convection_section',
+      position: [0, height + 0.6, 0],
+      size: [length, 0.9, width * 0.85],
+      material: 'stainless_steel',
+      params: { length, width: width * 0.85, height: 0.9, cornerRadius: 0.025, cornerSegments: 6 },
+    }),
+  ]
+  for (let i = 0; i < 4; i += 1) {
+    const z = -(width / 2 - 0.25) + (i * width * 0.38) / 3
+    parts.push(
+      spec({
+        id: `${params.id}.burner.${i}`,
+        kind: 'cylinder',
+        semanticRole: 'fired_heater_burner',
+        position: [length * 0.38, height * 0.12, z],
+        material: 'cast_iron',
+        params: { radius: 0.12, height: 0.35, radialSegments: 32 },
+      }),
+    )
+  }
+  for (let i = 0; i < tubeCount; i += 1) {
+    const y = 0.4 + (i / Math.max(1, tubeCount - 1)) * (height - 1.2)
+    parts.push(
+      spec({
+        id: `${params.id}.radiant_tube.${i}`,
+        kind: 'cylinder',
+        semanticRole: 'radiant_tube',
+        position: [-length / 2 - 0.08, y, 0],
+        rotation: { axis: 'z', degrees: 90 },
+        material: 'stainless_steel',
+        params: { radius: 0.04, height: width * 0.52, radialSegments: 24 },
+      }),
+    )
+  }
+  parts.push(
+    spec({
+      id: `${params.id}.access_door`,
+      kind: 'box',
+      semanticRole: 'inspection_door',
+      position: [length * 0.35, height * 0.55, width / 2 + 0.015],
+      material: 'cast_iron',
+      params: { length: 0.55, width: 0.025, height: 0.7, cornerRadius: 0.015, cornerSegments: 5 },
+    }),
+    spec({
+      id: `${params.id}.nameplate`,
+      kind: 'box',
+      semanticRole: 'equipment_nameplate',
+      position: [0, 1.15, width / 2 + 0.025],
+      material: 'stainless_steel',
+      params: { length: 0.35, width: 0.008, height: 0.14, cornerRadius: 0.006, cornerSegments: 4 },
+    }),
+  )
+  if (includeStack) {
+    parts.push(
+      spec({
+        id: `${params.id}.stack`,
+        kind: 'cylinder',
+        semanticRole: 'heater_stack',
+        position: [0, height + 1.05 + height * 0.425, 0],
+        material: 'painted_steel',
+        params: { radius: width * 0.16, height: height * 0.85, radialSegments: 48 },
+      }),
+    )
+  }
+  return parts
+}
+
+// ---------------------------------------------------------------------------
+// 烟囱
+// ---------------------------------------------------------------------------
+
+export function buildChimney(params: ChimneyParams): EquipmentPartSpec[] {
+  const height = clamp(params.height, 18, 6, 80)
+  const baseDia = clamp(params.baseDiameter, 1.8, 0.4, 6)
+  const topDia = clamp(params.topDiameter, baseDia * 0.62, 0.2, 4)
+  const parts: EquipmentPartSpec[] = [
+    spec({
+      id: `${params.id}.stack`,
+      kind: 'frustum',
+      semanticRole: 'chimney_stack',
+      position: [0, height / 2, 0],
+      size: [baseDia, height, topDia],
+      material: 'painted_steel',
+      color: params.color,
+      params: {
+        radiusTop: topDia / 2,
+        radiusBottom: baseDia / 2,
+        height,
+        radialSegments: 64,
+      },
+    }),
+    spec({
+      id: `${params.id}.foundation`,
+      kind: 'cylinder',
+      semanticRole: 'chimney_foundation',
+      position: [0, 0.6, 0],
+      material: 'cast_iron',
+      params: { radius: baseDia * 0.65, height: 1.2, radialSegments: 48 },
+    }),
+  ]
+  for (let i = 0; i < 3; i += 1) {
+    const y = height * (0.25 + i * 0.22)
+    const effectiveRadius =
+      (baseDia - (baseDia - topDia) * (y / height)) / 2 + 0.04
+    parts.push(
+      spec({
+        id: `${params.id}.band.${i}`,
+        kind: 'torus',
+        semanticRole: 'chimney_aviation_band',
+        position: [0, y, 0],
+        params: { majorRadius: effectiveRadius, tubeRadius: 0.06, radialSegments: 8, tubularSegments: 48 },
+        material: 'yellow_safety',
+      }),
+    )
+  }
+  const rungCount = Math.max(8, Math.floor(height / 0.35))
+  for (let i = 0; i < rungCount; i += 1) {
+    parts.push(
+      spec({
+        id: `${params.id}.rung.${i}`,
+        kind: 'cylinder',
+        semanticRole: 'ladder_rung',
+        position: [baseDia / 2 + 0.15, 0.8 + (height * 0.82 * i) / Math.max(1, rungCount - 1), 0],
+        rotation: { axis: 'z', degrees: 90 },
+        material: 'yellow_safety',
+        params: { radius: 0.018, height: baseDia + 0.3, radialSegments: 20 },
+      }),
+    )
+  }
+  return parts
+}
+
+// ---------------------------------------------------------------------------
+// 冷却塔
+// ---------------------------------------------------------------------------
+
+export function buildCoolingTower(params: CoolingTowerParams): EquipmentPartSpec[] {
+  const height = clamp(params.height, 12, 5, 30)
+  const baseDia = clamp(params.baseDiameter, height * 0.45, 2, 18)
+  const throatDia = clamp(params.throatDiameter, baseDia * 0.55, 1, baseDia * 0.9)
+  const includeLouvers = params.includeLouvers ?? true
+  const throatH = height * 0.55
+  const baseR = baseDia / 2
+  const parts: EquipmentPartSpec[] = [
+    spec({
+      id: `${params.id}.shell`,
+      kind: 'frustum',
+      semanticRole: 'cooling_tower_shell',
+      position: [0, throatH, 0],
+      size: [baseDia, throatH * 2, throatDia],
+      material: 'painted_steel',
+      color: params.color,
+      params: { radiusTop: throatDia / 2, radiusBottom: baseR, height: throatH * 2, radialSegments: 72 },
+    }),
+    spec({
+      id: `${params.id}.top_rim`,
+      kind: 'torus',
+      semanticRole: 'cooling_tower_rim',
+      position: [0, height * 0.96, 0],
+      material: 'cast_iron',
+      params: { majorRadius: baseDia * 0.54, tubeRadius: 0.16, radialSegments: 12, tubularSegments: 72 },
+    }),
+  ]
+  for (let i = 0; i < 16; i += 1) {
+    const a = (Math.PI * 2 * i) / 16
+    parts.push(
+      spec({
+        id: `${params.id}.col.${i}`,
+        kind: 'cylinder',
+        semanticRole: 'cooling_tower_support',
+        position: [Math.cos(a) * baseR * 0.92, throatH * 0.18, Math.sin(a) * baseR * 0.92],
+        material: 'cast_iron',
+        params: { radius: baseDia * 0.025, height: throatH * 0.38, radialSegments: 24 },
+      }),
+    )
+  }
+  if (includeLouvers) {
+    for (let i = 0; i < 28; i += 1) {
+      const a = (Math.PI * 2 * i) / 28
+      parts.push(
+        spec({
+          id: `${params.id}.louver.${i}`,
+          kind: 'box',
+          semanticRole: 'cooling_tower_louver',
+          position: [Math.cos(a) * baseR * 0.94, throatH * 0.42, Math.sin(a) * baseR * 0.94],
+          material: 'aluminum_frame',
+          params: { length: 0.06, width: throatH * 0.32, height: 0.04, cornerRadius: 0.004, cornerSegments: 3 },
+        }),
+      )
+    }
+  }
+  return parts
+}
+
+// ---------------------------------------------------------------------------
+// 火炬塔
+// ---------------------------------------------------------------------------
+
+export function buildFlareTower(params: FlareTowerParams): EquipmentPartSpec[] {
+  const height = clamp(params.height, 15, 8, 60)
+  const baseW = clamp(params.baseWidth, 1.8, 0.8, 4)
+  const halfW = baseW / 2
+  const topW = baseW * 0.55
+  const parts: EquipmentPartSpec[] = []
+
+  for (const [pfx, x, z] of [
+    ['fl', -halfW, -halfW],
+    ['fr', halfW, -halfW],
+    ['bl', -halfW, halfW],
+    ['br', halfW, halfW],
+  ] as const) {
+    parts.push(
+      spec({
+        id: `${params.id}.col_${pfx}`,
+        kind: 'cylinder',
+        semanticRole: 'flare_tower_column',
+        position: [x, height * 0.55, z],
+        material: 'painted_steel',
+        params: { radius: baseW * 0.04, height: height * 0.72, radialSegments: 24 },
+      }),
+    )
+  }
+
+  const braceCount = Math.max(3, Math.floor(height / 5))
+  for (let i = 0; i < braceCount; i += 1) {
+    const y = height * (0.15 + (i * 0.65) / braceCount)
+    const w = halfW - (halfW - topW / 2) * (i / braceCount)
+    for (const dx of [-w, w]) {
+      parts.push(
+        spec({
+          id: `${params.id}.brace_h.${i}.${dx > 0 ? 'r' : 'l'}`,
+          kind: 'cylinder',
+          semanticRole: 'flare_tower_brace',
+          position: [dx / 2, y, 0],
+          rotation: { axis: 'z', degrees: 90 },
+          material: 'painted_steel',
+          params: { radius: baseW * 0.025, height: w * 2, radialSegments: 20 },
+        }),
+      )
+      parts.push(
+        spec({
+          id: `${params.id}.brace_v.${i}.${dx > 0 ? 'r' : 'l'}`,
+          kind: 'cylinder',
+          semanticRole: 'flare_tower_brace',
+          position: [0, y, dx / 2],
+          rotation: { axis: 'z', degrees: 90 },
+          material: 'painted_steel',
+          params: { radius: baseW * 0.025, height: w * 2, radialSegments: 20 },
+        }),
+      )
+    }
+  }
+
+  parts.push(
+    spec({
+      id: `${params.id}.platform`,
+      kind: 'cylinder',
+      semanticRole: 'service_platform',
+      position: [0, height * 0.88, 0],
+      material: 'aluminum_frame',
+      params: { radius: topW * 0.7, height: 0.08, radialSegments: 48 },
+    }),
+    spec({
+      id: `${params.id}.riser`,
+      kind: 'cylinder',
+      semanticRole: 'flare_riser_pipe',
+      position: [0, height * 0.78, 0],
+      material: 'stainless_steel',
+      params: { radius: baseW * 0.14, height: height * 0.52, radialSegments: 48 },
+    }),
+    spec({
+      id: `${params.id}.flare_tip`,
+      kind: 'cylinder',
+      semanticRole: 'flare_tip',
+      position: [0, height * 0.98, 0],
+      material: 'stainless_steel',
+      params: { radius: baseW * 0.1, height: height * 0.06, radialSegments: 48 },
+    }),
+    spec({
+      id: `${params.id}.pilot`,
+      kind: 'cylinder',
+      semanticRole: 'flare_pilot',
+      position: [baseW * 0.16, height * 0.96, 0],
+      material: 'yellow_safety',
+      params: { radius: 0.025, height: height * 0.04, radialSegments: 20 },
+    }),
+    spec({
+      id: `${params.id}.knockout_drum`,
+      kind: 'cylinder',
+      semanticRole: 'flare_knockout_drum',
+      position: [baseW * 1.15, baseW * 0.42, 0],
+      rotation: { axis: 'z', degrees: 90 },
+      material: 'painted_steel',
+      params: { radius: baseW * 0.38, height: baseW * 1.1, radialSegments: 48 },
+    }),
+  )
+
+  for (let i = 0; i < 2; i += 1) {
+    parts.push(
+      spec({
+        id: `${params.id}.warning_band.${i}`,
+        kind: 'torus',
+        semanticRole: 'safety_band',
+        position: [0, height * (0.4 + i * 0.28), 0],
+        params: { majorRadius: baseW * 0.6, tubeRadius: 0.055, radialSegments: 8, tubularSegments: 48 },
+        material: 'yellow_safety',
+      }),
+    )
+  }
+  return parts
+}
+
+// ---------------------------------------------------------------------------
+// P1: 螺旋输送机
+// ---------------------------------------------------------------------------
+
+export function buildScrewConveyor(params: ScrewConveyorParams): EquipmentPartSpec[] {
+  const length = clamp(params.length, 4.5, 1.2, 14)
+  const diameter = clamp(params.diameter, 0.42, 0.15, 1.2)
+  const includeMotor = params.includeMotor ?? true
+  const radius = diameter / 2
+  const centerY = radius + 0.35
+  const material = params.material ?? 'painted_steel'
+  const parts: EquipmentPartSpec[] = [
+    spec({
+      id: `${params.id}.trough`,
+      kind: 'cylinder',
+      semanticRole: 'screw_conveyor_trough',
+      position: [0, centerY, 0],
+      rotation: { axis: 'z', degrees: 90 },
+      size: [length, diameter, diameter],
+      material,
+      color: params.color,
+      params: { radius: radius * 1.06, height: length, radialSegments: 48 },
+    }),
+  ]
+  const flightCount = Math.max(6, Math.floor(length / 0.35))
+  for (let i = 0; i < flightCount; i += 1) {
+    const x = -length / 2 + (length * i) / Math.max(1, flightCount - 1)
+    parts.push(
+      spec({
+        id: `${params.id}.flight.${i}`,
+        kind: 'box',
+        semanticRole: 'screw_flight',
+        position: [x, centerY, 0],
+        material: 'stainless_steel',
+        params: { length: 0.04, width: radius * 1.9, height: length / (flightCount * 1.1), cornerRadius: 0.008, cornerSegments: 5 },
+      }),
+    )
+  }
+  parts.push(
+    spec({
+      id: `${params.id}.shaft`,
+      kind: 'cylinder',
+      semanticRole: 'screw_shaft',
+      position: [0, centerY, 0],
+      rotation: { axis: 'z', degrees: 90 },
+      material: 'stainless_steel',
+      params: { radius: radius * 0.15, height: length, radialSegments: 32 },
+    }),
+  )
+  const legCount = Math.max(2, Math.floor(length / 2.5))
+  for (let i = 0; i < legCount; i += 1) {
+    const x = -length / 2 + (length * i) / Math.max(1, legCount - 1)
+    for (const z of [-radius * 0.85, radius * 0.85]) {
+      parts.push(
+        spec({
+          id: `${params.id}.leg.${i}.${z < 0 ? 'front' : 'back'}`,
+          kind: 'cylinder',
+          semanticRole: 'support_leg',
+          position: [x, centerY * 0.45, z],
+          material,
+          params: { radius: radius * 0.1, height: centerY * 0.9 - 0.06, radialSegments: 20 },
+        }),
+      )
+    }
+  }
+  if (includeMotor) {
+    parts.push(
+      ...buildMotor({ id: `${params.id}.drive_motor`, position: 'rear', side: 'right', diameter: diameter * 0.62, length: diameter * 0.58 }),
+    )
+  }
+  return parts
+}
+
+// ---------------------------------------------------------------------------
+// 料仓/筒仓
+// ---------------------------------------------------------------------------
+
+export function buildSilo(params: SiloParams): EquipmentPartSpec[] {
+  const diameter = clamp(params.diameter, 2.2, 0.8, 8)
+  const cylinderH = clamp(params.cylinderHeight, 3.5, 1.5, 14)
+  const coneH = clamp(params.coneHeight, Math.max(diameter * 0.85, 2), 0.6, 8)
+  const includeLegs = params.includeLegs ?? true
+  const includeLadder = params.includeLadder ?? true
+  const radius = diameter / 2
+  const cylinderY = coneH + cylinderH / 2
+  const material = params.material ?? 'painted_steel'
+  const parts: EquipmentPartSpec[] = [
+    spec({
+      id: `${params.id}.body`,
+      kind: 'cylinder',
+      semanticRole: 'silo_body',
+      position: [0, cylinderY, 0],
+      size: [diameter, cylinderH, diameter],
+      material,
+      color: params.color,
+      params: { radius, height: cylinderH, radialSegments: 64 },
+    }),
+    spec({
+      id: `${params.id}.bottom_cone`,
+      kind: 'cone',
+      semanticRole: 'silo_hopper',
+      position: [0, coneH / 2, 0],
+      size: [diameter, coneH, 0.25],
+      material,
+      params: { radius, height: coneH, radialSegments: 64 },
+    }),
+    spec({
+      id: `${params.id}.outlet`,
+      kind: 'cylinder',
+      semanticRole: 'silo_outlet',
+      position: [0, 0.3, 0],
+      material: 'stainless_steel',
+      params: { radius: 0.16, height: 0.55, radialSegments: 32 },
+    }),
+  ]
+  parts.push(...addHorizontalSeams(`${params.id}`, [0, cylinderY, 0], diameter, cylinderH))
+  if (includeLegs) {
+    const legH = coneH + 0.15
+    const legR = radius * 0.92
+    for (let i = 0; i < 6; i += 1) {
+      const a = (Math.PI * 2 * i) / 6
+      parts.push(
+        spec({
+          id: `${params.id}.leg.${i}`,
+          kind: 'cylinder',
+          semanticRole: 'support_leg',
+          position: [Math.cos(a) * legR, legH / 2, Math.sin(a) * legR],
+          material,
+          params: { radius: diameter * 0.04, height: legH, radialSegments: 20 },
+        }),
+      )
+    }
+  }
+  if (includeLadder) {
+    for (const x of [-radius - 0.06, -radius - 0.06]) {
+      parts.push(
+        spec({
+          id: `${params.id}.ladder_rail`,
+          kind: 'cylinder',
+          semanticRole: 'ladder_side_rail',
+          position: [x, cylinderY, 0],
+          material: 'yellow_safety',
+          params: { radius: 0.022, height: cylinderH + coneH - 0.3, radialSegments: 20 },
+        }),
+      )
+    }
+  }
+  return parts
+}
+
+// ---------------------------------------------------------------------------
+// 斗式提升机
+// ---------------------------------------------------------------------------
+
+export function buildBucketElevator(params: BucketElevatorParams): EquipmentPartSpec[] {
+  const height = clamp(params.height, 4.5, 2, 18)
+  const width = clamp(params.width, 0.6, 0.25, 1.5)
+  const depth = clamp(params.depth, 0.45, 0.18, 1)
+  const bucketCount = Math.round(clamp(params.bucketCount, Math.max(4, Math.floor(height / 0.4)), 3, 32))
+  const includeMotor = params.includeMotor ?? true
+  const material = params.material ?? 'painted_steel'
+  const parts: EquipmentPartSpec[] = [
+    spec({
+      id: `${params.id}.casing_upper`,
+      kind: 'box',
+      semanticRole: 'bucket_elevator_casing',
+      position: [0, height * 0.72, 0],
+      size: [width, height * 0.44, depth],
+      material,
+      color: params.color,
+      params: { length: depth, width, height: height * 0.44, cornerRadius: 0.025, cornerSegments: 6 },
+    }),
+    spec({
+      id: `${params.id}.casing_lower`,
+      kind: 'box',
+      semanticRole: 'bucket_elevator_casing',
+      position: [0, height * 0.18, 0],
+      size: [width, height * 0.28, depth],
+      material,
+      params: { length: depth, width, height: height * 0.28, cornerRadius: 0.025, cornerSegments: 6 },
+    }),
+    spec({
+      id: `${params.id}.head`,
+      kind: 'box',
+      semanticRole: 'bucket_elevator_head',
+      position: [0, height * 0.94, 0],
+      size: [width * 1.2, height * 0.1, depth * 1.2],
+      material: 'stainless_steel',
+      params: { length: depth * 1.2, width: width * 1.2, height: height * 0.1, cornerRadius: 0.03, cornerSegments: 6 },
+    }),
+    spec({
+      id: `${params.id}.boot`,
+      kind: 'box',
+      semanticRole: 'bucket_elevator_boot',
+      position: [0, 0.12, 0],
+      size: [width * 1.15, 0.18, depth * 1.15],
+      material: 'cast_iron',
+      params: { length: depth * 1.15, width: width * 1.15, height: 0.18, cornerRadius: 0.025, cornerSegments: 6 },
+    }),
+  ]
+  for (let i = 0; i < bucketCount; i += 1) {
+    const y = height * (0.25 + (i / Math.max(1, bucketCount - 1)) * 0.5)
+    parts.push(
+      spec({
+        id: `${params.id}.bucket.${i}`,
+        kind: 'box',
+        semanticRole: 'elevator_bucket',
+        position: [0, y, 0],
+        material: 'stainless_steel',
+        params: { length: depth * 0.65, width: width * 0.7, height: height * 0.025, cornerRadius: 0.008, cornerSegments: 4 },
+      }),
+    )
+  }
+  if (includeMotor) {
+    parts.push(
+      ...buildMotor({ id: `${params.id}.drive_motor`, position: 'center', side: 'right', diameter: width * 0.45, length: width * 0.42 }),
+    )
+  }
+  return parts
+}
+
+// ---------------------------------------------------------------------------
+// 星形卸料阀
+// ---------------------------------------------------------------------------
+
+export function buildRotaryValve(params: RotaryValveParams): EquipmentPartSpec[] {
+  const diameter = clamp(params.diameter, 0.35, 0.12, 1)
+  const vaneCount = Math.round(clamp(params.vaneCount, 6, 3, 12))
+  const material = params.material ?? 'painted_steel'
+  const parts: EquipmentPartSpec[] = [
+    spec({
+      id: `${params.id}.housing`,
+      kind: 'cylinder',
+      semanticRole: 'rotary_valve_housing',
+      position: [0, 0, 0],
+      rotation: { axis: 'x', degrees: 90 },
+      material,
+      params: { radius: diameter / 2, height: diameter * 1.1, radialSegments: 48 },
+    }),
+  ]
+  for (let i = 0; i < vaneCount; i += 1) {
+    const a = (Math.PI * 2 * i) / vaneCount
+    parts.push(
+      spec({
+        id: `${params.id}.vane.${i}`,
+        kind: 'box',
+        semanticRole: 'rotary_valve_vane',
+        position: [Math.cos(a) * diameter * 0.42, 0, Math.sin(a) * diameter * 0.42],
+        material: 'stainless_steel',
+        params: { length: diameter * 0.82, width: diameter * 0.18, height: diameter * 0.05, cornerRadius: 0.005, cornerSegments: 3 },
+      }),
+    )
+  }
+  parts.push(
+    spec({
+      id: `${params.id}.drive_adapter`,
+      kind: 'cylinder',
+      semanticRole: 'rotary_valve_drive',
+      position: [diameter * 0.62, 0, 0],
+      rotation: { axis: 'z', degrees: 90 },
+      material: 'cast_iron',
+      params: { radius: diameter * 0.18, height: diameter * 0.3, radialSegments: 32 },
+    }),
+  )
+  return parts
+}
+
+// ---------------------------------------------------------------------------
+// P2: 旋风分离器
+// ---------------------------------------------------------------------------
+
+export function buildCycloneSeparator(params: CycloneSeparatorParams): EquipmentPartSpec[] {
+  const bodyDia = clamp(params.bodyDiameter, 1.2, 0.3, 4)
+  const cylinderH = clamp(params.cylinderHeight, bodyDia * 1.6, 0.5, 8)
+  const coneH = clamp(params.coneHeight, bodyDia * 2.2, 0.8, 10)
+  const includeInlet = params.includeInlet ?? true
+  const includeOutlet = params.includeOutlet ?? true
+  const radius = bodyDia / 2
+  const totalH = cylinderH + coneH
+  const parts: EquipmentPartSpec[] = [
+    spec({
+      id: `${params.id}.cylinder`,
+      kind: 'cylinder',
+      semanticRole: 'cyclone_cylinder',
+      position: [0, coneH + cylinderH / 2, 0],
+      size: [bodyDia, cylinderH, bodyDia],
+      material: 'painted_steel',
+      color: params.color,
+      params: { radius, height: cylinderH, radialSegments: 64 },
+    }),
+    spec({
+      id: `${params.id}.cone`,
+      kind: 'cone',
+      semanticRole: 'cyclone_cone',
+      position: [0, coneH / 2, 0],
+      size: [bodyDia, coneH, 0.3],
+      material: 'painted_steel',
+      params: { radius, height: coneH, radialSegments: 64 },
+    }),
+    spec({
+      id: `${params.id}.dust_outlet`,
+      kind: 'cylinder',
+      semanticRole: 'cyclone_dust_outlet',
+      position: [0, 0.28, 0],
+      material: 'cast_iron',
+      params: { radius: bodyDia * 0.15, height: 0.45, radialSegments: 32 },
+    }),
+  ]
+  if (includeInlet) {
+    parts.push(
+      spec({
+        id: `${params.id}.inlet`,
+        kind: 'box',
+        semanticRole: 'cyclone_inlet',
+        position: [radius + bodyDia * 0.35, coneH + cylinderH * 0.6, 0],
+        material: 'stainless_steel',
+        params: { length: bodyDia * 0.72, width: bodyDia * 0.25, height: bodyDia * 0.35, cornerRadius: bodyDia * 0.04, cornerSegments: 6 },
+      }),
+    )
+  }
+  if (includeOutlet) {
+    parts.push(
+      spec({
+        id: `${params.id}.outlet`,
+        kind: 'cylinder',
+        semanticRole: 'cyclone_outlet',
+        position: [0, totalH + bodyDia * 0.18, 0],
+        material: 'stainless_steel',
+        params: { radius: bodyDia * 0.32, height: bodyDia * 0.5, radialSegments: 48 },
+      }),
+    )
+  }
+  return parts
+}
+
+// ---------------------------------------------------------------------------
+// P2: 空冷器
+// ---------------------------------------------------------------------------
+
+export function buildAirCooler(params: AirCoolerParams): EquipmentPartSpec[] {
+  const length = clamp(params.length, 3.6, 1.5, 12)
+  const width = clamp(params.width, 1.8, 0.6, 5)
+  const height = clamp(params.height, 2.2, 1, 6)
+  const fanCount = Math.round(clamp(params.fanCount, Math.max(1, Math.floor(length / 2.5)), 1, 8))
+  const material = params.material ?? 'painted_steel'
+  const parts: EquipmentPartSpec[] = [
+    spec({
+      id: `${params.id}.frame`,
+      kind: 'box',
+      semanticRole: 'air_cooler_frame',
+      position: [0, height, 0],
+      size: [length, height * 0.35, width],
+      material,
+      color: params.color,
+      params: { length, width, height: height * 0.35, cornerRadius: 0.04, cornerSegments: 8 },
+    }),
+    spec({
+      id: `${params.id}.tube_bundle`,
+      kind: 'box',
+      semanticRole: 'air_cooler_tube_bundle',
+      position: [0, height + height * 0.25, 0],
+      size: [length * 0.88, height * 0.15, width * 0.78],
+      material: 'stainless_steel',
+      params: { length: length * 0.88, width: width * 0.78, height: height * 0.15, cornerRadius: 0.025, cornerSegments: 6 },
+    }),
+  ]
+  const fanSpacing = length / (fanCount + 1)
+  for (let i = 0; i < fanCount; i += 1) {
+    parts.push(
+      spec({
+        id: `${params.id}.fan.${i}`,
+        kind: 'cylinder',
+        semanticRole: 'air_cooler_fan',
+        position: [-length / 2 + fanSpacing * (i + 1), height * 1.32, 0],
+        material: 'aluminum_frame',
+        params: { radius: width * 0.16, height: 0.12, radialSegments: 48 },
+      }),
+    )
+  }
+  for (const z of [-width / 2, width / 2]) {
+    parts.push(
+      spec({
+        id: `${params.id}.header.${z < 0 ? 'front' : 'back'}`,
+        kind: 'box',
+        semanticRole: 'air_cooler_header',
+        position: [0, height + height * 0.22, z],
+        material: 'cast_iron',
+        params: { length: length * 0.9, width: height * 0.2, height: height * 0.25, cornerRadius: 0.02, cornerSegments: 6 },
+      }),
+    )
+  }
+  for (const z of [-width * 0.35, width * 0.35]) {
+    for (const x of [-length * 0.35, length * 0.35]) {
+      parts.push(
+        spec({
+          id: `${params.id}.leg`,
+          kind: 'cylinder',
+          semanticRole: 'support_leg',
+          position: [x, height / 2, z],
+          material,
+          params: { radius: height * 0.06, height: height * 0.98, radialSegments: 20 },
+        }),
+      )
+    }
+  }
+  parts.push(
+    spec({
+      id: `${params.id}.platform`,
+      kind: 'box',
+      semanticRole: 'service_platform',
+      position: [0, height * 0.55, width / 2 + 0.3],
+      material: 'aluminum_frame',
+      params: { length: length * 0.6, width: 0.6, height: 0.05, cornerRadius: 0.015, cornerSegments: 5 },
+    }),
+  )
   return parts
 }

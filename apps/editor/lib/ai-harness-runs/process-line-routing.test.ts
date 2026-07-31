@@ -551,4 +551,80 @@ describe('routeProcessConnection', () => {
       ),
     ).toBe(false)
   })
+
+  test('ignores site visual context placement and artifact obstacles while avoiding real equipment', () => {
+    const plan: ProcessLinePlan = {
+      processLabel: 'Test refinery',
+      domain: 'chemical',
+      layoutStyle: 'linear',
+      stations: [
+        {
+          id: 'feed',
+          label: 'Feed',
+          role: 'feed',
+          equipmentHint: 'feed tank',
+        },
+        {
+          id: 'product',
+          label: 'Product',
+          role: 'product',
+          equipmentHint: 'product tank',
+        },
+        {
+          id: 'site_visual_layout',
+          label: 'Site visual layout',
+          role: 'site_visual_context',
+          equipmentHint: 'site visual context',
+        },
+        {
+          id: 'real_obstacle',
+          label: 'Real obstacle',
+          role: 'distillation_column',
+          equipmentHint: 'distillation column',
+        },
+      ],
+      connections: [
+        {
+          fromStationId: 'feed',
+          toStationId: 'product',
+          visualKind: 'pipe',
+          medium: 'material',
+        },
+      ],
+    }
+    const placements = new Map([
+      ['feed', placement('feed', -4, 0)],
+      ['product', placement('product', 4, 0)],
+      ['site_visual_layout', placement('site_visual_layout', 0, 0)],
+      ['real_obstacle', placement('real_obstacle', 0, 0)],
+    ])
+    const realObstacle = placements.get('real_obstacle')
+
+    const route = routeProcessConnection({
+      plan,
+      connection: plan.connections[0]!,
+      connectionIndex: 0,
+      placements,
+      stationPlacements: [...placements.values()],
+      boundary: { length: 12, width: 8 },
+      routeObstacles: [
+        {
+          stationId: 'site_visual_layout',
+          source: 'artifact',
+          box: { minX: -6, maxX: 6, minZ: -4, maxZ: 4 },
+          minHeight: 0,
+          maxHeight: 6,
+        },
+      ],
+    })
+
+    expect(route?.fallback).toBe(false)
+    expect(route?.avoidedStationIds).not.toContain('site_visual_layout')
+    if (!route || !realObstacle) throw new Error('expected route and obstacle')
+    expect(
+      route.segments.some((segment) =>
+        routeSegmentIntersectsClearanceBox(segment.start, segment.end, realObstacle.clearanceBox),
+      ),
+    ).toBe(false)
+  })
 })

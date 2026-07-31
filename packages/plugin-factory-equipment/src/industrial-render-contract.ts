@@ -206,6 +206,26 @@ const INDUSTRIAL_RENDER_RULES: readonly IndustrialRenderRule[] = [
     kernel: 'lattice-or-stack-emission',
     material: 'painted-metal',
   },
+  {
+    id: 'flare-fire-effect',
+    priority: 92,
+    roles: ['flare_flame', 'flare_glow'],
+    sourcePartKinds: ['flame', 'light-glow'],
+    tokenPatterns: [/flare_flame|flare_glow|flame/],
+    kernel: 'fire-flare',
+    material: 'emissive-flame',
+    runtimeEffects: ['refinery-flare-fire'],
+  },
+  {
+    id: 'site-lighting-effect',
+    priority: 84,
+    roles: ['street_light', 'warning_beacon'],
+    sourcePartKinds: ['lamp-post', 'warning-beacon'],
+    tokenPatterns: [/street_light|warning_beacon|lamp/],
+    kernel: 'site-lighting',
+    material: 'warm-lamp',
+    runtimeEffects: ['site-light-glow'],
+  },
 ]
 
 function text(value: unknown): string {
@@ -243,7 +263,9 @@ export function resolveIndustrialRenderContract(
   part: SemanticRecipePart,
   customRules?: IndustrialRenderRule[],
 ): IndustrialRenderContract {
-  const rules = customRules ?? INDUSTRIAL_RENDER_RULES
+  const rules = customRules
+    ? [...customRules, ...INDUSTRIAL_RENDER_RULES.filter((base) => !customRules.some((custom) => custom.id === base.id))]
+    : INDUSTRIAL_RENDER_RULES
   const rule = [...rules]
     .sort((left, right) => right.priority - left.priority)
     .find((candidate) => ruleMatches(candidate, part))

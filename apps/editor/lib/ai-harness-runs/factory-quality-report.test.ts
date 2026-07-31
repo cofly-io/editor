@@ -361,4 +361,71 @@ describe('evaluateFactoryQuality', () => {
       }),
     )
   })
+
+  test('does not treat site visual layout as route-blocking process equipment', () => {
+    const report = evaluateFactoryQuality({
+      plan: processPlan(),
+      patches: [
+        equipmentItemPatch('item_feed', 'feed'),
+        equipmentItemPatch('item_reactor', 'reactor'),
+        {
+          op: 'create',
+          node: ItemNode.parse({
+            id: 'item_site_visual_layout',
+            name: 'site visual layout',
+            metadata: {
+              stationId: 'site_visual_layout',
+              family: 'site_visual_context',
+              equipmentProfileId: 'refinery.site_visual_layout',
+              primarySemanticRole: 'site_ground',
+              factoryPrimitiveRouteObstacle: {
+                stationId: 'site_visual_layout',
+                source: 'artifact',
+                minHeight: 0,
+                maxHeight: 5,
+                box: { minX: -10, maxX: 10, minZ: -10, maxZ: 10 },
+              },
+            },
+            asset: {
+              id: 'factory-electric-box',
+              category: 'factory',
+              name: 'Electric box',
+              thumbnail: '/items/factory-electric-box/thumbnail.png',
+              src: '/items/factory-electric-box/model.glb',
+              dimensions: [1, 1, 1],
+            },
+          }),
+        },
+        {
+          op: 'create',
+          node: PipeNode.parse({
+            id: 'pipe_feed_reactor',
+            name: 'feed to reactor',
+            start: [0, 0],
+            end: [4, 0],
+            elevation: 1,
+            medium: 'water',
+            metadata: {
+              role: 'process-line-connection',
+              fromStationId: 'feed',
+              toStationId: 'reactor',
+              visualKind: 'pipe',
+              fromPortId: 'outlet',
+              toPortId: 'inlet',
+            },
+          }),
+        },
+      ],
+      missingAssets: [],
+    })
+
+    expect(report.passed).toBe(true)
+    expect(report.checks.routeCollisionCount).toBe(0)
+    expect(report.issues).not.toContainEqual(
+      expect.objectContaining({
+        code: 'process_route_intersects_equipment',
+        stationId: 'site_visual_layout',
+      }),
+    )
+  })
 })

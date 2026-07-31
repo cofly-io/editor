@@ -227,13 +227,37 @@ function materialParamsForContract(contract: IndustrialRenderContract): Industri
         roughness: 0.74,
       }
     case 'lattice-or-stack-emission':
-    case 'fire-flare':
       return {
         ...profileParams,
         color: '#9ca3af',
         envMapIntensity: 0.9,
         metalness: 0.7,
         roughness: 0.34,
+      }
+    case 'fire-flare':
+      return {
+        ...profileParams,
+        color: '#f97316',
+        emissive: '#fb923c',
+        emissiveIntensity: 2.2,
+        envMapIntensity: 0.25,
+        metalness: 0,
+        opacity: opacity ?? 0.72,
+        roughness: 0.12,
+        transparent: true,
+        depthWrite: false,
+      }
+    case 'site-lighting':
+      return {
+        ...profileParams,
+        color: '#fff7cc',
+        emissive: '#facc15',
+        emissiveIntensity: 1.4,
+        envMapIntensity: 0.4,
+        metalness: 0,
+        opacity: opacity ?? 0.92,
+        roughness: 0.12,
+        transparent: true,
       }
     case 'volute-pump-casing':
       return {
@@ -328,6 +352,7 @@ export function industrialSurfaceEffectKind(
   if (contract.kernel === 'lattice-or-stack-emission' || contract.kernel === 'fire-flare') {
     return 'stack-glow'
   }
+  if (contract.kernel === 'site-lighting') return 'stack-glow'
   return undefined
 }
 

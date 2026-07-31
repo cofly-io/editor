@@ -1,4 +1,5 @@
 import { resolveProcessEquipmentContract } from './process-equipment-contracts'
+import { isFactoryVisualContextRouteObstacle } from './factory-route-obstacle-policy'
 import type {
   ProcessConnectionMedium,
   ProcessConnectionPlan,
@@ -794,6 +795,19 @@ function routeObstacleForStation(obstacles: ProcessRouteObstacle[] | undefined, 
   return obstacles?.find((obstacle) => obstacle.stationId === stationId)
 }
 
+function routeObstaclePolicyForPlacement(plan: ProcessLinePlan, placement: StationPlacement) {
+  const station = stationById(plan, placement.stationId)
+  const policyInput: Parameters<typeof isFactoryVisualContextRouteObstacle>[0] = {
+    stationId: placement.stationId,
+    stationRole: placement.role,
+  }
+  const equipmentContract = station
+    ? resolveProcessEquipmentContract({ plan, station })
+    : undefined
+  if (equipmentContract) policyInput.equipmentContract = equipmentContract
+  return isFactoryVisualContextRouteObstacle(policyInput)
+}
+
 function projectPortToObstacleSurface(
   port: ProcessRoutePortEndpoint | undefined,
   obstacle: ProcessRouteObstacle | undefined,
@@ -902,7 +916,8 @@ export function routeProcessConnection(input: {
       (placement) =>
         placement.stationId !== input.connection.fromStationId &&
         placement.stationId !== input.connection.toStationId &&
-        !replacementObstacleStationIds.has(placement.stationId),
+        !replacementObstacleStationIds.has(placement.stationId) &&
+        !routeObstaclePolicyForPlacement(input.plan, placement),
     )
     .map((placement) => ({
       stationId: placement.stationId,
@@ -913,7 +928,8 @@ export function routeProcessConnection(input: {
     .filter(
       (obstacle) =>
         obstacle.stationId !== input.connection.fromStationId &&
-        obstacle.stationId !== input.connection.toStationId,
+        obstacle.stationId !== input.connection.toStationId &&
+        !isFactoryVisualContextRouteObstacle({ routeObstacle: obstacle }),
     )
     .map((obstacle) => ({ ...obstacle }))
   const obstacles = [...placementObstacles, ...artifactObstacles]

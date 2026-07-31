@@ -1,5 +1,6 @@
 import type { Vec3 } from '@pascal-app/core/lib/primitive-compose'
 import { resolveProcessEquipmentContract } from './process-equipment-contracts'
+import { isFactoryVisualContextRouteObstacle } from './factory-route-obstacle-policy'
 import type {
   ProcessLayoutDiagnostic,
   ProcessLayoutDiagnostics,
@@ -52,6 +53,17 @@ function stationText(station: ProcessStationPlan) {
 function hasHazardClearance(station: ProcessStationPlan) {
   const text = stationText(station)
   return /hydrogen|oxygen|flammable|pressure|\u6c22|\u6c27|\u6613\u71c3|\u538b\u529b/i.test(text)
+}
+
+function isNonBlockingLayoutStation(plan: ProcessLinePlan, placement: StationPlacement) {
+  const station = plan.stations.find((candidate) => candidate.id === placement.stationId)
+  const policyInput: Parameters<typeof isFactoryVisualContextRouteObstacle>[0] = {
+    stationId: placement.stationId,
+    stationRole: station?.role ?? placement.role,
+  }
+  const equipmentContract = station ? resolveProcessEquipmentContract({ plan, station }) : undefined
+  if (equipmentContract) policyInput.equipmentContract = equipmentContract
+  return isFactoryVisualContextRouteObstacle(policyInput)
 }
 
 export function stationFootprint(station: ProcessStationPlan, plan?: ProcessLinePlan) {
@@ -687,9 +699,11 @@ export function validateProcessLineLayout(input: {
   for (let index = 0; index < input.stationPlacements.length; index += 1) {
     const current = input.stationPlacements[index]
     if (!current) continue
+    if (isNonBlockingLayoutStation(input.plan, current)) continue
     for (let nextIndex = index + 1; nextIndex < input.stationPlacements.length; nextIndex += 1) {
       const next = input.stationPlacements[nextIndex]
       if (!next || !boxesOverlap(current, next)) continue
+      if (isNonBlockingLayoutStation(input.plan, next)) continue
       diagnostics.push(
         diagnostic({
           code: 'station_clearance_overlap',

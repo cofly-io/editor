@@ -18,6 +18,7 @@
 
 import {
   getIndustrialMaterialPbrProfile,
+  isIndustrialRenderMaterial,
   type IndustrialRenderMaterial,
 } from '@pascal-app/core/registry'
 
@@ -30,6 +31,7 @@ export type TextureNoiseKind =
   | 'coarse-granules' // granular solid / refractory
   | 'ripple' // liquid surface
   | 'speckle' // dark machinery casting
+  | 'glow-noise' // emissive lamp/flame variation
 
 export type TextureSpec = {
   /** Which PBR slot this texture feeds */
@@ -100,6 +102,12 @@ const TEXTURE_SPECS: Record<IndustrialRenderMaterial, TextureSpec[]> = {
     { slot: 'normal', noise: 'fine-grain', repeat: [4, 4], strength: 0.35, resolution: 256 },
     { slot: 'roughness', noise: 'fine-grain', repeat: [4, 4], strength: 0.4, resolution: 128 },
   ],
+  'emissive-flame': [
+    { slot: 'baseColor', noise: 'glow-noise', repeat: [1, 2], strength: 0.7, resolution: 128 },
+  ],
+  'warm-lamp': [
+    { slot: 'baseColor', noise: 'glow-noise', repeat: [1, 1], strength: 0.18, resolution: 64 },
+  ],
 }
 
 // ─── Kernel overrides (align with industrial-render-contract-rendering) ─────
@@ -126,6 +134,8 @@ const KERNEL_OVERRIDES: Record<string, KernelOverride> = {
   'fired-heater-body': { metalness: 0.38, roughness: 0.58, envMapIntensity: 0.5 },
   'ribbed-motor': { metalness: 0.28, roughness: 0.74, envMapIntensity: 0.45 },
   'lattice-or-stack-emission': { metalness: 0.7, roughness: 0.34, envMapIntensity: 0.9 },
+  'fire-flare': { metalness: 0, roughness: 0.12, envMapIntensity: 0.25, opacity: 0.72, transparent: true, depthWrite: false },
+  'site-lighting': { metalness: 0, roughness: 0.12, envMapIntensity: 0.4, opacity: 0.92, transparent: true },
   'volute-pump-casing': { metalness: 0.54, roughness: 0.36, envMapIntensity: 0.75 },
 }
 
@@ -136,6 +146,20 @@ export type RenderContractLike = {
   material?: string | { family?: string; finish?: string; opacity?: number }
 }
 
+const MATERIAL_ALIASES: Record<string, IndustrialRenderMaterial> = {
+  'painted-steel': 'brushed-metal',
+  'galvanized-painted-steel': 'galvanized-steel',
+  'weathered-metal-concrete': 'galvanized-steel',
+  'weathered-civil': 'painted-metal',
+  'painted-steel-emissive-lamp': 'warm-lamp',
+}
+
+function normalizeMaterialName(value: unknown): IndustrialRenderMaterial | undefined {
+  if (isIndustrialRenderMaterial(value)) return value
+  if (typeof value !== 'string') return undefined
+  return MATERIAL_ALIASES[value]
+}
+
 /**
  * Resolve a complete PBR material plan (scalar params + procedural textures)
  * for a render contract. Merges: base profile → kernel override → texture spec.
@@ -143,7 +167,7 @@ export type RenderContractLike = {
 export function resolvePbrMaterial(contract: RenderContractLike | undefined): PbrMaterialPlan {
   const materialName =
     typeof contract?.material === 'string'
-      ? (contract.material as IndustrialRenderMaterial)
+      ? normalizeMaterialName(contract.material)
       : undefined
   const profile = getIndustrialMaterialPbrProfile(materialName)
 

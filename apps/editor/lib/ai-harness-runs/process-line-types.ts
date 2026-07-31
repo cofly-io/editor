@@ -132,6 +132,7 @@ export type ProcessLinePlan = {
     zoneDisplay?: 'subtle' | 'debug'
     omitPerimeterWalls?: boolean
     omitCeiling?: boolean
+    omitFloor?: boolean
     omitRoof?: boolean
     stationPositionHints?: Record<
       string,

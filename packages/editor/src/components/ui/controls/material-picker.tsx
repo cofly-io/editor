@@ -35,6 +35,9 @@ function getCategoryLabel(category: (typeof MATERIAL_CATEGORIES)[number]) {
   if (category === 'wood') return '\u6728\u6750'
   if (category === 'flooring') return '\u5730\u9762'
   if (category === 'roof') return '\u5c4b\u9876'
+  if (category === 'wallpaper') return '\u5899\u7eb8'
+  if (category === 'plastic') return '\u5851\u6599'
+  if (category === 'carpet') return '\u5730\u6bef'
   return category
 }
 

@@ -24,6 +24,16 @@ export const EQUIPMENT_CALLS = [
   'dustCollector',
   'heatExchanger',
   'agitatorTank',
+  'firedHeater',
+  'chimney',
+  'coolingTower',
+  'flareTower',
+  'screwConveyor',
+  'silo',
+  'bucketElevator',
+  'rotaryValve',
+  'cycloneSeparator',
+  'airCooler',
 ] as const
 
 export type EquipmentCallName = (typeof EQUIPMENT_CALLS)[number]
