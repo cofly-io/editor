@@ -19,7 +19,7 @@
  */
 
 import type { EquipmentParamValue, SemanticRecipePart } from '@pascal-app/core'
-import type { Profile } from './industry-pack-loader'
+import type { Profile } from './profile-types'
 
 type Vec3 = [number, number, number]
 

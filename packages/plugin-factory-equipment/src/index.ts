@@ -52,76 +52,7 @@ export {
   resolveIndustrialRenderContractWithPack,
   summarizeIndustrialRenderContracts,
 } from './industrial-render-contract'
-export {
-  LayoutRealism,
-  validateLayoutSpacing,
-  type LayoutRulesDocument,
-  type SpacingRule,
-  type SpacingViolation,
-  type ZoneGroundMaterial,
-} from './layout-realism'
-export {
-  hasGeometryDimensions,
-  synthesizeGeometryParts,
-  type GeometryEnvelope,
-  type SynthesizedPart,
-} from './runtime-geometry-synthesizer'
-export {
-  InstancingPlanner,
-  planSceneInstancing,
-  type InstanceBatch,
-  type InstanceTransform,
-  type InstancingPlan,
-  type InstancingPlannerOptions,
-} from './instancing-planner'
-export {
-  resolvePbrMaterial,
-  textureSpecsFor,
-  texturedMaterialFamilies,
-  type PbrMaterialPlan,
-  type RenderContractLike,
-  type TextureNoiseKind,
-  type TextureSpec,
-} from './pbr-material-library'
-export {
-  generateTextureData,
-  generateTextureSet,
-  textureSpecKey,
-  valueNoise,
-  type GeneratedTexture,
-} from './procedural-textures'
-export {
-  buildInstanceMatrices,
-  buildPlanInstanceMatrices,
-  composeInstanceMatrix,
-  type BatchInstanceData,
-} from './instance-matrix-builder'
-export {
-  generateSceneFromLayout,
-  SceneGenerator,
-  type GeneratedScene,
-  type PlacedPart,
-  type PlacedStation,
-  type SceneGeneratorOptions,
-  type UnresolvedStation,
-  type ZoneGround,
-} from './scene-generator'
-export {
-  ConnectionRouter,
-  routeConnections,
-  type ConnectionRouterOptions,
-  type RoutedConnection,
-  type RoutedSegment,
-  type RoutingResult,
-  type UnroutedConnection,
-} from './connection-router'
-export {
-  generateIndustryScene,
-  type IndustryScene,
-  type IndustrySceneOptions,
-  type SceneMaterialPlan,
-  type SceneRenderPayload,
-} from './industry-scene'
+export type { GeneratorRef, Profile } from './profile-types'
 export {
   loadRenderRulesForIndustryPack,
   RenderContractRulesLoader,
@@ -129,6 +60,12 @@ export {
   type RenderRuleDefinition,
   type RenderRulesDocument,
 } from './render-contract-rules-loader'
+export {
+  hasGeometryDimensions,
+  synthesizeGeometryParts,
+  type GeometryEnvelope,
+  type SynthesizedPart,
+} from './runtime-geometry-synthesizer'
 export { pumpDefinition } from './pump/definition'
 export { buildPumpFloorplan } from './pump/floorplan'
 export { buildPumpGeometry } from './pump/geometry'
@@ -232,28 +169,3 @@ export { buildTankGeometry } from './tank/geometry'
 export { tankParametrics } from './tank/parametrics'
 export { factoryTankPorts } from './tank/ports'
 export { FactoryTankNode, TankOrientation } from './tank/schema'
-export {
-  IndustryPackLoader,
-  loadIndustryPackRecipes,
-  registerIndustryPack,
-  type IndustryPackLoaderOptions,
-  type LoadedIndustryPack,
-  type IndustryPackManifest,
-  type Profile,
-  type Layout,
-  type LayoutStation,
-  type Connections,
-  type Connection,
-  type GeneratorManifest,
-  type GeneratorParamSchema,
-  type GeneratorPort,
-  type ComponentPackManifest,
-} from './industry-pack-loader'
-export {
-  generatorParamsToZodSchema,
-  generatorManifestToZodSchema,
-  validateGeneratorParams,
-  assertGeneratorParams,
-  mergeParamsWithDefaults,
-  clearParamSchemaCache,
-} from './param-schema-converter'

@@ -154,11 +154,6 @@ export { generatedMeshDefinition } from './generated-mesh'
 export { guideDefinition } from './guide'
 export { halfCylinderDefinition } from './half-cylinder'
 export { hemisphereDefinition } from './hemisphere'
-export {
-  IndustrySceneBatches,
-  IndustryRuntimeEffects,
-  type IndustrySceneRendererProps,
-} from './industry-scene/renderer'
 export { itemDefinition } from './item'
 export { ladderDefinition } from './ladder'
 export { latheDefinition } from './lathe'
